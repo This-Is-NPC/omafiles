@@ -179,6 +179,8 @@ private slots:
     void clickingARowFocusesItsPane();
     void drawsEveryView();
     void dressesTheGraphInTheDesktopTheme();
+    void paintsTheGraphOnTheThemeBackground();
+    void paintsTheFolderOnTheThemeBackground();
     void saysHowMuchOfTheIndexTheGraphDrew();
     void saysWhereTheCursorIsOnAGraphTab();
     void readsTheCornerRoundingFromTheHyprlandConfig();
@@ -2337,6 +2339,90 @@ void TestStudio::dressesTheGraphInTheDesktopTheme()
     m_workspace->closeCurrentTab();
     settle();
 }
+
+
+// QQuickPaintedItem used to clear with Qt::transparent; offscreen grabWindow
+// composites that onto white, so the map sat as dark ink on a white hole while
+// the chrome followed Theme.background.
+void TestStudio::paintsTheGraphOnTheThemeBackground()
+{
+    QObject *root = m_engine->rootObjects().first();
+    m_workspace->addTab(QStringLiteral("graph"));
+    settle();
+
+    QQuickItem *graph = qobject_cast<QQuickItem *>(
+        root->property("activeGraph").value<QObject *>());
+    QVERIFY(graph);
+
+    QTest::qWait(60);
+    const QImage shot = window()->grabWindow();
+    if (shot.isNull())
+        QSKIP("grabWindow returned a null image");
+
+    const QColor backdrop = m_theme->background();
+    const auto sample = [&](const QPoint &local, const char *where) {
+        const QPoint pt = graph->mapToScene(local).toPoint();
+        const QColor pixel = shot.pixelColor(pt);
+        QVERIFY2(!(pixel.red() > 240 && pixel.green() > 240 && pixel.blue() > 240),
+                 qPrintable(QStringLiteral("%1: the graph canvas is the offscreen "
+                                           "default (white), not the theme")
+                                .arg(QString::fromLatin1(where))));
+        const int drift = qAbs(pixel.red() - backdrop.red())
+                        + qAbs(pixel.green() - backdrop.green())
+                        + qAbs(pixel.blue() - backdrop.blue());
+        QVERIFY2(drift < 40,
+                 qPrintable(QStringLiteral("%1: the graph canvas is the offscreen "
+                                           "default (white) rather than the theme "
+                                           "(sampled #%2, expected #%3)")
+                                .arg(QString::fromLatin1(where))
+                                .arg(pixel.name(QColor::HexRgb))
+                                .arg(backdrop.name(QColor::HexRgb))));
+    };
+
+    sample(QPoint(12, 12), "top-left");
+    sample(QPoint(graph->width() - 12, 12), "top-right");
+
+    m_workspace->closeCurrentTab();
+    settle();
+}
+
+// Qt Rectangle defaults to white; the files views paint transparent on top of
+// this pane. Without an explicit fill the list sits as ink on a white hole while
+// the chrome follows Theme.background.
+void TestStudio::paintsTheFolderOnTheThemeBackground()
+{
+    key('1');
+    settle();
+
+    const QList<QQuickItem *> panes = itemsNamed(QStringLiteral("pane"));
+    QVERIFY2(!panes.isEmpty(), "no pane to sample");
+    QQuickItem *pane = panes.first();
+
+    QTest::qWait(60);
+    const QImage shot = window()->grabWindow();
+    if (shot.isNull())
+        QSKIP("grabWindow returned a null image");
+
+    const QColor backdrop = m_theme->background();
+    const QPoint local(qRound(pane->width() * 0.55), qRound(pane->height() * 0.85));
+    const QPoint pt = pane->mapToScene(local).toPoint();
+    const QColor pixel = shot.pixelColor(pt);
+    const bool pixelIsWhite = pixel.red() > 240 && pixel.green() > 240 && pixel.blue() > 240;
+    const bool themeIsWhite = backdrop.red() > 240 && backdrop.green() > 240 && backdrop.blue() > 240;
+    QVERIFY2(!pixelIsWhite || themeIsWhite,
+             qPrintable(QStringLiteral("the files pane is Qt's default Rectangle "
+                                       "white rather than the theme")));
+    const int drift = qAbs(pixel.red() - backdrop.red())
+                    + qAbs(pixel.green() - backdrop.green())
+                    + qAbs(pixel.blue() - backdrop.blue());
+    QVERIFY2(drift < 40,
+             qPrintable(QStringLiteral("the files pane is Qt's default Rectangle "
+                                       "white rather than the theme "
+                                       "(sampled #%1, expected #%2)")
+                            .arg(pixel.name(QColor::HexRgb))
+                            .arg(backdrop.name(QColor::HexRgb))));
+}
+
 
 // A map of part of the index says which part.
 //

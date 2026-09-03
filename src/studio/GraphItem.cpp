@@ -25,6 +25,7 @@ GraphItem::GraphItem(QQuickItem *parent)
     setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setAcceptHoverEvents(true);
     setAntialiasing(true);
+    setOpaquePainting(true);
 }
 
 void GraphItem::setTheme(Theme *theme)
@@ -408,7 +409,6 @@ QString GraphItem::emptyText() const
 void GraphItem::paint(QPainter *painter)
 {
     ensureNodes();
-    painter->fillRect(boundingRect(), Qt::transparent);
 
     // The map is drawn in the desktop's colours, like every other panel: tags
     // in the accent, files in the foreground, everything faint in the muted
@@ -422,6 +422,8 @@ void GraphItem::paint(QPainter *painter)
         colour.setAlpha(alpha);
         return colour;
     };
+
+    painter->fillRect(boundingRect(), backdrop);
 
     if (m_nodes.isEmpty()) {
         painter->setPen(faint);

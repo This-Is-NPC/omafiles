@@ -1058,6 +1058,8 @@ Window {
         // Named so a test can click inside the pane it means rather than at a
         // fraction of the window and hope the split had finished laying out.
         objectName: "pane"
+        // Qt Rectangle defaults to white; the files views paint transparent on top of this pane.
+        color: Theme.background
         property var pane
         property int paneIndex
         property real panePreferredWidth: win.width / Math.max(1, Workspace.paneCount)
