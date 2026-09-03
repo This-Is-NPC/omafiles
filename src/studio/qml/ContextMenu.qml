@@ -117,6 +117,9 @@ Item {
                     radius: Theme.rounding
                     color: list.currentIndex === itemRow.index
                            ? Theme.fill(Theme.accent, 0.18) : "transparent"
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: itemRow.modelData.label
+
 
                     Text {
                         anchors.verticalCenter: parent.verticalCenter

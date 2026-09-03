@@ -69,6 +69,8 @@ public:
     Q_INVOKABLE void activateSelection();
     Q_INVOKABLE void menuForSelection();
     Q_INVOKABLE void zoomBy(qreal factor);
+    Q_INVOKABLE void panBy(qreal dx, qreal dy);
+    Q_INVOKABLE QPointF pan() const;
 
 signals:
     void indexChanged();

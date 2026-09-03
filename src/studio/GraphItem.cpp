@@ -677,6 +677,18 @@ void GraphItem::zoomBy(qreal factor)
     update();
 }
 
+void GraphItem::panBy(qreal dx, qreal dy)
+{
+    m_pan += QPointF(dx, dy);
+    emit viewChanged();
+    update();
+}
+
+QPointF GraphItem::pan() const
+{
+    return m_pan;
+}
+
 void GraphItem::wheelEvent(QWheelEvent *event)
 {
     const qreal steps = event->angleDelta().y() / 120.0;

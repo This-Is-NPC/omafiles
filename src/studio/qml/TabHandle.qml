@@ -100,6 +100,9 @@ FocusScope {
             anchors.bottom: parent.bottom
             width: handle.closeColumn
 
+            Accessible.role: Accessible.Button
+            Accessible.name: "Close tab"
+
             Text {
                 anchors.centerIn: parent
                 text: "×"

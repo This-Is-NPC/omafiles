@@ -36,6 +36,8 @@ Window {
     property bool editingPath: false
     property string focusRegion: "list"
     property bool pendingG: false
+    property var paneItems: ({})
+
 
     readonly property var activeTab: Workspace.currentTab
     readonly property var activeFolder: activeFilesRoot ? activeFilesRoot.folder : null
@@ -109,6 +111,8 @@ Window {
             { key: "Ctrl Shift Tab", label: "previous tab" },
             { key: "Alt 1…9", label: "go to tab" },
             { key: "Ctrl \\", label: "split right" },
+            { key: "Ctrl ,", label: "narrow the pane" },
+            { key: "Ctrl .", label: "widen the pane" },
             { key: "Ctrl Shift w", label: "close pane" },
             { key: "Alt h l", label: "focus pane" },
             { key: "Alt ← →", label: "focus pane" },
@@ -125,6 +129,7 @@ Window {
             { key: "Enter", label: "open a file, list a tag" },
             { key: "Menu", label: "menu for a file node" },
             { key: "+ - =", label: "zoom" },
+            { key: "Shift h j k l", label: "pan" },
             { key: "0", label: "reset the view" } ] },
         { title: "window", keys: [
             { key: ":", label: "commands" },
@@ -420,6 +425,8 @@ Window {
                 if (activeTab)
                     activeTab.toggleHidden()
                 return true
+            case Qt.Key_Comma: return resizeFocusedPane(-40)
+            case Qt.Key_Period: return resizeFocusedPane(40)
             }
             return false
         }
@@ -438,6 +445,14 @@ Window {
             }
         }
         return false
+    }
+
+    function resizeFocusedPane(delta) {
+        const pane = paneItems[Workspace.focusedPane]
+        if (!pane)
+            return false
+        pane.panePreferredWidth = Math.max(280, pane.panePreferredWidth + delta)
+        return true
     }
 
     function handleTagKey(event, text) {
@@ -543,6 +558,18 @@ Window {
         const graph = activeGraph
         if (!graph)
             return false
+        if (event.modifiers & Qt.ShiftModifier) {
+            switch (event.key) {
+            case Qt.Key_H:
+            case Qt.Key_Left: graph.panBy(-40, 0); return true
+            case Qt.Key_L:
+            case Qt.Key_Right: graph.panBy(40, 0); return true
+            case Qt.Key_K:
+            case Qt.Key_Up: graph.panBy(0, -40); return true
+            case Qt.Key_J:
+            case Qt.Key_Down: graph.panBy(0, 40); return true
+            }
+        }
         if (handleMoveKey(event, text))
             return true
         if (handleEndKey(event, text, true))
@@ -657,6 +684,8 @@ Window {
 
         Keys.onPressed: function (event) { win.handleKey(event) }
 
+        Component.onCompleted: forceActiveFocus()
+
         Column {
             anchors.fill: parent
             spacing: 0
@@ -719,6 +748,18 @@ Window {
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 0
+                        Accessible.role: Accessible.Button
+                        Accessible.name: crumbs.full
+                        Accessible.focusable: win.onFiles && crumbs.full !== ""
+                        activeFocusOnTab: win.onFiles && crumbs.full !== ""
+                        Keys.onReturnPressed: function (event) {
+                            win.startPathEdit()
+                            event.accepted = true
+                        }
+                        Keys.onSpacePressed: function (event) {
+                            win.startPathEdit()
+                            event.accepted = true
+                        }
 
                         // A tag listing spans the index, so there is no path to
                         // print: it is spelled `#tag`, the way the graph and
@@ -813,8 +854,7 @@ Window {
                         required property int index
                         pane: modelData
                         paneIndex: index
-                        C.SplitView.preferredWidth: win.width / Math.max(1, Workspace.paneCount)
-                        C.SplitView.minimumWidth: 280
+                        C.SplitView.preferredWidth: panePreferredWidth
                     }
                 }
             }
@@ -1020,7 +1060,10 @@ Window {
         objectName: "pane"
         property var pane
         property int paneIndex
-        color: Theme.background
+        property real panePreferredWidth: win.width / Math.max(1, Workspace.paneCount)
+        C.SplitView.minimumWidth: 280
+
+        Component.onCompleted: win.paneItems[paneIndex] = paneRoot
 
         // Any press anywhere in this pane makes it the focused one.
         //

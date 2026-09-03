@@ -170,6 +170,9 @@ Item {
             color: Theme.fill(Theme.accent, 0.14)
             border.width: 1
             border.color: Theme.fill(Theme.accent, 0.35)
+            Accessible.role: Accessible.StaticText
+            Accessible.name: "+" + strip.hiddenCount + " more tags"
+
 
             Text {
                 id: overflowLeadingMark
@@ -224,6 +227,9 @@ Item {
             color: Theme.fill(Theme.accent, 0.14)
             border.width: 1
             border.color: Theme.fill(Theme.accent, 0.35)
+            Accessible.role: Accessible.StaticText
+            Accessible.name: "+" + strip.hiddenCount + " more tags"
+
 
             Text {
                 id: overflowTrailingMark

@@ -198,6 +198,10 @@ private slots:
     void countsEveryNameAFolderHolds();
     void writesTheDocumentationShots();
     void tagStripSaysHowManyTagsDoNotFit();
+    void namesTheMenuRowTheOverflowAndTheTabClose();
+    void reachesThePathBarWithTab();
+    void pansTheGraphWithShiftHjk();
+    void resizesTheSplitWithCtrlComma();
 
 private:
     QQuickWindow *window() const;
@@ -792,6 +796,39 @@ static QQuickItem *viewItemAt(QObject *view, int index)
                               Q_RETURN_ARG(QQuickItem *, item),
                               Q_ARG(int, index));
     return item;
+}
+
+static QQuickItem *findAccessibleItem(QQuickItem *root, QAccessible::Role role,
+                                      const QString &name = QString())
+{
+    if (!root)
+        return nullptr;
+    QList<QQuickItem *> queue{root};
+    while (!queue.isEmpty()) {
+        QQuickItem *item = queue.takeFirst();
+        if (QAccessibleInterface *iface = QAccessible::queryAccessibleInterface(item)) {
+            if (iface->role() == role
+                && (name.isEmpty() || iface->text(QAccessible::Name) == name))
+                return item;
+        }
+        queue.append(item->childItems());
+    }
+    return nullptr;
+}
+
+static QAccessibleInterface *accessibleOn(QQuickItem *item)
+{
+    return item ? QAccessible::queryAccessibleInterface(item) : nullptr;
+}
+
+static bool focusIsInsidePathCrumbs(QQuickWindow *window)
+{
+    QQuickItem *focus = window ? window->activeFocusItem() : nullptr;
+    for (QQuickItem *item = focus; item; item = item->parentItem()) {
+        if (item->objectName() == QLatin1String("pathCrumbs"))
+            return true;
+    }
+    return false;
 }
 
 
@@ -2837,6 +2874,8 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         // worksTabsAndPanesFromTheKeyboard
         "Ctrl t", "Ctrl w", "Delete", "Ctrl Tab", "Ctrl Shift Tab", "Alt 1…9",
         "Ctrl \\", "Ctrl Shift w", "Alt h l", "Alt ← →",
+        // resizesTheSplitWithCtrlComma
+        "Ctrl ,", "Ctrl .",
         "Ctrl p", "Tab",
     };
 
@@ -3472,6 +3511,237 @@ void TestStudio::tagStripSaysHowManyTagsDoNotFit()
     QVERIFY2(fits, "no tag strip found for two.md");
     QCOMPARE(fits->property("hiddenCount").toInt(), 0);
     QCOMPARE(fits->property("visibleCount").toInt(), 1);
+}
+
+void TestStudio::namesTheMenuRowTheOverflowAndTheTabClose()
+{
+    focusRow(QStringLiteral("two.md"));
+    QObject *root = m_engine->rootObjects().first();
+
+    key('m');
+    QVERIFY2(root->property("blocked").toBool(), "m did not open the row menu");
+
+    QQuickItem *menuItem = findAccessibleItem(window()->contentItem(),
+                                              QAccessible::MenuItem,
+                                              QStringLiteral("Open"));
+    if (!menuItem) {
+        QQuickItem *menuPopup = findAccessibleItem(window()->contentItem(),
+                                                   QAccessible::PopupMenu,
+                                                   QStringLiteral("Menu"));
+        QVERIFY2(menuPopup, "no row menu popup exposed to assistive tech");
+        QObject *list = nullptr;
+        QList<QQuickItem *> queue{menuPopup};
+        while (!queue.isEmpty() && !list) {
+            QQuickItem *item = queue.takeFirst();
+            if (item->metaObject()->className() == QByteArray("QQuickListView"))
+                list = item;
+            queue.append(item->childItems());
+        }
+        QVERIFY2(list, "row menu has no list for the current item");
+        menuItem = viewItemAt(list, list->property("currentIndex").toInt());
+    }
+    QVERIFY(menuItem);
+    QAccessibleInterface *menuIface = accessibleOn(menuItem);
+    if (!menuIface)
+        QSKIP("QAccessible cannot see QML attached Accessible names in offscreen");
+    QCOMPARE(menuIface->text(QAccessible::Name), QStringLiteral("Open"));
+    key(Qt::Key_Escape);
+    settle();
+
+    const QString path = QDir(m_tree.path()).filePath(QStringLiteral("manytags.txt"));
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("x");
+    }
+    QStringList tags;
+    QStringList jsonTags;
+    for (int i = 0; i < 16; ++i) {
+        const QString tag = QString(QChar('a' + i));
+        tags << tag;
+        jsonTags << QStringLiteral("\"%1\"").arg(tag);
+    }
+    {
+        QFile index(QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl")));
+        QVERIFY(index.open(QIODevice::Append | QIODevice::Text));
+        index.write(QStringLiteral("{\"path\":\"%1\",\"tags\":[%2]}\n")
+                        .arg(path, jsonTags.join(QLatin1Char(',')))
+                        .toUtf8());
+    }
+    m_index->reload();
+    settle();
+    tab()->setViewMode(QStringLiteral("details"));
+    settle();
+    focusRow(QStringLiteral("manytags.txt"));
+    settle();
+
+    QObject *overflowing = nullptr;
+    for (QQuickItem *item : itemsNamed(QStringLiteral("tagStrip"))) {
+        if (item->property("tags").toStringList().size() != tags.size())
+            continue;
+        if (!item->isVisible())
+            continue;
+        if (item->property("hiddenCount").toInt() <= 0)
+            continue;
+        overflowing = item;
+        break;
+    }
+    QVERIFY2(overflowing, "no tag strip reported hidden tags for manytags.txt");
+
+    auto *strip = qobject_cast<QQuickItem *>(overflowing);
+    QVERIFY(strip);
+    const bool alignRight = strip->property("alignRight").toBool();
+    const QString remainderName = alignRight
+            ? QStringLiteral("tagStripOverflowLeading")
+            : QStringLiteral("tagStripOverflowTrailing");
+    QQuickItem *remainder = nullptr;
+    QList<QQuickItem *> queue{strip};
+    while (!queue.isEmpty()) {
+        QQuickItem *item = queue.takeFirst();
+        if (item->objectName() == remainderName) {
+            remainder = item;
+            break;
+        }
+        queue.append(item->childItems());
+    }
+    QVERIFY2(remainder, "no +N remainder chip on overflowing tag strip");
+    QAccessibleInterface *overflowIface = accessibleOn(remainder);
+    if (!overflowIface)
+        QSKIP("QAccessible cannot see QML attached Accessible names in offscreen");
+    QVERIFY2(overflowIface->text(QAccessible::Name).contains(QStringLiteral("more tags")),
+             qPrintable(QStringLiteral("overflow accessible name was: %1")
+                                .arg(overflowIface->text(QAccessible::Name))));
+
+    const QList<QQuickItem *> handles = itemsNamed(QStringLiteral("tabHandle"));
+    QVERIFY2(!handles.isEmpty(), "no tab handle to read a close mark from");
+    QAccessibleInterface *closeIface = nullptr;
+    queue = QList<QQuickItem *>{handles.first()};
+    while (!queue.isEmpty() && !closeIface) {
+        QQuickItem *item = queue.takeFirst();
+        if (QAccessibleInterface *iface = accessibleOn(item)) {
+            if (iface->role() == QAccessible::Button) {
+                closeIface = iface;
+                break;
+            }
+        }
+        queue.append(item->childItems());
+    }
+    if (!closeIface) {
+        if (QAccessibleInterface *tabIface = accessibleOn(handles.first())) {
+            for (int i = 0; i < tabIface->childCount(); ++i) {
+                if (QAccessibleInterface *child = tabIface->child(i)) {
+                    if (child->role() == QAccessible::Button) {
+                        closeIface = child;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (!closeIface && !accessibleOn(handles.first()))
+        QSKIP("QAccessible cannot see QML attached Accessible names in offscreen");
+    QVERIFY2(closeIface, "no Close tab button exposed to assistive tech");
+    QCOMPARE(closeIface->text(QAccessible::Name), QStringLiteral("Close tab"));
+}
+
+void TestStudio::reachesThePathBarWithTab()
+{
+    QObject *root = m_engine->rootObjects().first();
+    QQuickItem *before = window()->activeFocusItem();
+
+    bool reachedCrumbs = false;
+    for (int i = 0; i < 24; ++i) {
+        key(Qt::Key_Tab);
+        if (focusIsInsidePathCrumbs(window())) {
+            reachedCrumbs = true;
+            break;
+        }
+    }
+    QVERIFY2(reachedCrumbs, "Tab did not reach the path crumbs");
+
+    key(Qt::Key_Return);
+    QVERIFY2(root->property("editingPath").toBool(),
+             "Return on path crumbs did not start path edit");
+    key(Qt::Key_Escape);
+    QVERIFY2(!root->property("editingPath").toBool(),
+             "Escape did not cancel path edit");
+
+    key(Qt::Key_Escape);
+    QCOMPARE(window()->activeFocusItem(), before);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+
+    const int cursorBefore = cursor();
+    key('j');
+    QVERIFY2(cursor() != cursorBefore, "Escape did not give the keyboard back to the list");
+}
+
+void TestStudio::pansTheGraphWithShiftHjk()
+{
+    QObject *root = m_engine->rootObjects().first();
+    m_workspace->addTab(QStringLiteral("graph"));
+    settle();
+    QObject *graph = root->property("activeGraph").value<QObject *>();
+    QVERIFY(graph);
+    auto *graphItem = qobject_cast<GraphItem *>(graph);
+    QVERIFY(graphItem);
+
+    const QPointF start = graphItem->pan();
+    key('h', Qt::ShiftModifier);
+    const QPointF left = graphItem->pan();
+    QVERIFY2(qAbs(left.x() - start.x() + 40.0) < 0.5,
+             qPrintable(QStringLiteral("Shift+h pan.x was %1, expected %2")
+                                .arg(left.x())
+                                .arg(start.x() - 40.0)));
+
+    key('l', Qt::ShiftModifier);
+    const QPointF right = graphItem->pan();
+    QVERIFY2(qAbs(right.x() - left.x() - 40.0) < 0.5,
+             qPrintable(QStringLiteral("Shift+l pan.x was %1, expected %2")
+                                .arg(right.x())
+                                .arg(left.x() + 40.0)));
+
+    m_workspace->closeCurrentTab();
+    settle();
+}
+
+void TestStudio::resizesTheSplitWithCtrlComma()
+{
+    const int panesBefore = m_workspace->paneCount();
+    if (panesBefore == 1)
+        key(Qt::Key_Backslash, Qt::ControlModifier);
+    QCOMPARE(m_workspace->paneCount(), 2);
+
+    const int focused = m_workspace->focusedPane();
+    QQuickItem *pane = nullptr;
+    for (QQuickItem *item : itemsNamed(QStringLiteral("pane"))) {
+        if (item->property("paneIndex").toInt() == focused) {
+            pane = item;
+            break;
+        }
+    }
+    QVERIFY2(pane, "no QML pane item for the focused pane");
+
+    const qreal before = pane->property("panePreferredWidth").toReal();
+    key(Qt::Key_Period, Qt::ControlModifier);
+    const qreal wider = pane->property("panePreferredWidth").toReal();
+    QVERIFY2(qAbs(wider - before - 40.0) < 0.5,
+             qPrintable(QStringLiteral("Ctrl+. width was %1, expected %2")
+                                .arg(wider)
+                                .arg(before + 40.0)));
+
+    key(Qt::Key_Comma, Qt::ControlModifier);
+    const qreal narrower = pane->property("panePreferredWidth").toReal();
+    QVERIFY2(qAbs(narrower - wider + 40.0) < 0.5,
+             qPrintable(QStringLiteral("Ctrl+, width was %1, expected %2")
+                                .arg(narrower)
+                                .arg(wider - 40.0)));
+    QVERIFY2(narrower >= 280.0,
+             qPrintable(QStringLiteral("Ctrl+, shrank the pane below 280: %1").arg(narrower)));
+
+    if (panesBefore == 1) {
+        key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+        QCOMPARE(m_workspace->paneCount(), 1);
+    }
 }
 
 QTEST_MAIN(TestStudio)
