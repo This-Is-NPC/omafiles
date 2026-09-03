@@ -3619,10 +3619,9 @@ def check_quiet_takes_the_note_beside_a_success(data, workspace):
         rowless.chmod(0o644)
         stale.chmod(0o644)
 
-    # And the rule is written down, in both places somebody reads it.
-    for text in (" ".join((ROOT / "docs/cli.md").read_text().split()),
-                 " ".join((ROOT / "README.md").read_text().split())):
-        assert "--quiet" in text and "the row is the record" in text
+    # And the rule is written down where the CLI reference lives.
+    reference = " ".join((ROOT / "docs/cli.md").read_text().split())
+    assert "--quiet" in reference and "the row is the record" in reference
 
 
 def check_a_source_it_cannot_read_through_is_missing(data, workspace):
@@ -3676,10 +3675,12 @@ def check_a_source_it_cannot_read_through_is_missing(data, workspace):
     assert swept.returncode == 0, swept.stderr
     assert not os.path.islink(landed)
 
-    # And the rule is written down, in both places somebody reads it.
-    for text in (" ".join((ROOT / "docs/cli.md").read_text().split()),
-                 " ".join((ROOT / "README.md").read_text().split())):
-        assert "symlink is the link it is to the verbs that act on a name" in text
+    # And the rule is written down in the CLI reference; README points there.
+    reference = " ".join((ROOT / "docs/cli.md").read_text().split())
+    assert "symlink is the link it is to the verbs that act on a name" in reference
+    readme_text = (ROOT / "README.md").read_text()
+    assert "symlink" in " ".join(readme_text.split())
+    assert "docs/cli.md" in readme_text
 
 
 def check_an_incomplete_answer_is_not_a_success(data, workspace):
@@ -3837,7 +3838,6 @@ def check_the_divergences_are_written_down(data, workspace):
         assert real.returncode == 1, real.stderr
         assert "Permission denied" in real.stderr, real.stderr
         assert "can only be found out by making the write" in reference
-        assert "can only be found out by making the write" in readme
 
         # 3. tag add exits 0 for that same refused write and reindex exits 1,
         # because they promise different things: the row is the record, and a
@@ -3849,7 +3849,6 @@ def check_the_divergences_are_written_down(data, workspace):
         assert run(data, "tag", "ls", "--", str(stubborn)).stdout.split() \
             == ["extra", "sticky"], "the row did not land"
         assert "the run still exits 0" in reference
-        assert "`tag add` still exits 0" in readme
     finally:
         stubborn.chmod(0o644)
 
@@ -4666,10 +4665,8 @@ def check_a_batch_line_is_not_a_shell_line(data, workspace):
 
     # Written down where a reader looks for it, not only in the failure.
     reference = " ".join((ROOT / "docs/cli.md").read_text().split())
-    readme = " ".join((ROOT / "README.md").read_text().split())
-    for text in (reference, readme):
-        assert "in the first column is a comment" in text
-        assert "no `$VAR`, no `~`, no globbing" in text
+    assert "in the first column is a comment" in reference
+    assert "no `$VAR`, no `~`, no globbing" in reference
 
 
 def check_verify_says_only_what_it_did(data, workspace):
@@ -4723,9 +4720,7 @@ def check_verify_says_only_what_it_did(data, workspace):
     assert str(tabbed.resolve()) in named and str(broken.resolve()) in named, rows
 
     reference = " ".join((ROOT / "docs/cli.md").read_text().split())
-    readme = " ".join((ROOT / "README.md").read_text().split())
     assert "cannot spell a path holding a tab or a newline" in reference
-    assert "cannot spell a path holding a tab or a newline" in readme
 
 
 def check_a_preview_runs_where_a_read_runs(data, workspace):
@@ -5143,10 +5138,8 @@ def check_a_verify_detail_stays_one_field(data, workspace):
     os.removexattr(subject, "user.omafiles.tags")
 
     reference = " ".join((ROOT / "docs/cli.md").read_text().split())
-    readme = " ".join((ROOT / "README.md").read_text().split())
-    for text in (reference, readme):
-        assert "a tab there is written `\\t`, a newline `\\n`" in text
-        assert "U+FFFD" in text
+    assert "a tab there is written `\\t`, a newline `\\n`" in reference
+    assert "U+FFFD" in reference
 
 
 def check_batch_json_prints_nothing_on_rollback(data, workspace):
