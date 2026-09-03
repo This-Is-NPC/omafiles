@@ -9,7 +9,7 @@ filesystem.
 
 ## Build
 
-No package yet. From a checkout:
+From a checkout:
 
 ```bash
 mise install
@@ -17,6 +17,11 @@ mise run deps      # Qt 6 + qmake
 mise run build     # build/bin/omafiles and build/bin/omafiles-studio
 mise run studio    # open the window
 ```
+
+Released under the MIT license. `pkgbuild/omafiles.desktop` and `pkgbuild/omafiles.svg`
+are the desktop entry and icon. The Arch recipe is in the sibling `omarchy-pkgs` repo
+at `pkgbuilds/omafiles`; it installs `omafiles` and `omafiles-studio`. There is no
+tagged tarball yet, so that PKGBUILD's `sha256sums` is `SKIP` until v0.1.0.
 
 ## Tagging
 
