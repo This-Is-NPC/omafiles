@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Push gate — installed by `mise run hooks:install`.
+# Execs `.scripts/verify.sh`, same definition of green as pre-commit.
+# Skips when only deletions are pushed. Bypass: `git push --no-verify`.
+set -uo pipefail
+
+remote_name="${1:-the remote}"
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || root=""
+if [ -z "$root" ]; then
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+cd "$root" || exit 1
+
+absent_object="0000000000000000000000000000000000000000"
+publishing=0
+while read -r local_ref local_sha _remote_ref remote_sha; do
+  [ -z "${local_ref:-}" ] && continue
+  if [ "${local_sha:-$absent_object}" != "$absent_object" ]; then
+    publishing=1
+  fi
+done
+
+if [ "$publishing" -eq 0 ]; then
+  echo "pre-push: no new commit is going to ${remote_name} — the gate did not run."
+  exit 0
+fi
+
+if [ ! -x ".scripts/verify.sh" ]; then
+  echo "pre-push: PUSH REFUSED — .scripts/verify.sh is missing or not executable." >&2
+  exit 1
+fi
+
+echo "pre-push: running \`.scripts/verify.sh\` — the push depends on it."
+started=$SECONDS
+.scripts/verify.sh
+status=$?
+elapsed=$((SECONDS - started))
+if [ "$status" -ne 0 ]; then
+  echo "pre-push: PUSH REFUSED — the gate failed in ${elapsed}s. Reproduce with: .scripts/verify.sh" >&2
+  exit 1
+fi
+echo "pre-push: the gate passed in ${elapsed}s — push cleared."

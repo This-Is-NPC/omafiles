@@ -1,0 +1,24 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/Main.qml</file>
+        <file>qml/Chip.qml</file>
+        <file>qml/FocusableControl.qml</file>
+        <file>qml/ColumnHead.qml</file>
+        <file>qml/Details.qml</file>
+        <file>qml/Dock.qml</file>
+        <file>qml/Entry.qml</file>
+        <file>qml/HelpSheet.qml</file>
+        <file>qml/Hints.qml</file>
+        <file>qml/Icon.qml</file>
+        <file>qml/KeyCap.qml</file>
+        <file>qml/Label.qml</file>
+        <file>qml/Rule.qml</file>
+        <file>qml/TabHandle.qml</file>
+        <file>qml/TagStrip.qml</file>
+        <file>qml/ToolButton.qml</file>
+        <file>qml/StatusBar.qml</file>
+        <file>qml/CommandPalette.qml</file>
+        <file>qml/ContextMenu.qml</file>
+        <file>qml/Tooltip.qml</file>
+    </qresource>
+</RCC>
