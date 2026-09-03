@@ -19,7 +19,7 @@ mise run studio    # open the window
 
 Released under the MIT license. `pkgbuild/omafiles.desktop` and `pkgbuild/omafiles.svg`
 are the desktop entry and icon. The Arch recipe is in the sibling `omarchy-pkgs` repo
-at `pkgbuilds/omafiles`; `sha256sums` is `SKIP` until the v0.1.0 tarball exists.
+at `pkgbuilds/omafiles`.
 
 ## Shortcuts
 
