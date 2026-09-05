@@ -247,6 +247,7 @@ def main():
         check_a_verify_detail_stays_one_field(data, workspace)
         check_batch_json_prints_nothing_on_rollback(data, workspace)
         check_has_on_a_path_nobody_may_look_at(data, workspace)
+        check_an_unplugged_root_is_not_a_deleted_file(data, workspace)
 
     print("ok")
 
@@ -2041,7 +2042,10 @@ def listed_verbs(text):
         words = line.split()
         if not words:
             continue
-        found.add(f"{words[0]} {words[1]}" if words[0] == "tag" and len(words) > 1
+        # `tag` and `roots` are the two verbs with subcommands of their own, so
+        # what a reader reads there is two words and not one.
+        found.add(f"{words[0]} {words[1]}"
+                  if words[0] in ("tag", "roots") and len(words) > 1
                   else words[0])
     return found
 
@@ -5201,6 +5205,109 @@ def check_has_on_a_path_nobody_may_look_at(data, workspace):
 
     ok = run(data, "has", "--tag", "haslook", "--", str(subject))
     assert ok.returncode == 0, ok.stderr
+
+
+def check_an_unplugged_root_is_not_a_deleted_file(data, workspace):
+    """The whole reason a root can be declared, end to end.
+
+    Unmount, prune, remount somewhere else, tags still in place. Without a
+    declared root an unmounted tree is ENOENT from a stat, which is exactly what
+    every file in it having been deleted looks like -- so prune drops the rows,
+    and on a filesystem with no `user.*` namespace to mirror them that was the
+    only copy of those tags on the machine.
+
+    Nothing is really mounted here. `--check` is a name that exists only when
+    the storage does, which is the surer of the two tests anyway: an unmounted
+    mount point is usually still an empty directory."""
+    home = workspace / "rootcase"
+    config = home / "config"
+    here = home / "mnt-a"
+    elsewhere = home / "mnt-b"
+    for path in (config, here, elsewhere):
+        path.mkdir(parents=True)
+    env = {"XDG_CONFIG_HOME": str(config)}
+
+    (here / "docs").mkdir()
+    contract = here / "docs" / "contract.pdf"
+    contract.write_text("c")
+    marker = here / ".plugged-in"
+    marker.write_text("")
+
+    declared = run(data, "roots", "add", "--id", "archive", "--check", ".plugged-in",
+                   "--", str(here), extra_env=env)
+    assert declared.returncode == 0, declared.stderr
+    tagged = run(data, "tag", "add", "--tag", "contract", "--", str(contract), extra_env=env)
+    assert tagged.returncode == 0, tagged.stderr
+
+    # The row is written as the root and the rest of the way there, which is
+    # what makes the next part possible at all.
+    rows = [json.loads(line) for line in run(data, "export", extra_env=env).stdout.splitlines()]
+    stored = [row for row in rows if row["path"].endswith("contract.pdf")]
+    assert stored, rows
+    raw = (data / "omafiles" / "index.jsonl").read_text().splitlines()
+    written = [json.loads(line) for line in raw if "contract.pdf" in line]
+    assert written[0]["root"] == "archive", written
+    assert written[0]["path"] == "docs/contract.pdf", written
+
+    listed = run(data, "roots", extra_env=env)
+    assert listed.stdout.splitlines() == [f"archive\t{here.resolve()}\there"], listed.stdout
+
+    # Unplugged: the storage goes, the mount point stays, exactly as it would.
+    (here / "docs").rename(home / "docs-away")
+    marker.rename(home / "marker-away")
+    away = run(data, "roots", extra_env=env)
+    assert away.stdout.splitlines() == [f"archive\t{here.resolve()}\taway"], away.stdout
+
+    # The command that used to eat the tags.
+    pruned = run(data, "--yes", "prune", "--all", extra_env=env)
+    assert pruned.returncode == 0, pruned.stderr
+    assert str(contract.resolve()) not in pruned.stdout, pruned.stdout
+    assert "root archive is declared and not here" in pruned.stderr, pruned.stderr
+    assert "contract.pdf" in run(data, "export", extra_env=env).stdout
+
+    # And verify says it could not check the row rather than calling it a
+    # problem it found, so a healthy tree with a drive in a drawer exits 0.
+    checked = run(data, "verify", str(here), extra_env=env)
+    assert checked.returncode == 0, (checked.returncode, checked.stdout, checked.stderr)
+    assert "was not checked" in checked.stderr, checked.stderr
+
+    # Remounted somewhere else. The declaration moves; the rows do not.
+    (home / "docs-away").rename(elsewhere / "docs")
+    (home / "marker-away").rename(elsewhere / ".plugged-in")
+    roots_file = config / "omafiles" / "roots.jsonl"
+    moved = [json.loads(line) for line in roots_file.read_text().splitlines() if line.strip()]
+    for root in moved:
+        if root["id"] == "archive":
+            root["path"] = str(elsewhere.resolve())
+    roots_file.write_text("".join(json.dumps(root) + "\n" for root in moved))
+
+    back = run(data, "ls", "--tag", "contract", extra_env=env)
+    assert back.returncode == 0, back.stderr
+    assert back.stdout.splitlines() == [str((elsewhere / "docs" / "contract.pdf").resolve())], \
+        back.stdout
+
+    # `migrate` is never required -- a row takes its new form the next time
+    # anything writes it -- but it says how many the declaration took in.
+    migrated = run(data, "roots", "migrate", extra_env=env)
+    assert migrated.returncode == 0, migrated.stderr
+    assert "1 under a root" in migrated.stdout, migrated.stdout
+
+    # Undeclaring carries its rows with it, as the absolute paths they resolve
+    # to now: a row names a declaration, so leaving them behind would leave rows
+    # nothing can place and every verb refusing to read the index.
+    gone = run(data, "roots", "rm", "--id", "archive", extra_env=env)
+    assert gone.returncode == 0, gone.stderr
+    absolute = [json.loads(line) for line in
+                (data / "omafiles" / "index.jsonl").read_text().splitlines()
+                if "contract.pdf" in line]
+    assert "root" not in absolute[0], absolute
+    assert absolute[0]["path"] == str((elsewhere / "docs" / "contract.pdf").resolve()), absolute
+
+    # And with no root declared, the old behaviour is exactly the old behaviour.
+    (elsewhere / "docs" / "contract.pdf").unlink()
+    swept = run(data, "--yes", "prune", "--all", extra_env=env)
+    assert swept.returncode == 0, swept.stderr
+    assert "contract.pdf" in swept.stdout, swept.stdout
 
 
 if __name__ == "__main__":

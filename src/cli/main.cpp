@@ -1,5 +1,6 @@
 #include "Open.h"
 #include "Paths.h"
+#include "Roots.h"
 #include "Store.h"
 #include "Tag.h"
 #include "Xattr.h"
@@ -116,7 +117,8 @@ bool takesValue(const QString &arg)
 {
     return arg == QLatin1String("-t") || arg == QLatin1String("--tag")
         || arg == QLatin1String("--any") || arg == QLatin1String("--ext")
-        || arg == QLatin1String("--since") || arg == QLatin1String("--from");
+        || arg == QLatin1String("--since") || arg == QLatin1String("--from")
+        || arg == QLatin1String("--id") || arg == QLatin1String("--check");
 }
 
 void applyGlobal(Globals *g, const QString &arg)
@@ -242,6 +244,15 @@ Moving:
                                     operand they cannot take
 
 Keeping it true:
+  roots ls                          the declared roots, and whether each is
+                                    here; `roots` alone prints it too
+  roots add --id <id> [--mount]     declare one; --check <path> proves it is
+            [--check <p>] <path>    mounted more surely than the mount point
+  roots rm  --id <id>               its rows come with it, as absolute paths
+  roots migrate                     rewrite every row in the form roots give it
+                                    a row on a declared root that is not here
+                                    is unreachable, not missing: prune and
+                                    verify both step over it
   prune    [dir] [--all]            drop rows whose file is gone (asks first)
                                     a directory, or --all for the whole index
   reindex  [--from-xattr] [dir]     rebuild rows from the files' own tags
@@ -373,6 +384,7 @@ struct Takes {
     bool from = false;
     bool fromXattr = false;
     bool all = false;
+    bool root = false;
 };
 
 // The six `tag` subcommands, each with its own flags. `dispatch` gates the
@@ -1111,7 +1123,7 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
                 // will not stat one of them, and dropping that entry in silence
                 // is a short list reported as a whole one.
                 const PathState state = pathState(canonical, &error);
-                if (state == PathState::Unknown) {
+                if (state == PathState::Unknown || state == PathState::Unreachable) {
                     skipped.append(error);
                     continue;
                 }
@@ -1139,7 +1151,7 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
             // "I may not look" is not "it is gone". The row is still skipped
             // -- nothing here can list what the system will not describe -- but
             // it is skipped out loud.
-            if (state == PathState::Unknown) {
+            if (state == PathState::Unknown || state == PathState::Unreachable) {
                 skipped.append(error);
                 continue;
             }
@@ -1240,7 +1252,18 @@ bool confirmed(const Globals &g, const QString &what, const QStringList &paths, 
     return answer == QLatin1String("y") || answer == QLatin1String("yes");
 }
 
-int cmdTags(const Globals &g, Session &s, const QStringList &positionals)
+// The vocabulary, and under `--tag`, the part of it that still divides a set.
+//
+// `tags --tag work` counts the tags that appear beside `work`, over the rows
+// carrying it -- which is what the window walks when it reads tags as folders.
+// The tags asked after are left out of the answer: they are the scope, not a
+// division of it, and `work` is on every row by construction.
+//
+// A tag on every row of the scope is still printed. It divides nothing, so the
+// window does not offer it as a folder, but that is a rule about what is worth
+// walking into and this verb is asked what is there.
+int cmdTags(const Globals &g, Session &s, const QStringList &scope,
+            const QStringList &positionals)
 {
     int status = kOk;
     const QString dir = optionalDir(positionals, &status);
@@ -1255,20 +1278,31 @@ int cmdTags(const Globals &g, Session &s, const QStringList &positionals)
     for (const Record &record : s.store.records()) {
         if (!dir.isEmpty() && !isUnderDirectory(record.path, dir))
             continue;
+        bool carries = true;
+        for (const QString &tag : scope) {
+            if (!record.tags.contains(tag)) {
+                carries = false;
+                break;
+            }
+        }
+        if (!carries)
+            continue;
         // The same question `ls` asks, and for the same reason: a tree nobody
         // may open is not a tree of deleted files, and this is the verb people
         // read to find out what tags they have. Scoped first, so the note is
         // about the tree that was asked after.
         QString error;
         const PathState state = pathState(record.path, &error);
-        if (state == PathState::Unknown) {
+        if (state == PathState::Unknown || state == PathState::Unreachable) {
             skipped.append(error);
             continue;
         }
         if (state == PathState::Missing)
             continue;
-        for (const QString &tag : record.tags)
-            counts[tag] += 1;
+        for (const QString &tag : record.tags) {
+            if (!scope.contains(tag))
+                counts[tag] += 1;
+        }
     }
     if (g.json) {
         QJsonArray array;
@@ -1333,12 +1367,16 @@ int cmdPrune(const Globals &g, Session &s, bool all, const QStringList &position
         const PathState state = pathState(record.path, &error);
         if (state == PathState::Present)
             continue;
-        // "I may not look" is not "it is gone": a directory chmod'd shut, an
-        // unmounted share or an unplugged drive would otherwise read as
-        // deletion and take with it, on a filesystem that does not carry
-        // `user.*`, the only copy of those tags on the machine. Skipping costs
-        // a stale row somebody can prune tomorrow; guessing costs the tags.
-        if (state == PathState::Unknown) {
+        // "I may not look" is not "it is gone", and neither is "the disk is in
+        // a drawer": a directory chmod'd shut reads as the first, and an
+        // unmounted share or an unplugged drive would read as deletion and take
+        // with it, on a filesystem that does not carry `user.*`, the only copy
+        // of those tags on the machine. The second of the two is the whole
+        // reason a root can be declared -- without one, an unmounted tree is
+        // `ENOENT`, which is exactly what every file in it having been deleted
+        // looks like. Skipping costs a stale row somebody can prune tomorrow;
+        // guessing costs the tags.
+        if (state == PathState::Unknown || state == PathState::Unreachable) {
             skipped.append(error);
             continue;
         }
@@ -1485,7 +1523,7 @@ int cmdRecent(const Globals &g, Session &s, const QStringList &positionals)
         // which is where a silently dropped row hides best.
         QString error;
         const PathState state = pathState(record.path, &error);
-        if (state == PathState::Unknown) {
+        if (state == PathState::Unknown || state == PathState::Unreachable) {
             skipped.append(error);
             continue;
         }
@@ -1551,6 +1589,7 @@ QStringList completionFor(const QStringList &words)
         QStringLiteral("open"),   QStringLiteral("mv"),      QStringLiteral("cp"),
         QStringLiteral("trash"),  QStringLiteral("rm"),      QStringLiteral("prune"),
         QStringLiteral("reindex"), QStringLiteral("verify"), QStringLiteral("export"),
+        QStringLiteral("roots"),
         QStringLiteral("import"), QStringLiteral("batch"),   QStringLiteral("completions")};
     static const QStringList globals = {QStringLiteral("--json"), QStringLiteral("--dry-run"),
                                         QStringLiteral("--yes"), QStringLiteral("--quiet"),
@@ -2987,6 +3026,206 @@ QString escapedDetail(const QString &detail)
 
 // Exit 1 when it found something, the way `diff` does: a check that always
 // succeeds is a check nothing can be built on.
+// The declarations, and the two ways to change them.
+//
+// Read as well as written here rather than left to a text editor, because the
+// interesting half of the answer is not in the file: whether the storage is
+// actually here right now is a question about this machine at this moment, and
+// it is the one that decides whether `prune` may touch the rows under it.
+int cmdRoots(const Globals &g, Session &s, const QString &sub, const QString &id,
+             bool mount, const QString &check, const QStringList &positionals)
+{
+    const QString file = defaultRootsPath();
+    QVector<Root> declared = roots();
+
+    if (sub.isEmpty() || sub == QLatin1String("ls")) {
+        if (g.json) {
+            QJsonArray array;
+            for (const Root &root : declared) {
+                array.append(QJsonObject{
+                    {QStringLiteral("id"), root.id},
+                    {QStringLiteral("path"), root.path},
+                    {QStringLiteral("mount"), root.mount},
+                    {QStringLiteral("check"), root.check},
+                    {QStringLiteral("here"), rootIsReachable(root)},
+                });
+            }
+            printJson(array);
+        } else {
+            for (const Root &root : declared) {
+                out() << root.id << '\t' << root.path << '\t'
+                      << (rootIsReachable(root) ? "here" : "away") << '\n';
+            }
+        }
+        return kOk;
+    }
+
+    if (sub == QLatin1String("add")) {
+        if (positionals.size() != 1) {
+            fail(QStringLiteral("roots add: takes one path"));
+            return kUsage;
+        }
+        if (id.isEmpty()) {
+            fail(QStringLiteral("roots add: --id is required"));
+            return kUsage;
+        }
+        QString error;
+        // Resolved, because everything compared against it is: a root declared
+        // through a symlink would hold no rows at all.
+        PathState state = PathState::Missing;
+        const QString path = canonicalPath(positionals.first(), &error, &state);
+        if (path.isEmpty()) {
+            fail(error);
+            return pathStatus(state);
+        }
+        if (!QFileInfo(path).isDir()) {
+            fail(QStringLiteral("roots add: %1 is not a directory").arg(path));
+            return kUsage;
+        }
+        for (const Root &root : declared) {
+            if (root.id == id) {
+                fail(QStringLiteral("roots add: %1 is already declared, at %2")
+                         .arg(id, root.path));
+                return kUsage;
+            }
+            if (root.path == path) {
+                fail(QStringLiteral("roots add: %1 is already declared, as %2")
+                         .arg(path, root.id));
+                return kUsage;
+            }
+        }
+        declared.append(Root{id, path, mount, check});
+        if (!saveRoots(file, declared, &error)) {
+            fail(error);
+            return kStore;
+        }
+        setRoots(declared);
+        if (g.json)
+            printJson(QJsonObject{{QStringLiteral("id"), id}, {QStringLiteral("path"), path}});
+        else
+            out() << path << '\n';
+        return kOk;
+    }
+
+    if (sub == QLatin1String("rm")) {
+        if (id.isEmpty()) {
+            fail(QStringLiteral("roots rm: --id is required"));
+            return kUsage;
+        }
+        if (!rootById(id)) {
+            fail(QStringLiteral("roots rm: %1 is not declared").arg(id));
+            return kUsage;
+        }
+        // The rows under it come with it, rewritten as the absolute paths they
+        // resolve to now. A row names a declaration, so leaving them behind
+        // would leave rows nothing can place and every verb refusing to read
+        // the index until the line came back -- and that is not a state a
+        // command should be able to put somebody in.
+        //
+        // The index is committed before the config is written. That way the
+        // half-done case is the harmless one: rows that no longer name the
+        // root, beside a declaration nothing references.
+        int status = kOk;
+        if ((status = openSession(&s)) != kOk)
+            return status;
+
+        QVector<Root> kept;
+        for (const Root &root : declared) {
+            if (root.id != id)
+                kept.append(root);
+        }
+        const QVector<Root> before = setRoots(kept);
+
+        int carried = 0;
+        for (const Record &record : s.store.records()) {
+            if (record.root != id)
+                continue;
+            Record rewritten = record;
+            rewritten.root.clear();
+            rewritten.relative.clear();
+            s.store.put(rewritten);
+            ++carried;
+        }
+
+        QString error;
+        if (carried > 0 && !g.dryRun && !s.store.commit(&error)) {
+            setRoots(before);
+            fail(error);
+            return kStore;
+        }
+        if (g.dryRun) {
+            setRoots(before);
+            if (g.json)
+                printJson(QJsonObject{{QStringLiteral("id"), id},
+                                      {QStringLiteral("rows"), carried}});
+            else
+                out() << carried << " row(s) would be written back as absolute paths\n";
+            return kOk;
+        }
+        if (!saveRoots(file, kept, &error)) {
+            fail(error);
+            return kStore;
+        }
+        if (g.json)
+            printJson(QJsonObject{{QStringLiteral("id"), id},
+                                  {QStringLiteral("rows"), carried}});
+        else if (carried > 0)
+            out() << carried << " row(s) written back as absolute paths\n";
+        return kOk;
+    }
+
+    if (sub == QLatin1String("migrate")) {
+        // A read and a write of the same rows, which is all a migration is: the
+        // form on disk is decided when a row is written, so every row is
+        // rewritten under whichever root holds it now -- or, for one whose root
+        // has gone away, back into the absolute path it can still be placed by.
+        int status = kOk;
+        if ((status = openSession(&s)) != kOk)
+            return status;
+        int rooted = 0;
+        int absolute = 0;
+        QStringList written;
+        for (const Record &record : s.store.records()) {
+            QString rootId;
+            QString rest;
+            splitByRoot(record.path, &rootId, &rest);
+            if (rootId.isEmpty())
+                ++absolute;
+            else
+                ++rooted;
+            written.append(record.path);
+            // Put back so the row is written in the form `toJson` decides now,
+            // rather than the one it was read in.
+            Record rewritten = record;
+            rewritten.root = rootId;
+            rewritten.relative = rest;
+            s.store.put(rewritten);
+        }
+        if (g.dryRun) {
+            if (g.json)
+                printJson(QJsonObject{{QStringLiteral("rooted"), rooted},
+                                      {QStringLiteral("absolute"), absolute}});
+            else
+                out() << rooted << " under a root, " << absolute << " absolute\n";
+            return kOk;
+        }
+        QString error;
+        if (!s.store.commit(&error)) {
+            fail(error);
+            return kStore;
+        }
+        if (g.json)
+            printJson(QJsonObject{{QStringLiteral("rooted"), rooted},
+                                  {QStringLiteral("absolute"), absolute}});
+        else
+            out() << rooted << " under a root, " << absolute << " absolute\n";
+        return kOk;
+    }
+
+    fail(QStringLiteral("unknown command: roots %1 (try omafiles roots --help)").arg(sub));
+    return kUsage;
+}
+
 int cmdVerify(const Globals &g, Session &s, const QStringList &positionals)
 {
     int status = kOk;
@@ -3030,6 +3269,7 @@ int cmdVerify(const Globals &g, Session &s, const QStringList &positionals)
     // one.
     QStringList shut;
     QStringList unnamed;
+    QStringList unreachable;
     const QStringList disk = tagWalk(root, true, &shut, &unnamed);
     const QSet<QString> closedDirs(shut.cbegin(), shut.cend());
 
@@ -3038,6 +3278,16 @@ int cmdVerify(const Globals &g, Session &s, const QStringList &positionals)
             continue;
         QString error;
         const PathState state = pathState(record.path, &error);
+        // A row on a root nobody has plugged in is not a problem this run
+        // found: there is nothing to compare it against, and calling it
+        // `missing` would send somebody to `prune`, which is the one command
+        // that would turn an unplugged drive into lost tags. Said as a note
+        // instead, so `--quiet` takes it away and a healthy tree with a drive
+        // in a drawer still exits 0.
+        if (state == PathState::Unreachable) {
+            unreachable.append(error);
+            continue;
+        }
         // Gone and unanswerable are different problems with different repairs:
         // one wants `prune`, the other a `chmod` or a mount. `unreadable` is
         // the kind this verb uses for a directory it could not look inside; a
@@ -3125,6 +3375,13 @@ int cmdVerify(const Globals &g, Session &s, const QStringList &positionals)
                QStringLiteral("xattr=%1").arg(uniqueSorted(tags).join(QLatin1Char(','))));
     }
 
+    // Said after the problems, because it is not one of them: a row under a
+    // root that is not here was not checked, and that is a fact about the
+    // machine rather than about the index.
+    for (const QString &waiting : unreachable) {
+        warn(g, QStringLiteral("verify: %1; it was not checked").arg(waiting));
+    }
+
     if (g.json)
         printJson(QJsonObject{{QStringLiteral("problems"), problems}});
     return found == 0 ? kOk : 1;
@@ -3142,6 +3399,9 @@ struct Parsed {
     // and `--any ""` are both refused.
     bool sinceGiven = false;
     QString from;
+    QString id;
+    QString check;
+    bool mount = false;
     bool untagged = false;
     bool fromXattr = false;
     bool all = false;
@@ -3201,6 +3461,30 @@ int parseFlags(QStringList args, Parsed *parsed, const Takes &takes)
             }
             parsed->since = value;
             parsed->sinceGiven = true;
+            continue;
+        }
+        if (arg == QLatin1String("--id") || arg == QLatin1String("--check")) {
+            if (!takes.root) {
+                fail(QStringLiteral("unexpected %1").arg(arg));
+                return kUsage;
+            }
+            QString value;
+            if (!consumeValue(args, &i, &value)) {
+                fail(QStringLiteral("%1 needs a value").arg(arg));
+                return kUsage;
+            }
+            if (arg == QLatin1String("--id"))
+                parsed->id = value;
+            else
+                parsed->check = value;
+            continue;
+        }
+        if (arg == QLatin1String("--mount")) {
+            if (!takes.root) {
+                fail(QStringLiteral("unexpected %1").arg(arg));
+                return kUsage;
+            }
+            parsed->mount = true;
             continue;
         }
         if (arg == QLatin1String("--from")) {
@@ -3465,10 +3749,17 @@ int dispatch(const Globals &g, Session &s, QStringList rest)
     if (!s.opened) {
         const bool tagLs = cmd == QLatin1String("tag")
             && rest.value(0) == QLatin1String("ls");
+        // Two of the four `roots` subcommands touch the index: `rm` carries
+        // the rows out from under the declaration it removes, and `migrate`
+        // rewrites them. Taking the lock for the other two would make listing
+        // your own declarations wait on somebody else's `tag add`.
+        const bool rootsReads = cmd == QLatin1String("roots")
+            && rest.value(0) != QLatin1String("migrate")
+            && rest.value(0) != QLatin1String("rm");
         // A dry run commits nothing and writes no xattr, so it wants the lock
         // no more than `ls` does -- and a preview that cannot run where a read
         // can is a preview nobody can use on a read-only index.
-        s.writes = !onlyReads(cmd) && !tagLs && !g.dryRun;
+        s.writes = !onlyReads(cmd) && !tagLs && !rootsReads && !g.dryRun;
     }
     if (cmd == QLatin1String("tag")) {
         if (rest.isEmpty()) {
@@ -3563,10 +3854,19 @@ int dispatch(const Globals &g, Session &s, QStringList rest)
     }
     if (cmd == QLatin1String("tags")) {
         Parsed parsed;
-        const int parsedStatus = parseFlags(rest, &parsed, {});
+        const int parsedStatus = parseFlags(rest, &parsed, {.tag = true});
         if (parsedStatus != kOk)
             return parsedStatus;
-        return cmdTags(g, s, parsed.positionals);
+        QStringList scope;
+        if (!parsed.tags.isEmpty()) {
+            QString error;
+            scope = normalizeTags(parsed.tags, &error);
+            if (scope.isEmpty()) {
+                fail(error);
+                return kUsage;
+            }
+        }
+        return cmdTags(g, s, scope, parsed.positionals);
     }
     if (cmd == QLatin1String("prune")) {
         Parsed parsed;
@@ -3645,6 +3945,16 @@ int dispatch(const Globals &g, Session &s, QStringList rest)
         if (parsedStatus != kOk)
             return parsedStatus;
         return cmdReindex(g, s, parsed.fromXattr, parsed.positionals);
+    }
+    if (cmd == QLatin1String("roots")) {
+        QString sub;
+        if (!rest.isEmpty() && !rest.first().startsWith(QLatin1Char('-')))
+            sub = rest.takeFirst();
+        Parsed parsed;
+        const int parsedStatus = parseFlags(rest, &parsed, {.root = true});
+        if (parsedStatus != kOk)
+            return parsedStatus;
+        return cmdRoots(g, s, sub, parsed.id, parsed.mount, parsed.check, parsed.positionals);
     }
     if (cmd == QLatin1String("verify")) {
         Parsed parsed;
@@ -3766,6 +4076,17 @@ int main(int argc, char **argv)
     if (rest.isEmpty()) {
         printHelp();
         return finished(QString(), kUsage);
+    }
+
+    // Before any verb runs, because every answer about a path depends on it:
+    // whether an index row can be placed, and whether a file that is not there
+    // is gone or on a disk in a drawer. A declarations file that will not parse
+    // is exit 3, the way an index that will not parse is -- guessing at it
+    // would be guessing at which rows may be dropped.
+    QString rootsError;
+    if (!loadRoots(&rootsError)) {
+        fail(rootsError);
+        return finished(spokenVerb(rest), kStore);
     }
 
     Session session;

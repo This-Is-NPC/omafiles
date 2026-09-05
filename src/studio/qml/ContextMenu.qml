@@ -29,13 +29,46 @@ Item {
         panel.y = Math.max(margin, Math.min(panel.y, parent.height - panel.height - margin))
     }
 
+    // How wide the panel has to be to hold what is in it.
+    //
+    // A ListView cannot answer this: `contentWidth` for a vertical list is the
+    // view's own width, and only the rows on screen are built at all, so a menu
+    // sized from it is a menu whose longest entry is cut off. The labels are
+    // measured instead, once per opening, by two rulers that draw nothing.
+    function panelWidth() {
+        let widest = 0
+        for (let i = 0; i < menu.shown.length; i++) {
+            labelRuler.text = menu.shown[i].label
+            capRuler.text = menu.shown[i].key || ""
+            widest = Math.max(widest, labelRuler.advanceWidth
+                              + (capRuler.text === "" ? 0 : capRuler.advanceWidth + 18))
+        }
+        return Math.max(200, Math.ceil(widest) + 24)
+    }
+
     function openAt(x, y) {
+        // Assigned rather than bound: the width is a fact about the entries
+        // this opening has, and they are decided by `when` clauses that read
+        // the row under the cursor.
+        panel.width = menu.panelWidth()
         panel.x = x
         panel.y = y
         list.currentIndex = menu.shown.length > 0 ? 0 : -1
         visible = true
         clampPanel()
         focusScope.forceActiveFocus()
+    }
+
+    TextMetrics {
+        id: labelRuler
+        font.family: Theme.fontFamily
+        font.pixelSize: 12
+    }
+
+    TextMetrics {
+        id: capRuler
+        font.family: Theme.fontFamily
+        font.pixelSize: 11
     }
 
     function close() {
@@ -83,8 +116,12 @@ Item {
         Rectangle {
             id: panel
             z: 1
-            width: Math.max(200, list.contentWidth + 20)
-            height: Math.min(320, list.contentHeight + 8)
+            width: 200
+            // As tall as it needs to be, and never taller than the window it
+            // has to fit inside. A menu with thirty entries in it scrolls with
+            // `j` and `k`; one pinned to a third of the window scrolls when it
+            // did not have to.
+            height: Math.min(menu.height - 24, list.contentHeight + 8)
             radius: Theme.rounding
             color: Theme.panel
             border.width: 1

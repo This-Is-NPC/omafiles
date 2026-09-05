@@ -28,6 +28,12 @@ class TabState : public QObject
     Q_PROPERTY(QString selectedTag READ selectedTag WRITE setSelectedTag NOTIFY selectedTagChanged)
     Q_PROPERTY(QString selectedNode READ selectedNode WRITE setSelectedNode NOTIFY selectedNodeChanged)
     Q_PROPERTY(QString cwd READ cwd WRITE setCwd NOTIFY cwdChanged)
+    /// The tags a `tags` tab has walked into, in the order they were walked.
+    ///
+    /// A list and not a set, though the question it asks is one: `#work/#draft`
+    /// and `#draft/#work` name the same files, and the only thing the order is
+    /// for is knowing which one `h` takes back off.
+    Q_PROPERTY(QStringList facets READ facets WRITE setFacets NOTIFY facetsChanged)
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY filterChanged)
     Q_PROPERTY(QString viewMode READ viewMode WRITE setViewMode NOTIFY viewModeChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
@@ -37,11 +43,22 @@ class TabState : public QObject
 public:
     explicit TabState(QString kind, QObject *parent = nullptr);
 
+    /// The folder a tab opens in: the home directory, unless the command
+    /// line named one. Static and set by `main` before the engine runs,
+    /// because the first tab is made by the QML the engine loads and there
+    /// is no instance to hand a path to before that.
+    static void setStartPath(const QString &path);
+    static QString startPath();
+
     QString kind() const { return m_kind; }
     QString title() const;
     QString selectedTag() const { return m_selectedTag; }
     QString selectedNode() const { return m_selectedNode; }
     QString cwd() const { return m_cwd; }
+    QStringList facets() const { return m_facets; }
+    void setFacets(const QStringList &facets);
+    Q_INVOKABLE void enterFacet(const QString &tag);
+    Q_INVOKABLE void leaveFacet();
     QString filter() const { return m_filter; }
     QString viewMode() const { return m_viewMode; }
     bool showHidden() const { return m_showHidden; }
@@ -85,6 +102,7 @@ signals:
     void selectedTagChanged();
     void selectedNodeChanged();
     void cwdChanged();
+    void facetsChanged();
     void filterChanged();
     void viewModeChanged();
     void showHiddenChanged();
@@ -96,6 +114,7 @@ private:
     QString m_selectedTag;
     QString m_selectedNode;
     QString m_cwd;
+    QStringList m_facets;
     QString m_filter;
     QString m_viewMode = QStringLiteral("list");
     bool m_showHidden = false;
@@ -177,8 +196,27 @@ public:
     TabState *currentTab() const;
 
     Q_INVOKABLE PaneState *paneAtIndex(int index) const;
+    Q_INVOKABLE TabState *tabAtIndex(int paneIndex, int tabIndex) const;
     Q_INVOKABLE void addTab(const QString &kind);
     Q_INVOKABLE void addTabIn(int paneIndex, const QString &kind);
+    /// A new tab already standing somewhere, which is what every `open in a new
+    /// tab` means: made and then walked would show the home folder for a frame
+    /// and put a listing nobody asked for in the history of the new tab.
+    Q_INVOKABLE void openTabIn(int paneIndex, const QString &kind, const QString &directory);
+    /// The same, in a pane that does not exist yet.
+    Q_INVOKABLE void splitWith(const QString &kind, const QString &directory);
+    /// This tab again, beside it: the same folder, tag, view and sort.
+    ///
+    /// The marks are not carried over. They name a set somebody assembled by
+    /// hand to act on, and a second copy of it in a second tab is a second
+    /// chance to act on it by accident.
+    Q_INVOKABLE void duplicateTab(int paneIndex, int tabIndex);
+    Q_INVOKABLE void closeTabsAfter(int paneIndex, int tabIndex);
+    /// Moves a tab to the pane beside it, with everything it was showing.
+    Q_INVOKABLE void moveTabToOtherPane(int paneIndex, int tabIndex);
+    /// The pane a `to the other pane` command means: the next one, wrapping, or
+    /// nothing at all when this is the only pane there is.
+    Q_INVOKABLE PaneState *otherPane(int paneIndex) const;
     Q_INVOKABLE void closeTab(int paneIndex, int tabIndex);
     Q_INVOKABLE void closeCurrentTab();
     Q_INVOKABLE void stepTab(int delta);

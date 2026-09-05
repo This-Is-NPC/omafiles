@@ -2,11 +2,13 @@
 
 #include "IndexModel.h"
 #include "Paths.h"
+#include "Roots.h"
 
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
 #include <QLocale>
+#include <QMap>
 #include <QMimeDatabase>
 #include <QMimeType>
 #include <QSet>
@@ -164,6 +166,20 @@ void FolderModel::setFilter(const QString &text)
     rebuild();
 }
 
+void FolderModel::setFacets(const QStringList &facets)
+{
+    if (m_facets == facets)
+        return;
+    m_facets = facets;
+    emit facetsChanged();
+    rebuild();
+}
+
+bool FolderModel::browsingFacets() const
+{
+    return m_tab && m_tab->kind() == QLatin1String("tags");
+}
+
 void FolderModel::setSelectedTag(const QString &tag)
 {
     if (m_selectedTag == tag)
@@ -214,6 +230,8 @@ QString FolderModel::parentDirectory() const
 // the one you would walk up into.
 bool FolderModel::atRoot() const
 {
+    if (browsingFacets())
+        return m_facets.isEmpty();
     return !m_selectedTag.isEmpty() || QDir(m_directory).isRoot();
 }
 
@@ -262,6 +280,8 @@ QVariant FolderModel::data(const QModelIndex &index, int role) const
         return row.sizeText;
     case MtimeTextRole:
         return row.mtimeText;
+    case CountRole:
+        return row.count;
     default:
         return {};
     }
@@ -276,13 +296,20 @@ QHash<int, QByteArray> FolderModel::roleNames() const
             {TagsRole, "tags"},
             {MarkedRole, "marked"},
             {SizeTextRole, "sizeText"},
-            {MtimeTextRole, "mtimeText"}};
+            {MtimeTextRole, "mtimeText"},
+            {CountRole, "count"}};
 }
 
 // Asking for a folder is asking to stop looking at a tag: both of these land on
 // a directory listing, or the key would appear to do nothing.
 void FolderModel::goHome()
 {
+    // The top of a tags tab is the vocabulary, not a folder: `~` there means
+    // the same thing it means anywhere else, which is all the way back.
+    if (browsingFacets()) {
+        m_tab->setFacets({});
+        return;
+    }
     setSelectedTag(QString());
     setDirectory(QDir::homePath());
 }
@@ -291,12 +318,32 @@ void FolderModel::goUp()
 {
     if (atRoot())
         return;
+    // Up out of a tag is the tag itself coming off, not a folder above it.
+    if (browsingFacets()) {
+        m_tab->leaveFacet();
+        return;
+    }
     // Walking out of a folder should land the cursor on that folder, not on the
     // top of its parent: going up and coming back down has to be symmetric or
     // the keyboard loses its place every time.
     if (m_tab)
         m_tab->setCursorPath(m_directory);
     setDirectory(parentDirectory());
+}
+
+// The cursor is written before the directory is, because the rebuild the
+// directory triggers is what reads it back.
+void FolderModel::goTo(const QString &path)
+{
+    if (path.isEmpty())
+        return;
+    const QString parent = QFileInfo(path).absolutePath();
+    if (parent.isEmpty())
+        return;
+    if (m_tab)
+        m_tab->setCursorPath(path);
+    setSelectedTag(QString());
+    setDirectory(parent);
 }
 
 void FolderModel::enter(const QString &path)
@@ -317,6 +364,11 @@ void FolderModel::activate(const QString &path, const QString &kind)
     // came out of, so the two ways of going up would land in different places.
     if (kind == QLatin1String("parent")) {
         goUp();
+    } else if (kind == QLatin1String("tag")) {
+        // Walking into a facet narrows the question. The path is empty on
+        // these rows on purpose -- see `listFacets` -- so the tag is the name.
+        if (m_tab)
+            m_tab->enterFacet(path);
     } else if (kind == QLatin1String("dir")) {
         enter(path);
     } else if (m_index) {
@@ -339,7 +391,8 @@ void FolderModel::activateRow(int row)
     if (!validRow(row))
         return;
     const Entry &entry = m_rows.at(row);
-    activate(entry.path, entry.kind);
+    // A facet row has no path, so what it is called is what identifies it.
+    activate(entry.kind == QLatin1String("tag") ? entry.name : entry.path, entry.kind);
 }
 
 void FolderModel::toggleMarkAt(int row)
@@ -347,7 +400,7 @@ void FolderModel::toggleMarkAt(int row)
     if (!validRow(row) || !m_tab)
         return;
     const Entry &entry = m_rows.at(row);
-    if (entry.kind == QLatin1String("parent"))
+    if (entry.path.isEmpty() || entry.kind == QLatin1String("parent"))
         return;
     m_tab->toggleMark(entry.path);
 }
@@ -358,7 +411,7 @@ void FolderModel::markAll()
         return;
     QSet<QString> marks;
     for (const Entry &entry : std::as_const(m_rows)) {
-        if (entry.kind != QLatin1String("parent"))
+        if (!entry.path.isEmpty() && entry.kind != QLatin1String("parent"))
             marks.insert(entry.path);
     }
     m_tab->setMarked(marks);
@@ -368,6 +421,111 @@ void FolderModel::clearMarks()
 {
     if (m_tab)
         m_tab->setMarked({});
+}
+
+// `..` is left out of every one of these for the reason `markAll` leaves it
+// out: it is the way up, not a row that names a file, and a set holding the
+// parent directory would hand it to whatever the menu ran next.
+void FolderModel::invertMarks()
+{
+    if (!m_tab)
+        return;
+    QSet<QString> marks;
+    for (const Entry &entry : std::as_const(m_rows)) {
+        if (!entry.path.isEmpty() && entry.kind != QLatin1String("parent")
+            && !m_tab->isMarked(entry.path))
+            marks.insert(entry.path);
+    }
+    m_tab->setMarked(marks);
+}
+
+void FolderModel::markSameTag(const QString &path)
+{
+    if (!m_tab)
+        return;
+    const int row = rowForPath(path);
+    if (row < 0)
+        return;
+    // An untagged row would otherwise mark every other untagged row, which is
+    // an answer to a question nobody asked by pointing at this file.
+    const QString tags = m_rows.at(row).tags;
+    if (tags.isEmpty())
+        return;
+    const QStringList mine = tags.split(QLatin1Char(' '));
+    const QSet<QString> wanted(mine.cbegin(), mine.cend());
+    QSet<QString> marks;
+    for (const Entry &entry : std::as_const(m_rows)) {
+        if (entry.path.isEmpty() || entry.kind == QLatin1String("parent")
+            || entry.tags.isEmpty())
+            continue;
+        const QStringList theirs = entry.tags.split(QLatin1Char(' '));
+        for (const QString &tag : theirs) {
+            if (wanted.contains(tag)) {
+                marks.insert(entry.path);
+                break;
+            }
+        }
+    }
+    m_tab->setMarked(marks);
+}
+
+void FolderModel::markSameType(const QString &path)
+{
+    if (!m_tab)
+        return;
+    const int row = rowForPath(path);
+    if (row < 0)
+        return;
+    const QString type = m_rows.at(row).type;
+    QSet<QString> marks;
+    for (const Entry &entry : std::as_const(m_rows)) {
+        if (!entry.path.isEmpty() && entry.kind != QLatin1String("parent")
+            && entry.type == type)
+            marks.insert(entry.path);
+    }
+    m_tab->setMarked(marks);
+}
+
+QStringList FolderModel::markedPaths() const
+{
+    QStringList paths;
+    if (!m_tab)
+        return paths;
+    for (const Entry &entry : m_rows) {
+        if (!entry.path.isEmpty() && entry.kind != QLatin1String("parent")
+            && m_tab->isMarked(entry.path))
+            paths.append(entry.path);
+    }
+    return paths;
+}
+
+bool FolderModel::isMarked(const QString &path) const
+{
+    return m_tab && !path.isEmpty() && m_tab->isMarked(path);
+}
+
+QStringList FolderModel::targetPaths(const QString &path) const
+{
+    if (path.isEmpty())
+        return {};
+    if (m_tab && m_tab->isMarked(path)) {
+        const QStringList marked = markedPaths();
+        if (!marked.isEmpty())
+            return marked;
+    }
+    return {path};
+}
+
+QStringList FolderModel::tagsFor(const QString &path) const
+{
+    const int row = rowForPath(path);
+    if (row >= 0) {
+        const QString tags = m_rows.at(row).tags;
+        return tags.isEmpty() ? QStringList() : tags.split(QLatin1Char(' '));
+    }
+    // A path the listing does not hold is still one the index may know about --
+    // the graph hands over paths from anywhere in the tree.
+    return m_index ? m_index->tagsForPath(path) : QStringList();
 }
 
 QString FolderModel::pathAt(int row) const
@@ -385,6 +543,25 @@ QVariantMap FolderModel::entryAt(int row) const
     if (!validRow(row))
         return {};
     const Entry &entry = m_rows.at(row);
+    // A facet is not a path, so nothing here can be asked about it: no mime to
+    // resolve, no directory to count, no file to stat. What it has is a name
+    // and how many files it leads to.
+    if (entry.kind == QLatin1String("tag")) {
+        return {{QStringLiteral("path"), QString()},
+                {QStringLiteral("items"), entry.count},
+                {QStringLiteral("name"), entry.name},
+                {QStringLiteral("kind"), entry.kind},
+                {QStringLiteral("type"), entry.type},
+                {QStringLiteral("directory"), true},
+                {QStringLiteral("mime"), QStringLiteral("omafiles/tag")},
+                {QStringLiteral("size"), 0},
+                {QStringLiteral("sizeText"), QString()},
+                {QStringLiteral("mtime"), 0},
+                {QStringLiteral("mtimeText"), QString()},
+                {QStringLiteral("marked"), false},
+                {QStringLiteral("tagged"), false},
+                {QStringLiteral("tags"), QStringList()}};
+    }
     const bool directory = entry.kind != QLatin1String("file");
 
     // MatchDefault, not MatchExtension: this runs for the focused row only, so
@@ -514,6 +691,115 @@ FolderModel::Entry FolderModel::describe(const QFileInfo &info, const QString &n
     return row;
 }
 
+// Tags as folders: the ones that still tell these files apart, and the files.
+//
+// Walking into a tag narrows the question instead of moving anywhere, so
+// `#work/#draft` is `omafiles ls --tag work --tag draft` -- and that is why the
+// two orders name one listing and not two. A file appears under every path that
+// describes it rather than under the single one somebody filed it in, which is
+// the whole of what a tag is for and the one thing a directory tree cannot do.
+//
+// Under a facet, two kinds of tag are left out, and each would be a folder
+// leading somewhere you already are:
+//
+//  - one no file here carries, which opens empty;
+//  - one every file here carries, which opens onto this same list. That second
+//    rule is what keeps the tree shallow -- a vocabulary where `2026` is on
+//    everything does not offer `2026` at every level.
+//
+// Neither applies at the root, where the listing is the vocabulary itself: a
+// tag on every file in the index is still a tag somebody has to be able to
+// reach.
+void FolderModel::listFacets()
+{
+    if (!m_index)
+        return;
+
+    const QString needle = m_filter.trimmed().toLower();
+    const QSet<QString> under(m_facets.cbegin(), m_facets.cend());
+
+    if (!m_facets.isEmpty()) {
+        Entry parent;
+        parent.name = QStringLiteral("..");
+        parent.kind = QStringLiteral("parent");
+        m_rows.append(parent);
+    }
+
+    QStringList declined;
+    QVector<Entry> files;
+    QMap<QString, int> counts;
+    int matched = 0;
+    for (const Record &record : m_index->records()) {
+        bool carries = true;
+        for (const QString &facet : m_facets) {
+            if (!record.tags.contains(facet)) {
+                carries = false;
+                break;
+            }
+        }
+        if (!carries)
+            continue;
+
+        // The same three answers a tag listing gives about a row: a file that
+        // is gone is left out, and one the system will not describe is said
+        // out loud rather than passed over.
+        QString reason;
+        const PathState state = pathState(record.path, &reason);
+        if (state == PathState::Unknown) {
+            declined.append(reason);
+            continue;
+        }
+        // Neither is listed: one has no file behind it and the other has one
+        // nobody has plugged in. The second is said out loud, because a
+        // listing that quietly halved is worse than a short one that says so.
+        if (state == PathState::Unreachable) {
+            declined.append(reason.isEmpty() ? unreachableReason(record.path) : reason);
+            continue;
+        }
+        if (state == PathState::Missing)
+            continue;
+
+        ++matched;
+        for (const QString &tag : record.tags) {
+            if (!under.contains(tag))
+                counts[tag] += 1;
+        }
+
+        const QFileInfo info(record.path);
+        if (!needle.isEmpty() && !info.fileName().toLower().contains(needle))
+            continue;
+        files.append(describe(info, info.fileName()));
+    }
+
+    QVector<Entry> facets;
+    for (auto it = counts.cbegin(); it != counts.cend(); ++it) {
+        if (!m_facets.isEmpty() && it.value() == matched)
+            continue;
+        if (!needle.isEmpty() && !it.key().toLower().contains(needle))
+            continue;
+        Entry row;
+        row.name = it.key();
+        row.kind = QStringLiteral("tag");
+        row.type = QStringLiteral("tag");
+        row.count = it.value();
+        // So that sorting by size orders the facets by how much is under them,
+        // which is the only size a tag has.
+        row.size = it.value();
+        facets.append(row);
+    }
+
+    if (!declined.isEmpty()) {
+        m_error = QStringLiteral("%1 row(s) not listed; %2")
+                      .arg(declined.size())
+                      .arg(declined.first());
+    }
+
+    applySort(&facets);
+    applySort(&files);
+    m_rows += facets;
+    m_rows += files;
+}
+
 // Every file in the index carrying the tag, wherever in the tree it is: the set
 // `omafiles ls --tag` answers with, so the window and the command line cannot
 // disagree about who carries a tag. A row whose file is gone is dropped; one the
@@ -539,6 +825,13 @@ void FolderModel::listTag()
             declined.append(reason);
             continue;
         }
+        // Neither is listed: one has no file behind it and the other has one
+        // nobody has plugged in. The second is said out loud, because a
+        // listing that quietly halved is worse than a short one that says so.
+        if (state == PathState::Unreachable) {
+            declined.append(reason.isEmpty() ? unreachableReason(record.path) : reason);
+            continue;
+        }
         if (state == PathState::Missing)
             continue;
         const QFileInfo info(record.path);
@@ -561,7 +854,9 @@ void FolderModel::rebuild()
     beginResetModel();
     m_rows.clear();
     m_error.clear();
-    if (m_selectedTag.isEmpty())
+    if (browsingFacets())
+        listFacets();
+    else if (m_selectedTag.isEmpty())
         listDirectory();
     else
         listTag();

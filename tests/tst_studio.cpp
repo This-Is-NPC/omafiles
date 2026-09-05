@@ -11,12 +11,14 @@
 // shows. So the test drives the real window with real key events and asks the
 // real state what happened.
 
+#include "Clipboard.h"
 #include "FolderModel.h"
 #include "GraphItem.h"
 #include "IndexModel.h"
 #include "Open.h"
 #include "Paths.h"
 #include "Theme.h"
+#include "Verb.h"
 #include "Workspace.h"
 
 #include <QAccessible>
@@ -71,6 +73,31 @@ static const bool recorderInstalled = [] {
     setLauncher([](const OpenRequest &request, QString *) {
         openRequests().append(request);
         return true;
+    });
+    return true;
+}();
+
+// The same seam again, for the other door.
+//
+// Half the row menu is a caller of the command line -- `tag add`, `trash`,
+// `mv`, `reindex` -- and a test binary that ran those for real would tag,
+// move and delete inside its own fixture, and then in whatever directory a
+// case forgot to point somewhere else. So nothing here runs `omafiles`
+// either: the command lines are recorded and answered as though they worked,
+// which is what these cases are about. That the verbs themselves do what they
+// say is `tests/test_cli.py`, against the binary that has them.
+static QVector<QStringList> &verbRuns()
+{
+    static QVector<QStringList> recorded;
+    return recorded;
+}
+
+static const bool verbRecorderInstalled = [] {
+    setVerbRunner([](const QStringList &arguments, VerbReceipt done) {
+        verbRuns().append(arguments);
+        // Answered at once rather than later: a receipt that never arrived
+        // would leave the window waiting for one, and the status bar empty.
+        done(true, QString(), QString());
     });
     return true;
 }();
@@ -204,6 +231,15 @@ private slots:
     void reachesThePathBarWithTab();
     void pansTheGraphWithShiftHjk();
     void resizesTheSplitWithCtrlComma();
+    void runsTheCommandLineForWhatTheRowMenuChanges();
+    void actsOnTheMarkedSetOnlyFromInsideIt();
+    void copiesWhatTheRowIsToTheClipboard();
+    void walksToTheFolderHoldingATaggedFile();
+    void marksBySameTagSameTypeAndTheOtherWayRound();
+    void worksTheTabMenu();
+    void offersTheApplicationsRegisteredForTheFile();
+    void walksTagsAsIfTheyWereFolders();
+    void asksOneQuestionWhicheverWayItIsWalked();
 
 private:
     QQuickWindow *window() const;
@@ -214,6 +250,14 @@ private:
     QString cwd() const;
     int rowOf(const QString &name) const;
     void focusRow(const QString &name);
+    /// Opens the row menu and chooses an entry, the way a person does: `m`,
+    /// then `j` until it is under the cursor, then Enter.
+    ///
+    /// By label and not by index. Which entries are drawn depends on what the
+    /// row under the cursor is, so an index would quietly start choosing a
+    /// different command the day an entry above it grew a `when`.
+    bool chooseInMenu(const QString &objectName, const QString &label);
+    QStringList menuLabels(const QString &objectName) const;
     void key(char ch, Qt::KeyboardModifiers mods = Qt::NoModifier);
     void key(Qt::Key code, Qt::KeyboardModifiers mods = Qt::NoModifier);
     void settle();
@@ -230,6 +274,7 @@ private:
     QTemporaryDir m_desktop;
     Theme *m_theme = nullptr;
     IndexModel *m_index = nullptr;
+    Clipboard *m_clipboard = nullptr;
     Workspace *m_workspace = nullptr;
     QQmlApplicationEngine *m_engine = nullptr;
 };
@@ -328,8 +373,8 @@ void TestStudio::initTestCase()
 
     // Nothing is registered or injected here.
     //
-    // All five types are declared in their headers and registered by the build,
-    // and the three singletons are made by the engine on first use -- which is
+    // Every type is declared in its header and registered by the build, and
+    // the singletons are made by the engine on first use -- which is
     // during `load`, after the environment above is in place, so they still see
     // the temporary XDG directories and never the real ones. This block used to
     // be an exact copy of the studio's `main`, kept in step by memory.
@@ -347,7 +392,9 @@ void TestStudio::initTestCase()
                                                          QStringLiteral("IndexModel"));
     m_workspace = m_engine->singletonInstance<Workspace *>(QStringLiteral("omafiles"),
                                                             QStringLiteral("Workspace"));
-    QVERIFY(m_theme && m_index && m_workspace);
+    m_clipboard = m_engine->singletonInstance<Clipboard *>(QStringLiteral("omafiles"),
+                                                            QStringLiteral("Clipboard"));
+    QVERIFY(m_theme && m_index && m_workspace && m_clipboard);
     QVERIFY(window());
     QVERIFY(QTest::qWaitForWindowExposed(window()));
 }
@@ -457,7 +504,17 @@ int TestStudio::rowOf(const QString &name) const
     for (int i = 0; i < folder->property("count").toInt(); ++i) {
         QString path;
         QMetaObject::invokeMethod(folder, "pathAt", Q_RETURN_ARG(QString, path), Q_ARG(int, i));
-        if (QFileInfo(path).fileName() == name)
+        if (!path.isEmpty()) {
+            if (QFileInfo(path).fileName() == name)
+                return i;
+            continue;
+        }
+        // A facet row carries no path -- a tag is not a place -- so what it is
+        // called is the only thing it can be found by.
+        QVariantMap entry;
+        QMetaObject::invokeMethod(folder, "entryAt", Q_RETURN_ARG(QVariantMap, entry),
+                                  Q_ARG(int, i));
+        if (entry.value(QStringLiteral("name")).toString() == name)
             return i;
     }
     return -1;
@@ -469,6 +526,29 @@ void TestStudio::focusRow(const QString &name)
     QVERIFY2(row >= 0, qPrintable(QStringLiteral("no row named %1").arg(name)));
     QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(row)));
     settle();
+}
+
+QStringList TestStudio::menuLabels(const QString &objectName) const
+{
+    QStringList labels;
+    const QList<QQuickItem *> found = itemsNamed(objectName);
+    if (found.isEmpty())
+        return labels;
+    const QVariantList shown = found.first()->property("shown").toList();
+    for (const QVariant &entry : shown)
+        labels.append(entry.toMap().value(QStringLiteral("label")).toString());
+    return labels;
+}
+
+bool TestStudio::chooseInMenu(const QString &objectName, const QString &label)
+{
+    const int at = menuLabels(objectName).indexOf(label);
+    if (at < 0)
+        return false;
+    for (int i = 0; i < at; ++i)
+        key('j');
+    key(Qt::Key_Return);
+    return true;
 }
 
 void TestStudio::key(char ch, Qt::KeyboardModifiers mods)
@@ -1785,9 +1865,13 @@ void TestStudio::walksTheGraphWithTheKeyboard()
     QVERIFY2(!picked.isEmpty(), "the graph has no tag node to activate");
 
     key('l');
-    QVERIFY2(tab()->kind() == QLatin1String("files"),
+    // A tags tab and not a filtered folder: the graph is a map of which tags go
+    // together, and the tab it opens is the same fact walked into rather than
+    // read. The tag it was standing on is the query it starts on.
+    QVERIFY2(tab()->kind() == QLatin1String("tags"),
              "activating a tag node did not open a listing for it");
-    const QString picked_tag = tab()->selectedTag();
+    QCOMPARE(tab()->facets().size(), 1);
+    const QString picked_tag = tab()->facets().first();
     QVERIFY2(!picked_tag.isEmpty(), "the listing a tag node opened is filtered by nothing");
     // The graph draws tags as `#work`; the `#` is decoration and must not reach
     // the index, which has no tag by that name.
@@ -1857,8 +1941,8 @@ void TestStudio::walksTheGraphWithTheKeyboard()
     graph->setProperty("selectedId", picked);
     settle();
     key(Qt::Key_Return);
-    QCOMPARE(tab()->kind(), QStringLiteral("files"));
-    QCOMPARE(tab()->selectedTag(), picked_tag);
+    QCOMPARE(tab()->kind(), QStringLiteral("tags"));
+    QCOMPARE(tab()->facets(), QStringList{picked_tag});
     m_workspace->closeCurrentTab();
     settle();
 
@@ -3828,6 +3912,472 @@ void TestStudio::resizesTheSplitWithCtrlComma()
         key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
         QCOMPARE(m_workspace->paneCount(), 1);
     }
+}
+
+// Half the row menu is a caller of the command line, and this is the check that
+// it calls it correctly: the operands are separated with `--` so a file named
+// like a flag is still a file, the destructive verb carries the `--yes` the
+// entry already asked for by being chosen, and the tree verbs are scoped to the
+// folder in front of you rather than to the whole index.
+void TestStudio::runsTheCommandLineForWhatTheRowMenuChanges()
+{
+    const QString file = QDir(m_tree.path()).filePath(QStringLiteral("one.txt"));
+    focusRow(QStringLiteral("one.txt"));
+
+    const struct { const char *label; QStringList expected; } cases[] = {
+        {"Move to trash", {"--yes", "trash", "--", file}},
+        {"Clear tags", {"tag", "clear", "--", file}},
+        {"Reindex this folder", {"reindex", "--", m_tree.path()}},
+        {"Prune missing rows here", {"--yes", "prune", "--", m_tree.path()}},
+        {"Verify this tree", {"verify", "--", m_tree.path()}},
+        {"Adopt tags from disk here", {"reindex", "--from-xattr", "--", m_tree.path()}},
+    };
+    for (const auto &one : cases) {
+        const QString label = QString::fromLatin1(one.label);
+        verbRuns().clear();
+        focusRow(QStringLiteral("one.txt"));
+        key('m');
+        QVERIFY2(chooseInMenu(QStringLiteral("fileMenu"), label),
+                 qPrintable(QStringLiteral("no menu entry called %1").arg(label)));
+        QCOMPARE(verbRuns().size(), 1);
+        QCOMPARE(verbRuns().first(), one.expected);
+    }
+
+    // The tag the panel is pointing at, applied by name. There is no field to
+    // type into here, and that is the point of naming the tag in the label.
+    verbRuns().clear();
+    key('t');
+    const QString tag = m_index->tagAt(0);
+    QVERIFY(!tag.isEmpty());
+    key(Qt::Key_Escape);
+    focusRow(QStringLiteral("plain.txt"));
+    const QString plain = QDir(m_tree.path()).filePath(QStringLiteral("plain.txt"));
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"),
+                         QStringLiteral("Apply tag %1").arg(tag)));
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(),
+             (QStringList{"tag", "add", "--tag", tag, "--", plain}));
+
+    // And the receipt lands on the one line the window has for saying things.
+    QVERIFY2(m_index->notice().contains(tag),
+             qPrintable(QStringLiteral("the status bar said %1").arg(m_index->notice())));
+}
+
+// The rule that keeps a delete of one file from taking forty: a command chosen
+// over a marked row means the marked set, and one chosen over a row that is not
+// in it means that row, whatever else is marked.
+void TestStudio::actsOnTheMarkedSetOnlyFromInsideIt()
+{
+    const QDir tree(m_tree.path());
+    focusRow(QStringLiteral("one.txt"));
+    key(Qt::Key_Space);
+    focusRow(QStringLiteral("two.md"));
+    key(Qt::Key_Space);
+    QCOMPARE(tab()->markedCount(), 2);
+
+    verbRuns().clear();
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    // The count is in the label, which is what this menu has instead of a
+    // dialog asking afterwards.
+    QVERIFY2(chooseInMenu(QStringLiteral("fileMenu"),
+                          QStringLiteral("Move 2 files to trash")),
+             qPrintable(QStringLiteral("the entries were: %1")
+                            .arg(menuLabels(QStringLiteral("fileMenu")).join(QLatin1String(" | ")))));
+    QCOMPARE(verbRuns().size(), 1);
+    // In the order the listing shows them, and not the order a hash of the
+    // paths happens to give.
+    QCOMPARE(verbRuns().first(),
+             (QStringList{"--yes", "trash", "--",
+                          tree.filePath(QStringLiteral("one.txt")),
+                          tree.filePath(QStringLiteral("two.md"))}));
+
+    verbRuns().clear();
+    focusRow(QStringLiteral("three.ods"));
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Move to trash")));
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(),
+             (QStringList{"--yes", "trash", "--", tree.filePath(QStringLiteral("three.ods"))}));
+
+    key('A');
+    QCOMPARE(tab()->markedCount(), 0);
+}
+
+void TestStudio::copiesWhatTheRowIsToTheClipboard()
+{
+    const QString file = QDir(m_tree.path()).filePath(QStringLiteral("one.txt"));
+    focusRow(QStringLiteral("one.txt"));
+
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Copy path")));
+    QCOMPARE(m_clipboard->lastCopied(), file);
+
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Copy name")));
+    QCOMPARE(m_clipboard->lastCopied(), QStringLiteral("one.txt"));
+
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Copy as URI")));
+    QCOMPARE(m_clipboard->lastCopied(), QStringLiteral("file://") + file);
+
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Copy tags")));
+    QCOMPARE(m_clipboard->lastCopied(), QStringLiteral("notes work"));
+
+    // The tag is left out of the command on purpose: it is copied to be
+    // finished, and one guessed here would be one applied by somebody who meant
+    // to type a different one.
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Copy tag command")));
+    QCOMPARE(m_clipboard->lastCopied(),
+             QStringLiteral("omafiles tag add --tag  -- ") + file);
+
+    // A row with nothing on it has no tags to copy, so the entry is not there
+    // to be chosen rather than there and doing nothing.
+    focusRow(QStringLiteral("plain.txt"));
+    key('m');
+    QVERIFY(!menuLabels(QStringLiteral("fileMenu")).contains(QStringLiteral("Copy tags")));
+    key(Qt::Key_Escape);
+}
+
+// A tag listing is not a place in the tree: its rows live in as many folders as
+// they like, and until now there was no way from one of them to the folder it is
+// really in.
+void TestStudio::walksToTheFolderHoldingATaggedFile()
+{
+    const QString file = QDir(m_tree.path()).filePath(QStringLiteral("sweep/one.txt"));
+    tagDirectory(file, QStringLiteral("sweep-tag"));
+    tab()->setCwd(m_tree.path());
+    tab()->setSelectedTag(QStringLiteral("sweep-tag"));
+    settle();
+    QCOMPARE(cwd(), m_tree.path());
+
+    const int row = rowOf(QStringLiteral("one.txt"));
+    QVERIFY2(row >= 0, "the tag listing did not hold the tagged file");
+    QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(row)));
+    settle();
+
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"),
+                         QStringLiteral("Go to containing folder")));
+    settle();
+    QCOMPARE(cwd(), QDir(m_tree.path()).filePath(QStringLiteral("sweep")));
+    // Landed on the file and not at the top of the folder: walking to a file is
+    // asking about that file.
+    QCOMPARE(tab()->selectedTag(), QString());
+    QCOMPARE(rowOf(QStringLiteral("one.txt")), cursor());
+}
+
+void TestStudio::marksBySameTagSameTypeAndTheOtherWayRound()
+{
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    QVERIFY(folder);
+
+    // `one.txt` carries `notes` and `work`; so does `six.md`, and `two.md`
+    // carries `notes`. Sharing any one tag is enough.
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Mark same tag")));
+    QStringList marked;
+    QMetaObject::invokeMethod(folder, "markedPaths", Q_RETURN_ARG(QStringList, marked));
+    QVERIFY2(marked.size() >= 3, qPrintable(marked.join(QLatin1String(" "))));
+    for (const QString &name : {QStringLiteral("one.txt"), QStringLiteral("two.md"),
+                                QStringLiteral("six.md")}) {
+        QVERIFY2(marked.contains(QDir(m_tree.path()).filePath(name)),
+                 qPrintable(QStringLiteral("%1 was not marked").arg(name)));
+    }
+    QVERIFY(!marked.contains(QDir(m_tree.path()).filePath(QStringLiteral("five.zip"))));
+
+    key('A');
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Mark same type")));
+    QMetaObject::invokeMethod(folder, "markedPaths", Q_RETURN_ARG(QStringList, marked));
+    for (const QString &name : {QStringLiteral("one.txt"), QStringLiteral("seven.txt"),
+                                QStringLiteral("plain.txt")}) {
+        QVERIFY2(marked.contains(QDir(m_tree.path()).filePath(name)),
+                 qPrintable(QStringLiteral("%1 was not marked").arg(name)));
+    }
+    QVERIFY(!marked.contains(QDir(m_tree.path()).filePath(QStringLiteral("two.md"))));
+
+    // Inverting takes the folders too, and leaves `..` where it is: it is a way
+    // up and not a row anything should act on.
+    const int before = tab()->markedCount();
+    int rows = 0;
+    for (int i = 0; i < folder->property("count").toInt(); ++i) {
+        QString kind;
+        QMetaObject::invokeMethod(folder, "kindAt", Q_RETURN_ARG(QString, kind), Q_ARG(int, i));
+        if (kind != QLatin1String("parent"))
+            ++rows;
+    }
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Invert marks")));
+    QCOMPARE(tab()->markedCount(), rows - before);
+    QMetaObject::invokeMethod(folder, "markedPaths", Q_RETURN_ARG(QStringList, marked));
+    QVERIFY(!marked.contains(QDir(m_tree.path()).filePath(QStringLiteral("one.txt"))));
+    key('A');
+}
+
+void TestStudio::worksTheTabMenu()
+{
+    PaneState *pane = m_workspace->paneAtIndex(0);
+    QVERIFY(pane);
+    tab()->setCwd(QDir(m_tree.path()).filePath(QStringLiteral("alpha")));
+    settle();
+
+    QMetaObject::invokeMethod(m_engine->rootObjects().first(), "openTabMenuAt",
+                              Q_ARG(QVariant, QVariant(0)), Q_ARG(QVariant, QVariant(0)),
+                              Q_ARG(QVariant, QVariant(40)), Q_ARG(QVariant, QVariant(40)));
+    settle();
+    QVERIFY(chooseInMenu(QStringLiteral("tabMenu"), QStringLiteral("Duplicate tab")));
+    settle();
+    QCOMPARE(pane->tabCount(), 2);
+    // The same folder, and its own marks: a duplicate is a second view of a
+    // place, not a second copy of a set somebody assembled by hand.
+    QCOMPARE(pane->tabList().at(1)->cwd(),
+             QDir(m_tree.path()).filePath(QStringLiteral("alpha")));
+    QCOMPARE(pane->tabList().at(1)->markedCount(), 0);
+
+    QMetaObject::invokeMethod(m_engine->rootObjects().first(), "openTabMenuAt",
+                              Q_ARG(QVariant, QVariant(0)), Q_ARG(QVariant, QVariant(0)),
+                              Q_ARG(QVariant, QVariant(40)), Q_ARG(QVariant, QVariant(40)));
+    settle();
+    QVERIFY(chooseInMenu(QStringLiteral("tabMenu"), QStringLiteral("Close tabs to the right")));
+    settle();
+    QCOMPARE(pane->tabCount(), 1);
+
+    // A pane that would be emptied keeps its tab, so the entry that would empty
+    // it is not drawn at all.
+    m_workspace->splitRight(QStringLiteral("files"));
+    settle();
+    QMetaObject::invokeMethod(m_engine->rootObjects().first(), "openTabMenuAt",
+                              Q_ARG(QVariant, QVariant(0)), Q_ARG(QVariant, QVariant(0)),
+                              Q_ARG(QVariant, QVariant(40)), Q_ARG(QVariant, QVariant(40)));
+    settle();
+    QVERIFY(!menuLabels(QStringLiteral("tabMenu"))
+                 .contains(QStringLiteral("Move tab to other pane")));
+    key(Qt::Key_Escape);
+
+    m_workspace->addTabIn(0, QStringLiteral("files"));
+    settle();
+    QMetaObject::invokeMethod(m_engine->rootObjects().first(), "openTabMenuAt",
+                              Q_ARG(QVariant, QVariant(0)), Q_ARG(QVariant, QVariant(0)),
+                              Q_ARG(QVariant, QVariant(40)), Q_ARG(QVariant, QVariant(40)));
+    settle();
+    QVERIFY(chooseInMenu(QStringLiteral("tabMenu"), QStringLiteral("Move tab to other pane")));
+    settle();
+    QCOMPARE(m_workspace->paneAtIndex(0)->tabCount(), 1);
+    QCOMPARE(m_workspace->paneAtIndex(1)->tabCount(), 2);
+    QCOMPARE(m_workspace->focusedPane(), 1);
+
+    while (m_workspace->paneCount() > 1)
+        m_workspace->closePane(m_workspace->paneCount() - 1);
+    settle();
+}
+
+// `Open with` is a second page of the same menu, and this is the reader behind
+// it: the associations the desktop keeps, out of the files the desktop keeps
+// them in. Written into the fixture rather than read off this machine, so the
+// case says the same thing on a machine with no applications installed at all.
+void TestStudio::offersTheApplicationsRegisteredForTheFile()
+{
+    const QDir data(m_home.path());
+    QVERIFY(data.mkpath(QStringLiteral("applications")));
+    QDir apps(data.filePath(QStringLiteral("applications")));
+
+    const struct { const char *file; const char *body; } entries[] = {
+        {"oma-reader.desktop",
+         "[Desktop Entry]\nType=Application\nName=Oma Reader\nExec=oma-reader %f\n"},
+        {"oma-hidden.desktop",
+         "[Desktop Entry]\nType=Application\nName=Oma Hidden\nNoDisplay=true\nExec=x %f\n"},
+        {"oma-dropped.desktop",
+         "[Desktop Entry]\nType=Application\nName=Oma Dropped\nExec=x %f\n"},
+    };
+    for (const auto &entry : entries) {
+        QFile file(apps.filePath(QString::fromLatin1(entry.file)));
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+        file.write(entry.body);
+    }
+
+    QFile cache(apps.filePath(QStringLiteral("mimeinfo.cache")));
+    QVERIFY(cache.open(QIODevice::WriteOnly | QIODevice::Text));
+    cache.write("[MIME Cache]\n"
+                "text/plain=oma-reader.desktop;oma-hidden.desktop;oma-dropped.desktop;\n");
+    cache.close();
+
+    // The user's own list, which is where a removal is written when somebody
+    // takes an application off a type in their desktop settings.
+    QFile associations(apps.filePath(QStringLiteral("mimeapps.list")));
+    QVERIFY(associations.open(QIODevice::WriteOnly | QIODevice::Text));
+    associations.write("[Removed Associations]\ntext/plain=oma-dropped.desktop;\n");
+    associations.close();
+
+    const QString file = QDir(m_tree.path()).filePath(QStringLiteral("one.txt"));
+    QStringList names;
+    for (const QVariant &app : m_index->applicationsFor(file))
+        names.append(app.toMap().value(QStringLiteral("name")).toString());
+
+    QVERIFY2(names.contains(QStringLiteral("Oma Reader")), qPrintable(names.join(QLatin1String(" | "))));
+    // What the desktop menu leaves out, this leaves out too.
+    QVERIFY2(!names.contains(QStringLiteral("Oma Hidden")), "a NoDisplay entry was offered");
+    QVERIFY2(!names.contains(QStringLiteral("Oma Dropped")), "a removed association was offered");
+
+    // And the entry file is what gets launched, not the name: two applications
+    // can be called the same thing.
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Open with…")));
+    settle();
+    QVERIFY2(menuLabels(QStringLiteral("openWithMenu")).contains(QStringLiteral("Oma Reader")),
+             qPrintable(menuLabels(QStringLiteral("openWithMenu")).join(QLatin1String(" | "))));
+
+    openRequests().clear();
+    QVERIFY(chooseInMenu(QStringLiteral("openWithMenu"), QStringLiteral("Oma Reader")));
+    QCOMPARE(openRequests().size(), 1);
+    QVERIFY2(openRequests().first().kind == OpenRequest::OpenWith,
+             "choosing an application asked for something else");
+    QCOMPARE(openRequests().first().path, file);
+    QCOMPARE(openRequests().first().application,
+             apps.filePath(QStringLiteral("oma-reader.desktop")));
+
+    QVERIFY(apps.removeRecursively());
+}
+
+// The tab where a tag is a folder.
+//
+// The fixture's vocabulary is what is being read: `one.txt` carries `notes
+// work`, `six.md` carries `notes project work`, `two.md` carries `notes`, and
+// `four.drawio` carries `diagram project`. So `#notes` holds three files and
+// still divides into `work` and `project`, and `#notes/#work` holds two.
+void TestStudio::walksTagsAsIfTheyWereFolders()
+{
+    m_workspace->addTab(QStringLiteral("tags"));
+    settle();
+    QCOMPARE(tab()->kind(), QStringLiteral("tags"));
+    QCOMPARE(tab()->title(), QStringLiteral("Tags"));
+
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    QVERIFY(folder);
+
+    const auto namesOfKind = [folder](const QString &wanted) {
+        QStringList names;
+        for (int i = 0; i < folder->property("count").toInt(); ++i) {
+            QVariantMap entry;
+            QMetaObject::invokeMethod(folder, "entryAt", Q_RETURN_ARG(QVariantMap, entry),
+                                      Q_ARG(int, i));
+            if (entry.value(QStringLiteral("kind")).toString() == wanted)
+                names.append(entry.value(QStringLiteral("name")).toString());
+        }
+        return names;
+    };
+
+    // The root narrows nothing, so it holds the whole vocabulary and every row
+    // the index knows about -- the answer `omafiles ls` gives with no filter on
+    // it, which is the count the header shows. Counted against that rather than
+    // against a number written here: earlier cases in this file tag paths of
+    // their own, and a literal would be a case that only passes alone.
+    QStringList facets = namesOfKind(QStringLiteral("tag"));
+    QVERIFY2(facets.contains(QStringLiteral("notes")), qPrintable(facets.join(QLatin1String(" "))));
+    QVERIFY2(facets.contains(QStringLiteral("archive")), qPrintable(facets.join(QLatin1String(" "))));
+    int rowsWithAPath = 0;
+    for (int i = 0; i < folder->property("count").toInt(); ++i) {
+        QString path;
+        QMetaObject::invokeMethod(folder, "pathAt", Q_RETURN_ARG(QString, path), Q_ARG(int, i));
+        if (!path.isEmpty())
+            ++rowsWithAPath;
+    }
+    QCOMPARE(rowsWithAPath, m_index->fileCount());
+
+    // Walking into one narrows the question rather than moving anywhere.
+    focusRow(QStringLiteral("notes"));
+    key('l');
+    settle();
+    QCOMPARE(tab()->facets(), QStringList{QStringLiteral("notes")});
+    QCOMPARE(tab()->title(), QStringLiteral("#notes"));
+    QCOMPARE(namesOfKind(QStringLiteral("file")).size(), 3);
+
+    facets = namesOfKind(QStringLiteral("tag"));
+    QVERIFY2(facets.contains(QStringLiteral("work")), qPrintable(facets.join(QLatin1String(" "))));
+    // A tag no file here carries is not offered: it would be a folder that
+    // opens empty.
+    QVERIFY2(!facets.contains(QStringLiteral("archive")),
+             "a tag with nothing under it was offered as a folder");
+    // And neither is the one already walked into: `#notes/#notes` is `#notes`.
+    QVERIFY2(!facets.contains(QStringLiteral("notes")),
+             "the tag already in the path was offered again");
+
+    focusRow(QStringLiteral("work"));
+    key('l');
+    settle();
+    QCOMPARE(tab()->facets(), (QStringList{QStringLiteral("notes"), QStringLiteral("work")}));
+    QCOMPARE(namesOfKind(QStringLiteral("file")).size(), 2);
+    // Both files here carry `work` and `notes`, so neither tells them apart any
+    // more -- and one that divides nothing is a folder onto the same list.
+    QVERIFY2(!namesOfKind(QStringLiteral("tag")).contains(QStringLiteral("notes")),
+             "a tag every file here carries was offered as a folder");
+
+    // `h` takes the last tag off, and `~` takes them all off: the top of this
+    // tab is the vocabulary, the way the top of a folder tab is home.
+    key('h');
+    QCOMPARE(tab()->facets(), QStringList{QStringLiteral("notes")});
+    key('~');
+    QCOMPARE(tab()->facets(), QStringList());
+
+    m_workspace->closeCurrentTab();
+    settle();
+}
+
+// The property a directory tree does not have: a file is under every path that
+// describes it, so the same tags in another order are the same listing and not
+// a second one.
+void TestStudio::asksOneQuestionWhicheverWayItIsWalked()
+{
+    m_workspace->addTab(QStringLiteral("tags"));
+    settle();
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    QVERIFY(folder);
+
+    const auto listing = [folder] {
+        QStringList paths;
+        for (int i = 0; i < folder->property("count").toInt(); ++i) {
+            QString path;
+            QMetaObject::invokeMethod(folder, "pathAt", Q_RETURN_ARG(QString, path),
+                                      Q_ARG(int, i));
+            if (!path.isEmpty())
+                paths.append(path);
+        }
+        paths.sort();
+        return paths;
+    };
+
+    tab()->setFacets({QStringLiteral("notes"), QStringLiteral("work")});
+    settle();
+    const QStringList oneWay = listing();
+    QCOMPARE(oneWay.size(), 2);
+    const QString title = tab()->title();
+
+    tab()->setFacets({QStringLiteral("work"), QStringLiteral("notes")});
+    settle();
+    QCOMPARE(listing(), oneWay);
+    // And it is called the same thing either way, or one question would look
+    // like two in the tab strip.
+    QCOMPARE(tab()->title(), title);
+
+    // A facet row carries no path, so nothing that acts on a file can reach
+    // one: marking everything marks the files and never the tags.
+    tab()->setFacets({});
+    settle();
+    QMetaObject::invokeMethod(folder, "markAll");
+    QCOMPARE(tab()->markedCount(), listing().size());
+    QStringList marked;
+    QMetaObject::invokeMethod(folder, "markedPaths", Q_RETURN_ARG(QStringList, marked));
+    QVERIFY2(!marked.contains(QString()), "a tag row ended up in the marked set");
+
+    m_workspace->closeCurrentTab();
+    settle();
 }
 
 QTEST_MAIN(TestStudio)

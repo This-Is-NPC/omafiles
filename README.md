@@ -42,6 +42,9 @@ at `pkgbuilds/omafiles`.
 - `Ctrl+L` — edit the path
 - `Tab` — next control (path, chips, tabs)
 - `]` / `[` — next, previous tab
+- Tags tab: a tag is a folder — `l` walks into one and narrows the listing to
+  the files carrying every tag in the path, `h` takes the last one off, `~`
+  takes them all off. `#notes/#work` and `#work/#notes` are the same listing
 - Graph: `j` / `k` move nodes, `l` open, `Shift+h` / `Shift+j` / `Shift+k` / `Shift+l` pan, `+` / `-` / `=` zoom, `0` reset
 - `Ctrl+\` — split the pane
 - `Ctrl+,` / `Ctrl+.` — resize the split
@@ -55,6 +58,18 @@ omafiles tag add --tag work -- ~/docs/invoice.pdf
 omafiles ls --tag work
 omafiles tags
 ```
+
+A disk that is not always plugged in wants a declared root:
+
+```bash
+omafiles roots add --id archive --check .plugged-in -- /mnt/archive
+```
+
+Rows under it are stored as the root and the rest of the way there, so remounting
+the same storage somewhere else leaves every tag where it was. And a root that is
+declared and not here makes its rows unreachable rather than missing — which is
+the difference between `prune` doing its job and `prune` throwing away the tags
+of an archive that is sitting in a drawer.
 
 Every verb is in [the command line](docs/cli.md).
 

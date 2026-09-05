@@ -37,18 +37,30 @@ Window {
     property string focusRegion: "list"
     property bool pendingG: false
     property var paneItems: ({})
+    /// Where the last menu was opened, so a second page of one lands on it.
+    property real menuX: 0
+    property real menuY: 0
 
 
     readonly property var activeTab: Workspace.currentTab
     readonly property var activeFolder: activeFilesRoot ? activeFilesRoot.folder : null
     readonly property var activeListing: activeFilesRoot ? activeFilesRoot.view : null
     readonly property var activeTagsList: activeDock ? activeDock.tagsList : null
+    // A list is on screen. Two kinds of tab draw one: a folder, and a set of
+    // tags read as folders. They share the view, the keys and the model, so
+    // almost everything that asks this question means either of them.
     readonly property bool onFiles: activeTab !== null && activeTab !== undefined
-                                    && activeTab.kind === "files" && activeFilesRoot !== null
+                                    && (activeTab.kind === "files" || activeTab.kind === "tags")
+                                    && activeFilesRoot !== null
+    /// The narrower question, for the handful of things that are about a place
+    /// in the tree: the home key, and a path that names a folder.
+    readonly property bool onDirectory: onFiles && activeTab.kind === "files"
+    readonly property bool onTags: onFiles && activeTab.kind === "tags"
     readonly property bool onGraph: activeTab !== null && activeTab !== undefined
                                     && activeTab.kind === "graph" && activeGraph !== null
     readonly property bool blocked: commandPalette.visible || helpSheet.visible
                                     || fileMenu.visible || tabMenu.visible
+                                    || openWithMenu.visible
                                     || newTabMenu.visible || editingPath || filtering
 
     // ---------------------------------------------------------------- keymap
@@ -197,20 +209,58 @@ Window {
             return
         editingPath = true
         focusRegion = "path"
-        pathField.text = activeTab.cwd
+        pathField.text = onTags ? facetPath(activeTab.facets) : activeTab.cwd
         pathField.focusEntry()
     }
 
     function finishPathEdit(accept, text) {
         if (accept && activeFolder) {
-            // Typing a path asks for that folder, which is a different question
-            // from the tag that may be on screen.
-            if (activeTab)
-                activeTab.selectedTag = ""
-            activeFolder.directory = text
+            if (onTags) {
+                // A query typed rather than walked to. The same words in
+                // another order are the same question, so nothing here cares
+                // which order they arrive in.
+                activeTab.facets = parseFacetPath(text)
+            } else {
+                // Typing a path asks for that folder, which is a different
+                // question from the tag that may be on screen.
+                if (activeTab)
+                    activeTab.selectedTag = ""
+                activeFolder.directory = text
+            }
         }
         editingPath = false
         takeFocus()
+    }
+
+    // A tags tab already standing on a query, which is what every way into one
+    // means: made and then walked would show the whole vocabulary for a frame.
+    function openTagsTab(facets) {
+        Workspace.addTab("tags")
+        if (Workspace.currentTab)
+            Workspace.currentTab.facets = facets
+    }
+
+    // ---------------------------------------------------------------- facets
+    //
+    // A list of tags, written the way the tab strip and the graph already spell
+    // one, and read back from whatever somebody types: with or without the
+    // hashes, separated by slashes, spaces or commas.
+    function facetPath(facets) {
+        if (!facets || facets.length === 0)
+            return ""
+        const sorted = facets.slice().sort()
+        return "#" + sorted.join("/#")
+    }
+
+    function parseFacetPath(text) {
+        const out = []
+        const words = text.split(/[\/\s,]+/)
+        for (let i = 0; i < words.length; i++) {
+            const word = words[i].replace(/^#/, "").trim().toLowerCase()
+            if (word !== "" && out.indexOf(word) < 0)
+                out.push(word)
+        }
+        return out
     }
 
     function tagRow(name) {
@@ -244,14 +294,86 @@ Window {
         activeTab.selectedTag = activeTab.selectedTag === name ? "" : name
     }
 
+    // ----------------------------------------------------------------- paths
+    //
+    // The menu says things about paths -- copies them, walks to the folder
+    // holding them, quotes them for a command line -- and none of that is
+    // anything the models are for.
+    function parentOf(path) {
+        if (path === "" || path === "/")
+            return path
+        const cut = path.lastIndexOf("/")
+        return cut <= 0 ? "/" : path.substring(0, cut)
+    }
+
+    function nameOf(path) {
+        const cut = path.lastIndexOf("/")
+        return cut < 0 ? path : path.substring(cut + 1)
+    }
+
+    // `encodeURI` leaves `#` and `?` where they are, and both of them end a
+    // path early in whatever reads the URI back.
+    function uriOf(path) {
+        return "file://" + encodeURI(path).replace(/#/g, "%23").replace(/\?/g, "%3F")
+    }
+
+    // A path as a shell would have to be handed it. Left bare where every
+    // character in it is one no shell reads as anything, quoted otherwise --
+    // and a single quote inside single quotes is spelled by closing them.
+    function shellWord(path) {
+        if (/^[A-Za-z0-9_@%+=:,.\/-]+$/.test(path))
+            return path
+        return "'" + path.replace(/'/g, "'\\''") + "'"
+    }
+
+    function uriLines(paths) {
+        const out = []
+        for (let i = 0; i < paths.length; i++)
+            out.push(win.uriOf(paths[i]))
+        return out.join("\n")
+    }
+
+    function shellWords(paths) {
+        const out = []
+        for (let i = 0; i < paths.length; i++)
+            out.push(win.shellWord(paths[i]))
+        return out.join(" ")
+    }
+
     // ------------------------------------------------------------------ menu
     function openFileMenuAt(x, y) {
+        // The receipt from the last command answered the question that was
+        // asked then. Opening the menu is as good a sign as any that it has
+        // been read, and the status bar has one line to say things on.
+        IndexModel.clearNotice()
+        menuX = x
+        menuY = y
         fileMenu.returnFocus = takeFocus
         fileMenu.openAt(x, y)
     }
 
-    function openFileMenuForPath(path, x, y) {
+    // The list of applications, over where the entry that asked for it was.
+    //
+    // A second menu and not a panel that grows out of the side of the first:
+    // this is the same component, opened in the same place, walked with the
+    // same keys. `Esc` leaves it the way `Esc` leaves anything here.
+    function openOpenWithMenu(path) {
+        const apps = IndexModel.applicationsFor(path)
+        if (apps.length === 0) {
+            // Said rather than shown as an empty box: a menu with nothing in it
+            // reads as a menu that failed to open.
+            IndexModel.noApplicationFor(path)
+            return
+        }
+        openWithMenu.apps = apps
+        openWithMenu.targetPath = path
+        openWithMenu.returnFocus = takeFocus
+        openWithMenu.openAt(menuX, menuY)
+    }
+
+    function openFileMenuForPath(path, kind, x, y) {
         fileMenu.targetPath = path
+        fileMenu.targetKind = kind
         openFileMenuAt(x, y)
     }
 
@@ -262,10 +384,12 @@ Window {
         const folder = activeFolder
         if (!listing || !folder || listing.currentIndex < 0) {
             fileMenu.targetPath = ""
+            fileMenu.targetKind = ""
             openFileMenuAt(root.width / 2, root.height / 3)
             return
         }
         fileMenu.targetPath = folder.pathAt(listing.currentIndex)
+        fileMenu.targetKind = folder.kindAt(listing.currentIndex)
         // Only rows the view has actually built have a position to point at,
         // and a cursor that is off screen -- or past the end of a list that has
         // just shrunk -- has none.
@@ -288,6 +412,7 @@ Window {
         tabMenu.targetPaneIndex = paneIndex
         tabMenu.targetTabIndex = tabIndex
         tabMenu.targetTabCount = pane.tabCount
+        IndexModel.clearNotice()
         tabMenu.returnFocus = win.takeFocus
         tabMenu.openAt(x, y)
     }
@@ -764,11 +889,19 @@ Window {
                         // A tag listing spans the index, so there is no path to
                         // print: it is spelled `#tag`, the way the graph and
                         // the tab strip spell it, rather than as a folder the
-                        // window is not standing in.
-                        readonly property string full: !win.activeTab
-                                                       || win.activeTab.kind !== "files" ? ""
-                            : win.activeTab.selectedTag !== ""
-                              ? "#" + win.activeTab.selectedTag : win.activeTab.cwd
+                        // window is not standing in. A tags tab spells the
+                        // whole query the same way -- `#work/#draft` -- which
+                        // is a path you can type as readily as a folder.
+                        readonly property string full: {
+                            if (!win.activeTab)
+                                return ""
+                            if (win.activeTab.kind === "tags")
+                                return win.facetPath(win.activeTab.facets)
+                            if (win.activeTab.kind !== "files")
+                                return ""
+                            return win.activeTab.selectedTag !== ""
+                                   ? "#" + win.activeTab.selectedTag : win.activeTab.cwd
+                        }
                         readonly property int cut: full.lastIndexOf("/")
                         readonly property string stem: cut > 0 ? full.substring(0, cut + 1)
                                                                : (cut === 0 ? "/" : "")
@@ -909,8 +1042,14 @@ Window {
                 // The folder first: it is about the pane in front of you and
                 // it goes away when you walk out of it, where an index error
                 // stays until the index is fixed and will be there when you do.
-                message: win.activeFolder && win.activeFolder.error !== ""
-                         ? win.activeFolder.error : IndexModel.error
+                // The receipt first. It answers something somebody just asked
+                // and it is gone as soon as they ask the next thing; the two
+                // errors under it describe a condition that will still be there
+                // to read afterwards.
+                message: IndexModel.notice !== ""
+                         ? IndexModel.notice
+                         : (win.activeFolder && win.activeFolder.error !== ""
+                            ? win.activeFolder.error : IndexModel.error)
                 hints: win.hintsForRegion
             }
         }
@@ -922,6 +1061,7 @@ Window {
             returnFocus: win.takeFocus
             commands: [
                 { id: "add-files", label: "New files tab", key: "Ctrl+T" },
+                { id: "add-tags", label: "New tags tab", key: "" },
                 { id: "add-graph", label: "New graph tab", key: "" },
                 { id: "close-tab", label: "Close tab", key: "Ctrl+W" },
                 { id: "split", label: "Split right", key: "Ctrl+\\" },
@@ -949,6 +1089,7 @@ Window {
             onChosen: function (id) {
                 switch (id) {
                 case "add-files": Workspace.addTab("files"); break
+                case "add-tags": Workspace.addTab("tags"); break
                 case "add-graph": Workspace.addTab("graph"); break
                 case "close-tab": Workspace.closeCurrentTab(); break
                 case "split": Workspace.splitRight("files"); break
@@ -990,51 +1131,309 @@ Window {
 
         ContextMenu {
             id: fileMenu
+            objectName: "fileMenu"
             anchors.fill: parent
             property string targetPath: ""
+            property string targetKind: ""
+
+            // What a command chosen here acts on: the marked set if the row
+            // under the pointer is in it, that row alone if it is not. The rule
+            // is the model's rather than each entry's, so that no entry can be
+            // written that forgets it -- which is how a delete of one file ends
+            // up taking forty.
+            readonly property var targets: win.activeFolder
+                ? win.activeFolder.targetPaths(fileMenu.targetPath)
+                : (fileMenu.targetPath !== "" ? [fileMenu.targetPath] : [])
+            readonly property bool hasTarget: fileMenu.targetPath !== ""
+            readonly property bool isFile: fileMenu.targetKind === "file"
+            // `..` is a way up and not a file, so nothing acts on it.
+            readonly property bool isRow: fileMenu.hasTarget
+                                          && fileMenu.targetKind !== "parent"
+            readonly property bool onRow: win.onFiles && fileMenu.isRow
+            readonly property int markedCount: win.activeFolder ? win.activeFolder.markedCount : 0
+            readonly property bool targetMarked: win.activeFolder !== null
+                                                 && win.activeFolder.isMarked(fileMenu.targetPath)
+            readonly property var targetTags: fileMenu.hasTarget
+                ? (win.activeFolder ? win.activeFolder.tagsFor(fileMenu.targetPath)
+                                    : IndexModel.tagsForPath(fileMenu.targetPath))
+                : []
+            readonly property string firstTag: fileMenu.targetTags.length > 0
+                                               ? fileMenu.targetTags[0] : ""
+            // The tag these entries are about, named in the label rather than
+            // left to be guessed: an entry that says `Apply tag` and not which
+            // one is an entry nobody can press twice with confidence.
+            //
+            // The tag being listed first, because a tag listing is a question
+            // about one tag and the tab is titled with it. Otherwise the one
+            // the panel's cursor is on. Both are on screen where they count,
+            // and where neither is -- a window whose tag panel has not been
+            // touched yet -- these entries are not drawn rather than drawn
+            // pointing at a tag nobody chose.
+            readonly property string focusedTag: {
+                if (win.activeTab && win.activeTab.selectedTag !== "")
+                    return win.activeTab.selectedTag
+                // In a tags tab it is the one just walked into, which is the
+                // last word of the path on screen.
+                if (win.onTags && win.activeTab.facets.length > 0)
+                    return win.activeTab.facets[win.activeTab.facets.length - 1]
+                return win.activeTagsList
+                       ? IndexModel.tagAt(win.activeTagsList.currentIndex) : ""
+            }
+            // The folder a `here` entry means: the folder pointed at, the
+            // folder holding the file pointed at, or the one on screen. Read
+            // off the target and not off the tab, so that these still mean
+            // something in a tag listing, where the rows come from anywhere.
+            readonly property string hereDir: fileMenu.targetKind === "dir"
+                ? fileMenu.targetPath
+                : (fileMenu.hasTarget
+                   ? win.parentOf(fileMenu.targetPath)
+                   // A tags tab is not standing anywhere, so with no row under
+                   // the pointer there is no folder for a `here` to mean.
+                   : (win.activeFolder && !win.onTags ? win.activeFolder.directory : ""))
+            readonly property bool hasHere: fileMenu.hereDir !== ""
+            // Worth offering to walk to only where it would be a move.
+            readonly property bool elsewhere: win.activeFolder !== null && fileMenu.hasTarget
+                && (win.activeFolder.selectedTag !== ""
+                    || win.parentOf(fileMenu.targetPath) !== win.activeFolder.directory)
+            readonly property string otherDir: {
+                const pane = Workspace.otherPane(Workspace.focusedPane)
+                return pane && pane.current ? pane.current.cwd : ""
+            }
+
+            // A label that counts the files it is about, where there is more
+            // than one of them. This is what stands in for a confirmation
+            // dialog: the entry says `Move 12 files to trash` before it is
+            // chosen, rather than asking about it afterwards.
+            function counted(one, many) {
+                return fileMenu.targets.length > 1
+                       ? many.replace("%1", fileMenu.targets.length) : one
+            }
+
             actions: [
-                { id: "open", label: "Open", key: "l" },
-                { id: "share", label: "Send with LocalSend", key: "", when: IndexModel.canShare }
+                { id: "open", label: "Open", key: "l", when: fileMenu.hasTarget },
+                { id: "open-with", label: "Open with…",
+                  when: IndexModel.canOpenWith && fileMenu.isRow },
+                { id: "go-to", label: "Go to containing folder",
+                  when: win.onFiles && fileMenu.elsewhere },
+                { id: "open-tab", label: "Open in new tab", when: fileMenu.hasHere },
+                { id: "open-pane", label: "Open in other pane", when: fileMenu.hasHere },
+                { id: "open-parent-tab", label: "Open parent in new tab", when: fileMenu.hasHere },
+                { id: "open-graph", label: "Open in graph tab", when: fileMenu.hasTarget },
+                { id: "terminal", label: "Open terminal here",
+                  when: IndexModel.canOpenTerminal && fileMenu.hasHere },
+                { id: "editor", label: "Open in editor",
+                  when: IndexModel.canEdit && fileMenu.isFile },
+                { id: "share", label: "Send with LocalSend",
+                  when: IndexModel.canShare && fileMenu.hasTarget },
+
+                { id: "copy-path", label: fileMenu.counted("Copy path", "Copy %1 paths"),
+                  when: fileMenu.hasTarget },
+                { id: "copy-name", label: "Copy name", when: fileMenu.hasTarget },
+                { id: "copy-uri", label: fileMenu.counted("Copy as URI", "Copy %1 URIs"),
+                  when: fileMenu.hasTarget },
+                { id: "copy-tags", label: "Copy tags", when: fileMenu.targetTags.length > 0 },
+                { id: "copy-tag-command", label: "Copy tag command", when: fileMenu.hasTarget },
+                { id: "copy-open-command", label: "Copy open command", when: fileMenu.isFile },
+
+                { id: "mark", label: fileMenu.targetMarked ? "Unmark" : "Mark", key: "Space",
+                  when: fileMenu.onRow },
+                { id: "mark-all", label: "Mark all", key: "a", when: win.onFiles },
+                { id: "clear-marks", label: "Clear marks", key: "A",
+                  when: win.onFiles && fileMenu.markedCount > 0 },
+                { id: "invert-marks", label: "Invert marks", when: win.onFiles },
+                { id: "mark-same-tag", label: "Mark same tag",
+                  when: fileMenu.onRow && fileMenu.targetTags.length > 0 },
+                { id: "mark-same-type", label: "Mark same type", when: fileMenu.onRow },
+
+                { id: "filter-tag", label: "Filter by " + fileMenu.firstTag,
+                  when: win.onFiles && fileMenu.firstTag !== "" },
+                // The other half of the same thought: a listing is one tag, a
+                // tags tab is that tag and every one that still divides it.
+                { id: "browse-tag", label: "Browse #" + fileMenu.firstTag,
+                  when: fileMenu.firstTag !== "" },
+                { id: "leave-tag", label: "Leave tag listing",
+                  when: win.activeTab !== null && win.activeTab.selectedTag !== "" },
+                // Not offered where the row already carries it: applying a
+                // tag a file has is a write that changes nothing, and an entry
+                // that does nothing reads as one that failed.
+                { id: "tag-add", label: "Apply tag " + fileMenu.focusedTag,
+                  when: fileMenu.hasTarget && fileMenu.focusedTag !== ""
+                        && fileMenu.targetTags.indexOf(fileMenu.focusedTag) < 0 },
+                { id: "tag-rm", label: "Remove tag " + fileMenu.focusedTag,
+                  when: fileMenu.hasTarget && fileMenu.focusedTag !== ""
+                        && fileMenu.targetTags.indexOf(fileMenu.focusedTag) >= 0 },
+                { id: "tag-clear", label: fileMenu.counted("Clear tags", "Clear tags on %1 files"),
+                  when: fileMenu.hasTarget },
+                { id: "tag-cp", label: "Copy tags onto the marked",
+                  when: fileMenu.hasTarget && !fileMenu.targetMarked
+                        && fileMenu.markedCount > 0 && fileMenu.targetTags.length > 0 },
+                { id: "adopt", label: "Adopt tags from disk here", when: fileMenu.hasHere },
+
+                { id: "copy-other",
+                  label: fileMenu.counted("Copy to other pane", "Copy %1 files to other pane"),
+                  when: fileMenu.isRow && fileMenu.otherDir !== "" },
+                { id: "move-other",
+                  label: fileMenu.counted("Move to other pane", "Move %1 files to other pane"),
+                  when: fileMenu.isRow && fileMenu.otherDir !== "" },
+                { id: "duplicate", label: "Duplicate",
+                  when: fileMenu.isFile && fileMenu.targets.length === 1 },
+                { id: "trash", label: fileMenu.counted("Move to trash", "Move %1 files to trash"),
+                  when: fileMenu.isRow },
+
+                { id: "reindex", label: "Reindex this folder", when: fileMenu.hasHere },
+                { id: "prune", label: "Prune missing rows here", when: fileMenu.hasHere },
+                { id: "verify", label: "Verify this tree", when: fileMenu.hasHere },
+                { id: "reload", label: "Reload index", key: "F5" }
             ]
+
             onChosen: function (id) {
                 const path = fileMenu.targetPath
-                if (!path)
-                    return
-                if (id === "open") {
-                    const folder = win.activeFolder
-                    const listing = win.activeListing
+                const paths = fileMenu.targets
+                const folder = win.activeFolder
+                const listing = win.activeListing
+                switch (id) {
+                case "open":
+                    // Through the row where the cursor is on it, so a folder is
+                    // walked into rather than handed to the desktop to open.
                     if (folder && listing && listing.currentIndex >= 0
                             && folder.pathAt(listing.currentIndex) === path)
                         folder.activateRow(listing.currentIndex)
                     else
                         IndexModel.openPath(path)
-                } else if (id === "share") {
-                    IndexModel.sharePath(path)
+                    break
+                // On the next tick, because this menu is still closing: the
+                // close that follows this handler puts the focus back on the
+                // list, and it would take it off the menu opened here.
+                case "open-with": Qt.callLater(win.openOpenWithMenu, path); break
+                case "go-to": if (folder) folder.goTo(path); break
+                case "open-tab":
+                    Workspace.openTabIn(Workspace.focusedPane, "files", fileMenu.hereDir)
+                    break
+                case "open-pane": Workspace.splitWith("files", fileMenu.hereDir); break
+                case "open-parent-tab":
+                    Workspace.openTabIn(Workspace.focusedPane, "files",
+                                        win.parentOf(fileMenu.hereDir))
+                    break
+                case "open-graph": Workspace.addTab("graph"); break
+                case "terminal": IndexModel.openTerminalIn(fileMenu.hereDir); break
+                case "editor": IndexModel.editPath(path); break
+                case "share": IndexModel.sharePath(path); break
+
+                // One path per line, which is what a list of paths is
+                // everywhere else in this program and what every editor and
+                // shell will take back.
+                case "copy-path": Clipboard.copy(paths.join("\n")); break
+                case "copy-name": Clipboard.copy(win.nameOf(path)); break
+                case "copy-uri": Clipboard.copy(win.uriLines(paths)); break
+                case "copy-tags": Clipboard.copy(fileMenu.targetTags.join(" ")); break
+                // Left with the tag missing on purpose: the command is copied
+                // to be finished, and a tag guessed here would be a tag applied
+                // by somebody who meant to type a different one.
+                case "copy-tag-command":
+                    Clipboard.copy("omafiles tag add --tag  -- " + win.shellWords(paths))
+                    break
+                case "copy-open-command": Clipboard.copy(IndexModel.openCommandFor(path)); break
+
+                case "mark": if (folder) folder.toggleMarkAt(folder.rowForPath(path)); break
+                case "mark-all": if (folder) folder.markAll(); break
+                case "clear-marks": if (folder) folder.clearMarks(); break
+                case "invert-marks": if (folder) folder.invertMarks(); break
+                case "mark-same-tag": if (folder) folder.markSameTag(path); break
+                case "mark-same-type": if (folder) folder.markSameType(path); break
+
+                case "filter-tag":
+                    if (win.activeTab) win.activeTab.selectedTag = fileMenu.firstTag
+                    break
+                case "browse-tag": win.openTagsTab([fileMenu.firstTag]); break
+                case "leave-tag": if (win.activeTab) win.activeTab.selectedTag = ""; break
+                case "tag-add": IndexModel.tagAdd(paths, fileMenu.focusedTag); break
+                case "tag-rm": IndexModel.tagRemove(paths, fileMenu.focusedTag); break
+                case "tag-clear": IndexModel.tagClear(paths); break
+                case "tag-cp":
+                    IndexModel.tagCopy(path, folder ? folder.markedPaths() : [])
+                    break
+                case "adopt": IndexModel.adoptTagsIn(fileMenu.hereDir); break
+
+                case "copy-other": IndexModel.copyInto(paths, fileMenu.otherDir); break
+                case "move-other": IndexModel.moveInto(paths, fileMenu.otherDir); break
+                case "duplicate": IndexModel.duplicate(path); break
+                case "trash": IndexModel.trash(paths); break
+
+                case "reindex": IndexModel.reindexTree(fileMenu.hereDir); break
+                case "prune": IndexModel.pruneTree(fileMenu.hereDir); break
+                case "verify": IndexModel.verifyTree(fileMenu.hereDir); break
+                case "reload": IndexModel.reload(); break
                 }
             }
         }
 
         ContextMenu {
             id: tabMenu
+            objectName: "tabMenu"
             anchors.fill: parent
             property int targetPaneIndex: 0
             property int targetTabIndex: 0
             property int targetTabCount: 1
             actions: [
                 { id: "close", label: "Close tab", key: "Ctrl+W" },
-                { id: "close-others", label: "Close others", when: targetTabCount > 1 }
+                { id: "close-others", label: "Close others", when: tabMenu.targetTabCount > 1 },
+                { id: "close-right", label: "Close tabs to the right",
+                  when: tabMenu.targetTabIndex < tabMenu.targetTabCount - 1 },
+                { id: "duplicate", label: "Duplicate tab" },
+                { id: "move-pane", label: "Move tab to other pane",
+                  when: Workspace.paneCount > 1 && tabMenu.targetTabCount > 1 },
+                { id: "split", label: "Split with this tab", key: "Ctrl+\\" },
+                { id: "close-pane", label: "Close pane", key: "Ctrl+Shift+W",
+                  when: Workspace.paneCount > 1 }
             ]
             onChosen: function (id) {
                 const pi = tabMenu.targetPaneIndex
                 const ti = tabMenu.targetTabIndex
-                if (id === "close") {
-                    Workspace.closeTab(pi, ti)
-                } else if (id === "close-others") {
+                switch (id) {
+                case "close": Workspace.closeTab(pi, ti); break
+                case "close-others":
+                    // Away from the tab that is staying in both directions, and
+                    // from the far end inwards, so no close renumbers one that
+                    // is still to come.
                     for (let i = tabMenu.targetTabCount - 1; i > ti; i--)
                         Workspace.closeTab(pi, i)
-                    for (let i = ti - 1; i >= 0; i--)
-                        Workspace.closeTab(pi, i)
+                    for (let j = ti - 1; j >= 0; j--)
+                        Workspace.closeTab(pi, j)
+                    break
+                case "close-right": Workspace.closeTabsAfter(pi, ti); break
+                case "duplicate": Workspace.duplicateTab(pi, ti); break
+                case "move-pane": Workspace.moveTabToOtherPane(pi, ti); break
+                case "split": {
+                    const tab = Workspace.tabAtIndex(pi, ti)
+                    if (tab)
+                        Workspace.splitWith(tab.kind, tab.cwd)
+                    break
                 }
+                case "close-pane": Workspace.closePane(pi); break
+                }
+            }
+        }
+
+        ContextMenu {
+            id: openWithMenu
+            objectName: "openWithMenu"
+            anchors.fill: parent
+            property string targetPath: ""
+            // Handed in rather than looked up here: the lookup asks `xdg-mime`,
+            // which is two child processes, and a binding would pay for them
+            // again on every change it happens to hear about.
+            property var apps: []
+            actions: {
+                const out = []
+                for (let i = 0; i < openWithMenu.apps.length; i++)
+                    out.push({ id: openWithMenu.apps[i].file,
+                               label: openWithMenu.apps[i].name })
+                return out
+            }
+            // The entry file is the id: two applications can be called the same
+            // thing, and the file they are launched from cannot.
+            onChosen: function (id) {
+                IndexModel.openWith(openWithMenu.targetPath, id)
             }
         }
 
@@ -1044,6 +1443,7 @@ Window {
             property int targetPaneIndex: 0
             actions: [
                 { id: "files", label: "Files tab" },
+                { id: "tags", label: "Tags tab" },
                 { id: "graph", label: "Graph tab" }
             ]
             onChosen: function (id) {
@@ -1123,8 +1523,11 @@ Window {
                             required property int index
                             title: modelData.title
                             // A tab showing a tag is not a folder, and a folder
-                            // icon beside `#work` says it is.
-                            kind: modelData.kind === "files" && modelData.selectedTag !== ""
+                            // icon beside `#work` says it is. A tags tab is
+                            // never a folder at all.
+                            kind: modelData.kind === "tags"
+                                  || (modelData.kind === "files"
+                                      && modelData.selectedTag !== "")
                                   ? "tag" : modelData.kind
                             // Optional, because closing a pane leaves the
                             // delegate alive one evaluation longer than the
@@ -1441,6 +1844,7 @@ Window {
                 directory: filesRoot.tab ? filesRoot.tab.cwd : ""
                 filter: filesRoot.tab ? filesRoot.tab.filter : ""
                 selectedTag: filesRoot.tab ? filesRoot.tab.selectedTag : ""
+                facets: filesRoot.tab ? filesRoot.tab.facets : []
                 showHidden: filesRoot.tab ? filesRoot.tab.showHidden : false
                 sortRole: filesRoot.tab ? filesRoot.tab.sortRole : "name"
                 sortAscending: filesRoot.tab ? filesRoot.tab.sortAscending : true
@@ -1555,7 +1959,15 @@ Window {
                             required property bool marked
                             required property string sizeText
                             required property string mtimeText
+                            required property int count
                             required property int index
+                            /// A facet row: a tag standing in for a folder. It
+                            /// has no path, so nothing that acts on a file can
+                            /// reach it, and what it shows on the right is how
+                            /// many files it leads to rather than its own tags.
+                            readonly property bool facet: row.kind === "tag"
+                            readonly property string tally: row.count >= 0
+                                                            ? row.count.toString() : ""
                             readonly property bool details: filesRoot.viewMode === "details"
                             readonly property var tagList: row.tags.length === 0
                                                            ? [] : row.tags.split(" ")
@@ -1600,8 +2012,9 @@ Window {
                                 anchors.left: markDot.right
                                 anchors.leftMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                kind: row.kind === "file" ? "file"
-                                    : (row.kind === "parent" ? "parent" : "folder")
+                                kind: row.facet ? "tag"
+                                    : (row.kind === "file" ? "file"
+                                    : (row.kind === "parent" ? "parent" : "folder"))
                                 ink: row.kind === "file" ? Theme.dim : Theme.accent
                             }
 
@@ -1654,7 +2067,10 @@ Window {
                                 width: filesRoot.sizeWidth
                                 quiet: true
                                 font.pixelSize: 11
-                                text: row.sizeText
+                                // A tag has no size but it does have a count,
+                                // and this is the column that answers "how
+                                // much".
+                                text: row.facet ? row.tally : row.sizeText
                             }
 
                             Label {
@@ -1672,9 +2088,20 @@ Window {
                             // Floats at the end of the row rather than lining up
                             // in a column: the list view has no columns to line
                             // up with.
+                            Label {
+                                id: facetCount
+                                visible: !row.details && row.facet
+                                anchors.right: parent.right
+                                anchors.rightMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                quiet: true
+                                font.pixelSize: 11
+                                text: row.tally
+                            }
+
                             TagStrip {
                                 id: tagArea
-                                visible: !row.details
+                                visible: !row.details && !row.facet
                                 anchors.right: parent.right
                                 anchors.rightMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
@@ -1693,7 +2120,7 @@ Window {
                                     if (button === Qt.RightButton) {
                                         const pos = row.mapToItem(root, point.position.x,
                                                                   point.position.y)
-                                        win.openFileMenuForPath(row.path, pos.x, pos.y)
+                                        win.openFileMenuForPath(row.path, row.kind, pos.x, pos.y)
                                     }
                                 }
                                 onDoubleTapped: {
@@ -1727,6 +2154,7 @@ Window {
                             required property string name
                             required property string kind
                             required property bool marked
+                            required property int count
                             required property int index
                             readonly property bool onCursor: grid.currentIndex === index
 
@@ -1754,8 +2182,9 @@ Window {
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         width: 30
                                         height: 30
-                                        kind: cell.kind === "file" ? "file"
-                                            : (cell.kind === "parent" ? "parent" : "folder")
+                                        kind: cell.kind === "tag" ? "tag"
+                                            : (cell.kind === "file" ? "file"
+                                            : (cell.kind === "parent" ? "parent" : "folder"))
                                         ink: cell.kind === "file" ? Theme.dim : Theme.accent
                                     }
                                     Label {
@@ -1778,7 +2207,7 @@ Window {
                                         if (button === Qt.RightButton) {
                                             const pos = cell.mapToItem(root, point.position.x,
                                                                        point.position.y)
-                                            win.openFileMenuForPath(cell.path, pos.x, pos.y)
+                                            win.openFileMenuForPath(cell.path, cell.kind, pos.x, pos.y)
                                         }
                                     }
                                     onDoubleTapped: {
@@ -1850,15 +2279,16 @@ Window {
                         IndexModel.openPath(label)
                         return
                     }
-                    Workspace.addTab("files")
-                    if (Workspace.currentTab)
-                        Workspace.currentTab.selectedTag = label
+                    // A tag on the graph opens as a tags tab and not as a
+                    // filtered folder: the graph is a map of which tags go
+                    // together, and the tab is the same fact walked into.
+                    win.openTagsTab([label])
                 }
                 onNodeMenuRequested: function (id, kind, path, x, y) {
                     if (kind !== "file" || !path)
                         return
                     const pos = mapToItem(root, x, y)
-                    win.openFileMenuForPath(path, pos.x, pos.y)
+                    win.openFileMenuForPath(path, "file", pos.x, pos.y)
                 }
             }
 

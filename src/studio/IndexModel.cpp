@@ -2,9 +2,14 @@
 
 #include "Open.h"
 #include "Paths.h"
+#include "Verb.h"
 
 #include <QDir>
 #include <QFileInfo>
+#include <QPointer>
+
+#include <functional>
+#include <memory>
 
 namespace omafiles {
 
@@ -121,7 +126,9 @@ void IndexModel::reload()
     m_present = 0;
     m_missing = 0;
     m_unknown = 0;
+    m_unreachable = 0;
     QString declined;
+    QString waiting;
     for (const Record &record : m_store.records()) {
         QString detail;
         switch (pathState(record.path, &detail)) {
@@ -136,6 +143,15 @@ void IndexModel::reload()
             if (declined.isEmpty())
                 declined = detail;
             break;
+        // A row on a disk nobody has plugged in. Counted apart from the two
+        // above because it is the one an answer is expected for: the drive
+        // comes back and so do the rows, and nothing here or in the command
+        // line will touch them meanwhile.
+        case PathState::Unreachable:
+            ++m_unreachable;
+            if (waiting.isEmpty())
+                waiting = detail;
+            break;
         }
     }
 
@@ -147,6 +163,9 @@ void IndexModel::reload()
     // an index that is not empty.
     if (!loaded)
         m_error = error;
+    else if (m_unreachable > 0 && m_present == 0)
+        m_error = QStringLiteral("%1 index row(s) are on a root that is not here; %2")
+                      .arg(m_unreachable).arg(waiting);
     else if (m_unknown > 0)
         m_error = QStringLiteral("%1 index row(s) not counted; %2").arg(m_unknown).arg(declined);
     else if (m_missing > 0 && m_present == 0)
@@ -183,6 +202,320 @@ void IndexModel::sharePath(const QString &path)
         m_error = error;
         emit changed();
     }
+}
+
+void IndexModel::openTerminalIn(const QString &directory)
+{
+    QString error;
+    if (!omafiles::openTerminalIn(directory, &error))
+        setNotice(error);
+}
+
+void IndexModel::editPath(const QString &path)
+{
+    QString error;
+    if (!openInEditor(path, &error))
+        setNotice(error);
+}
+
+QString IndexModel::openCommandFor(const QString &path) const
+{
+    OpenPlan plan;
+    QString error;
+    if (!planOpen(path, &plan, &error))
+        return QString();
+    return formatOpenPlan(plan);
+}
+
+QVariantList IndexModel::applicationsFor(const QString &path) const
+{
+    QVariantList out;
+    const QVector<OpenApp> apps = omafiles::applicationsFor(path);
+    for (const OpenApp &app : apps) {
+        out.append(QVariantMap{{QStringLiteral("file"), app.desktopFile},
+                               {QStringLiteral("name"), app.name}});
+    }
+    return out;
+}
+
+void IndexModel::openWith(const QString &path, const QString &desktopFile)
+{
+    QString error;
+    if (!openWithApp(path, desktopFile, &error))
+        setNotice(error);
+}
+
+void IndexModel::noApplicationFor(const QString &path)
+{
+    setNotice(QStringLiteral("no application registered for %1")
+                  .arg(QFileInfo(path).fileName()));
+}
+
+bool IndexModel::canOpenWith() const
+{
+    return canOpenWithApp();
+}
+
+bool IndexModel::canOpenTerminal() const
+{
+    return omafiles::canOpenTerminal();
+}
+
+bool IndexModel::canEdit() const
+{
+    return canOpenInEditor();
+}
+
+void IndexModel::setNotice(const QString &message)
+{
+    if (m_notice == message)
+        return;
+    m_notice = message;
+    emit noticeChanged();
+}
+
+void IndexModel::clearNotice()
+{
+    setNotice(QString());
+}
+
+namespace {
+
+QString countOf(int n, const QString &noun)
+{
+    return n == 1 ? QStringLiteral("1 %1").arg(noun)
+                  : QStringLiteral("%1 %2s").arg(n).arg(noun);
+}
+
+} // namespace
+
+void IndexModel::report(const QStringList &arguments, const QString &success)
+{
+    QPointer<IndexModel> self(this);
+    runVerb(arguments, [self, success](bool ok, const QString &, const QString &error) {
+        if (!self)
+            return;
+        self->setNotice(ok ? success : error);
+        // Re-read rather than wait for the watcher: the watch is coalesced by a
+        // timer, so without this the receipt would be on screen for a moment
+        // beside a list that still shows the tags the run has just changed.
+        if (ok)
+            self->reload();
+    });
+}
+
+void IndexModel::reportEach(const QVector<QStringList> &runs, const QString &verb)
+{
+    if (runs.isEmpty())
+        return;
+
+    struct Tally {
+        QVector<QStringList> runs;
+        int at = 0;
+        int done = 0;
+        QString firstError;
+    };
+    auto tally = std::make_shared<Tally>();
+    tally->runs = runs;
+
+    QPointer<IndexModel> self(this);
+    auto step = std::make_shared<std::function<void()>>();
+    *step = [self, tally, step, verb] {
+        if (tally->at >= tally->runs.size()) {
+            if (self) {
+                const int asked = tally->runs.size();
+                self->setNotice(tally->firstError.isEmpty()
+                                    ? QStringLiteral("%1 %2").arg(verb, countOf(tally->done,
+                                          QStringLiteral("file")))
+                                    : QStringLiteral("%1 %2 of %3; %4")
+                                          .arg(verb).arg(tally->done).arg(asked)
+                                          .arg(tally->firstError));
+                if (tally->done > 0)
+                    self->reload();
+            }
+            // The step holds itself so it can call itself; letting go here is
+            // what keeps the cycle from outliving the run.
+            *step = nullptr;
+            return;
+        }
+        const QStringList arguments = tally->runs.at(tally->at++);
+        runVerb(arguments, [tally, step](bool ok, const QString &, const QString &error) {
+            if (ok)
+                ++tally->done;
+            else if (tally->firstError.isEmpty())
+                tally->firstError = error;
+            (*step)();
+        });
+    };
+    (*step)();
+}
+
+// Every command line below reads the way it would be typed, `--` and all: the
+// separator is not decoration here, it is what keeps a file called `-t` from
+// being read as a flag, and the window has no say over what a folder is named.
+void IndexModel::tagAdd(const QStringList &paths, const QString &tag)
+{
+    if (paths.isEmpty() || tag.isEmpty())
+        return;
+    report(QStringList{QStringLiteral("tag"), QStringLiteral("add"),
+                       QStringLiteral("--tag"), tag, QStringLiteral("--")} + paths,
+           QStringLiteral("tagged %1 %2").arg(countOf(paths.size(), QStringLiteral("file")), tag));
+}
+
+void IndexModel::tagRemove(const QStringList &paths, const QString &tag)
+{
+    if (paths.isEmpty() || tag.isEmpty())
+        return;
+    report(QStringList{QStringLiteral("tag"), QStringLiteral("rm"),
+                       QStringLiteral("--tag"), tag, QStringLiteral("--")} + paths,
+           QStringLiteral("untagged %1 %2").arg(countOf(paths.size(), QStringLiteral("file")), tag));
+}
+
+void IndexModel::tagClear(const QStringList &paths)
+{
+    if (paths.isEmpty())
+        return;
+    report(QStringList{QStringLiteral("tag"), QStringLiteral("clear"),
+                       QStringLiteral("--")} + paths,
+           QStringLiteral("cleared the tags on %1").arg(countOf(paths.size(),
+                                                                QStringLiteral("file"))));
+}
+
+void IndexModel::tagCopy(const QString &from, const QStringList &paths)
+{
+    if (from.isEmpty() || paths.isEmpty())
+        return;
+    report(QStringList{QStringLiteral("tag"), QStringLiteral("cp"),
+                       QStringLiteral("--from"), from, QStringLiteral("--")} + paths,
+           QStringLiteral("copied the tags of %1 onto %2")
+               .arg(QFileInfo(from).fileName(), countOf(paths.size(), QStringLiteral("file"))));
+}
+
+void IndexModel::adoptTagsIn(const QString &directory)
+{
+    if (directory.isEmpty())
+        return;
+    report({QStringLiteral("reindex"), QStringLiteral("--from-xattr"),
+            QStringLiteral("--"), directory},
+           QStringLiteral("adopted the tags on disk under %1").arg(directory));
+}
+
+// `--yes` because the question the command line asks is the one this menu entry
+// already asked by being chosen. It skips the question and not the checks: a
+// path that is not there, or a missing `gio`, still refuses the whole set.
+void IndexModel::trash(const QStringList &paths)
+{
+    if (paths.isEmpty())
+        return;
+    report(QStringList{QStringLiteral("--yes"), QStringLiteral("trash"),
+                       QStringLiteral("--")} + paths,
+           QStringLiteral("trashed %1").arg(countOf(paths.size(), QStringLiteral("file"))));
+}
+
+void IndexModel::copyInto(const QStringList &paths, const QString &directory)
+{
+    if (paths.isEmpty() || directory.isEmpty())
+        return;
+    QVector<QStringList> runs;
+    for (const QString &path : paths)
+        runs.append({QStringLiteral("cp"), QStringLiteral("--"), path, directory});
+    reportEach(runs, QStringLiteral("copied"));
+}
+
+void IndexModel::moveInto(const QStringList &paths, const QString &directory)
+{
+    if (paths.isEmpty() || directory.isEmpty())
+        return;
+    QVector<QStringList> runs;
+    for (const QString &path : paths)
+        runs.append({QStringLiteral("mv"), QStringLiteral("--"), path, directory});
+    reportEach(runs, QStringLiteral("moved"));
+}
+
+// The name a copy gets, which the caller has to decide because `cp` refuses a
+// destination that is already there rather than picking one. `report.pdf`
+// becomes `report (copy).pdf` and then `report (copy 2).pdf`, the suffix going
+// before the extension so the file is still a PDF to everything that reads one.
+void IndexModel::duplicate(const QString &path)
+{
+    if (path.isEmpty())
+        return;
+    const QFileInfo info(path);
+    const QString stem = info.completeBaseName();
+    const QString suffix = info.suffix().isEmpty() ? QString()
+                                                   : QLatin1Char('.') + info.suffix();
+    const QDir dir(info.absolutePath());
+    QString destination;
+    for (int n = 1; n < 1000; ++n) {
+        const QString tail = n == 1 ? QStringLiteral(" (copy)")
+                                    : QStringLiteral(" (copy %1)").arg(n);
+        const QString candidate = dir.filePath(stem + tail + suffix);
+        if (!QFileInfo::exists(candidate)) {
+            destination = candidate;
+            break;
+        }
+    }
+    if (destination.isEmpty()) {
+        setNotice(QStringLiteral("duplicate: %1 already has a thousand copies").arg(info.fileName()));
+        return;
+    }
+    report({QStringLiteral("cp"), QStringLiteral("--"), path, destination},
+           QStringLiteral("copied to %1").arg(QFileInfo(destination).fileName()));
+}
+
+void IndexModel::reindexTree(const QString &directory)
+{
+    if (directory.isEmpty())
+        return;
+    report({QStringLiteral("reindex"), QStringLiteral("--"), directory},
+           QStringLiteral("reindexed %1").arg(directory));
+}
+
+void IndexModel::pruneTree(const QString &directory)
+{
+    if (directory.isEmpty())
+        return;
+    QPointer<IndexModel> self(this);
+    runVerb({QStringLiteral("--yes"), QStringLiteral("prune"), QStringLiteral("--"), directory},
+            [self, directory](bool ok, const QString &output, const QString &error) {
+        if (!self)
+            return;
+        if (!ok) {
+            self->setNotice(error);
+            return;
+        }
+        // Every line it printed is a row it dropped, so the count is the
+        // receipt: `prune` on a clean tree prints nothing, and a menu entry
+        // that says nothing back reads as one that did not run.
+        const QStringList dropped = output.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        self->setNotice(dropped.isEmpty()
+                            ? QStringLiteral("nothing to prune under %1").arg(directory)
+                            : QStringLiteral("pruned %1").arg(countOf(dropped.size(),
+                                                                     QStringLiteral("row"))));
+        self->reload();
+    });
+}
+
+// The one verb here that reports by exiting 1 without having failed: `verify`
+// says it found something the way `diff` does. So the count is the answer, and
+// the stderr is only read when there was no answer to read.
+void IndexModel::verifyTree(const QString &directory)
+{
+    if (directory.isEmpty())
+        return;
+    QPointer<IndexModel> self(this);
+    runVerb({QStringLiteral("verify"), QStringLiteral("--"), directory},
+            [self, directory](bool ok, const QString &output, const QString &error) {
+        if (!self)
+            return;
+        const QStringList problems = output.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        if (!problems.isEmpty()) {
+            self->setNotice(QStringLiteral("%1 under %2; omafiles verify says which")
+                                .arg(countOf(problems.size(), QStringLiteral("problem")), directory));
+            return;
+        }
+        self->setNotice(ok ? QStringLiteral("%1 is clean").arg(directory) : error);
+    });
 }
 
 QString IndexModel::tagAt(int row) const

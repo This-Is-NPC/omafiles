@@ -1,6 +1,8 @@
 #include <QtTest>
 
 #include "Paths.h"
+#include "Record.h"
+#include "Roots.h"
 #include "Store.h"
 #include "Tag.h"
 
@@ -270,6 +272,114 @@ private slots:
         // The system declined to finish, which is not the same answer as the
         // directory not being there.
         QCOMPARE(state, omafiles::PathState::Unknown);
+    }
+
+    // The store side of a declared root: a row written as an id and the rest of
+    // the way there, resolved back through whatever the declaration says today.
+    void storesARowRelativeToItsRoot()
+    {
+        QTemporaryDir home;
+        QVERIFY(home.isValid());
+        const QDir tree(home.path());
+        QVERIFY(tree.mkpath(QStringLiteral("here/docs")));
+        QVERIFY(tree.mkpath(QStringLiteral("there/docs")));
+        const QString first = tree.filePath(QStringLiteral("here"));
+        const QString second = tree.filePath(QStringLiteral("there"));
+        QFile file(tree.filePath(QStringLiteral("here/docs/a.txt")));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("a");
+        file.close();
+
+        const auto put = [](omafiles::Store *store, const QString &path) {
+            omafiles::Record row;
+            row.path = path;
+            row.tags = {QStringLiteral("work")};
+            store->put(row);
+        };
+
+        const QString index = tree.filePath(QStringLiteral("index.jsonl"));
+        const QVector<omafiles::Root> before =
+            omafiles::setRoots({omafiles::Root{QStringLiteral("archive"), first, false, {}}});
+
+        QString error;
+        {
+            omafiles::Store store(index);
+            QVERIFY2(store.lockAndLoad(&error), qPrintable(error));
+            put(&store, tree.filePath(QStringLiteral("here/docs/a.txt")));
+            QVERIFY2(store.commit(&error), qPrintable(error));
+        }
+
+        // Written as the two halves, not as the absolute path: that is what
+        // survives the storage arriving somewhere else.
+        QFile written(index);
+        QVERIFY(written.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString line = QString::fromUtf8(written.readAll()).trimmed();
+        written.close();
+        QVERIFY2(line.contains(QStringLiteral("\"root\":\"archive\"")), qPrintable(line));
+        QVERIFY2(line.contains(QStringLiteral("\"path\":\"docs/a.txt\"")), qPrintable(line));
+        QVERIFY2(!line.contains(first), qPrintable(line));
+
+        // Declared somewhere else, and the row is that file over there. Nothing
+        // was rewritten to make that true.
+        QVERIFY(QFile::rename(tree.filePath(QStringLiteral("here/docs/a.txt")),
+                              tree.filePath(QStringLiteral("there/docs/a.txt"))));
+        omafiles::setRoots({omafiles::Root{QStringLiteral("archive"), second, false, {}}});
+        {
+            omafiles::Store store(index);
+            QVERIFY2(store.load(&error), qPrintable(error));
+            QVERIFY(store.contains(tree.filePath(QStringLiteral("there/docs/a.txt"))));
+            QCOMPARE(store.get(tree.filePath(QStringLiteral("there/docs/a.txt"))).tags,
+                     QStringList{QStringLiteral("work")});
+        }
+
+        // A row naming a declaration that is not there is refused by name, not
+        // guessed at: putting the line back is a repair that loses nothing,
+        // and placing the row anywhere else would lose the tags.
+        omafiles::setRoots({});
+        {
+            omafiles::Store store(index);
+            QVERIFY2(!store.load(&error), "a row under an undeclared root loaded anyway");
+            QVERIFY2(error.contains(QStringLiteral("archive")), qPrintable(error));
+        }
+
+        omafiles::setRoots(before);
+    }
+
+    // The bug the whole feature exists for: an unmounted tree is `ENOENT` from
+    // a stat, which is exactly what every file in it having been deleted looks
+    // like -- and `prune` acts on that answer.
+    void tellsAnUnpluggedRootFromADeletedFile()
+    {
+        QTemporaryDir home;
+        QVERIFY(home.isValid());
+        const QDir tree(home.path());
+        QVERIFY(tree.mkpath(QStringLiteral("mount/docs")));
+        const QString mount = tree.filePath(QStringLiteral("mount"));
+        const QString marker = tree.filePath(QStringLiteral("mount/.plugged-in"));
+        QFile stamp(marker);
+        QVERIFY(stamp.open(QIODevice::WriteOnly));
+        stamp.close();
+
+        const QString absent = tree.filePath(QStringLiteral("mount/docs/gone.txt"));
+        const QVector<omafiles::Root> before = omafiles::setRoots({});
+
+        // Undeclared, it reads as deleted, which is today's answer and stays
+        // the answer for every machine that declares nothing.
+        QString error;
+        QCOMPARE(omafiles::pathState(absent, &error), omafiles::PathState::Missing);
+
+        omafiles::setRoots({omafiles::Root{QStringLiteral("archive"), mount, false,
+                                           QStringLiteral(".plugged-in")}});
+        // Declared and plugged in, it still reads as deleted: the storage is
+        // here and the file really is not.
+        QCOMPARE(omafiles::pathState(absent, &error), omafiles::PathState::Missing);
+
+        // Unplugged, and the same syscall means something else entirely.
+        QVERIFY(QFile::remove(marker));
+        QCOMPARE(omafiles::pathState(absent, &error), omafiles::PathState::Unreachable);
+        QVERIFY2(error.contains(QStringLiteral("archive")), qPrintable(error));
+
+        omafiles::setRoots(before);
     }
 };
 

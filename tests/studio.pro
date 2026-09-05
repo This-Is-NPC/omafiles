@@ -27,11 +27,14 @@ SOURCES += \
     ../src/studio/Workspace.cpp \
     ../src/studio/GraphItem.cpp \
     ../src/studio/FolderModel.cpp \
+    ../src/studio/Clipboard.cpp \
+    ../src/studio/Verb.cpp \
     ../src/core/Tag.cpp \
     ../src/core/Record.cpp \
     ../src/core/Store.cpp \
     ../src/core/Xattr.cpp \
     ../src/core/Paths.cpp \
+    ../src/core/Roots.cpp \
     ../src/core/Open.cpp
 
 HEADERS += \
@@ -39,7 +42,9 @@ HEADERS += \
     ../src/studio/IndexModel.h \
     ../src/studio/Workspace.h \
     ../src/studio/GraphItem.h \
-    ../src/studio/FolderModel.h
+    ../src/studio/FolderModel.h \
+    ../src/studio/Clipboard.h \
+    ../src/studio/Verb.h
 
 # The same qrc the studio ships, so the test drives the QML that runs.
 RESOURCES += ../src/studio/resources.qrc

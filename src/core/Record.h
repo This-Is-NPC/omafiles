@@ -13,7 +13,19 @@ namespace omafiles {
 // numbers are reused after a delete and device numbers move under LVM, while
 // the tags also live in the file's own xattr, which a `mv` carries along.
 struct Record {
+    /// Where the file is, absolute and resolved. Always filled on a row that
+    /// loaded: it is what every verb works in, and what the store keys on.
     QString path;
+    /// How the row is written down: the id of the root holding it and the rest
+    /// of the way there, or both empty for a row stored as an absolute path.
+    ///
+    /// Two halves rather than one string because that is the whole point of a
+    /// root. Remounting the same disk somewhere else changes `path` for every
+    /// row on it and changes neither of these, so the tags stay where they were
+    /// -- and two machines that mount the same NAS in different places are
+    /// talking about the same rows.
+    QString root;
+    QString relative;
     QStringList tags;
 
     /// When these tags last changed, in seconds since the epoch. Zero means

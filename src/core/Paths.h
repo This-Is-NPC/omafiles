@@ -6,10 +6,15 @@
 namespace omafiles {
 
 QString defaultIndexPath();
-/// What the system says about a path: it is there, it is gone, or it will not
-/// say. A caller acts on Missing and steps over Unknown, so `prune` cannot drop
-/// a row for a file it merely was not allowed to look at.
-enum class PathState { Present, Missing, Unknown };
+/// What the system says about a path: it is there, it is gone, it is under a
+/// root nobody has plugged in, or the system will not say.
+///
+/// A caller acts on Missing and steps over the other two, so `prune` cannot
+/// drop a row for a file it merely was not allowed to look at -- nor for a file
+/// on a disk that is sitting in a drawer. Unreachable is the whole reason
+/// declared roots exist: without them an unmounted archive reads as `ENOENT`,
+/// which is indistinguishable from every one of its files having been deleted.
+enum class PathState { Present, Missing, Unknown, Unreachable };
 PathState pathState(const QString &path, QString *error);
 /// The path, fully resolved, or an empty string and a reason.
 ///

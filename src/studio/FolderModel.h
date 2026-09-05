@@ -24,6 +24,7 @@ class FolderModel : public QAbstractListModel
     Q_PROPERTY(QString directory READ directory WRITE setDirectory NOTIFY directoryChanged)
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY queryChanged)
     Q_PROPERTY(QString selectedTag READ selectedTag WRITE setSelectedTag NOTIFY selectedTagChanged)
+    Q_PROPERTY(QStringList facets READ facets WRITE setFacets NOTIFY facetsChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY queryChanged)
     Q_PROPERTY(bool atRoot READ atRoot NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
@@ -42,7 +43,11 @@ public:
         TagsRole,
         MarkedRole,
         SizeTextRole,
-        MtimeTextRole
+        MtimeTextRole,
+        /// How many files a `tag` row leads to, and -1 on every other row. A
+        /// facet without a count is a folder you have to open to find out
+        /// whether it was worth opening.
+        CountRole
     };
 
     explicit FolderModel(QObject *parent = nullptr);
@@ -62,6 +67,15 @@ public:
 
     QString filter() const { return m_filter; }
     void setFilter(const QString &text);
+
+    /// The tags this listing has been narrowed by, in a `tags` tab.
+    ///
+    /// Not a place in the tree and not one tag either: the rows are the files
+    /// carrying *all* of them, and the folders above them are the tags that
+    /// still tell those files apart. `#work/#draft` is a question, so its
+    /// answer does not change when it is asked the other way round.
+    QStringList facets() const { return m_facets; }
+    void setFacets(const QStringList &facets);
 
     /// The tag this listing is showing, or empty for a directory listing.
     ///
@@ -106,12 +120,46 @@ public:
 
     Q_INVOKABLE void goHome();
     Q_INVOKABLE void goUp();
+    /// Walks to where `path` is and lands the cursor on it.
+    ///
+    /// The way out of a tag listing, where the rows come from as many folders
+    /// as they like and none of them is the one the listing is standing in.
+    Q_INVOKABLE void goTo(const QString &path);
     void enter(const QString &path);
     void activate(const QString &path, const QString &kind);
     Q_INVOKABLE void activateRow(int row);
     Q_INVOKABLE void toggleMarkAt(int row);
     Q_INVOKABLE void clearMarks();
     Q_INVOKABLE void markAll();
+    Q_INVOKABLE void invertMarks();
+    /// Marks every row sharing a tag, or a type, with the one at `path`.
+    ///
+    /// The two questions a marked set is usually assembled to ask -- everything
+    /// filed like this one, everything shaped like this one -- and both of them
+    /// are a scan of rows already in memory rather than anything to type.
+    Q_INVOKABLE void markSameTag(const QString &path);
+    Q_INVOKABLE void markSameType(const QString &path);
+
+    /// The marked rows, in the order the listing shows them.
+    ///
+    /// The order matters and the set does not have one: marks are a QSet, whose
+    /// order is a hash of the paths, so a caller handing them to `tag add` would
+    /// name the same files in a different order on every run and the receipt
+    /// would not be readable twice.
+    Q_INVOKABLE QStringList markedPaths() const;
+    Q_INVOKABLE bool isMarked(const QString &path) const;
+
+    /// What a command chosen over `path` should act on.
+    ///
+    /// A marked row means the set; an unmarked one means itself, whatever is
+    /// marked elsewhere. This is the rule every file manager with a selection
+    /// keeps, and it lives here rather than in each menu entry so that no entry
+    /// can be written that forgets it -- which is how a delete of one file ends
+    /// up taking forty.
+    Q_INVOKABLE QStringList targetPaths(const QString &path) const;
+
+    /// The tags on one row, as the index has them.
+    Q_INVOKABLE QStringList tagsFor(const QString &path) const;
     Q_INVOKABLE QString pathAt(int row) const;
     Q_INVOKABLE QString kindAt(int row) const;
     Q_INVOKABLE void reload();
@@ -120,7 +168,7 @@ public:
     /// for a row that is not there, so QML can test it with a single truthiness
     /// check instead of guarding every field.
     Q_INVOKABLE QVariantMap entryAt(int row) const;
-    int rowForPath(const QString &path) const;
+    Q_INVOKABLE int rowForPath(const QString &path) const;
 
     /// The row the cursor belongs on after the list is rebuilt.
     ///
@@ -138,6 +186,7 @@ signals:
     void tabChanged();
     void directoryChanged();
     void selectedTagChanged();
+    void facetsChanged();
     void queryChanged();
     void changed();
     void markedChanged();
@@ -151,6 +200,8 @@ private:
         QString type;
         QString tags;
         bool tagged = false;
+        /// Files under a facet row; -1 where the row is not one.
+        int count = -1;
         qint64 size = 0;
         qint64 mtime = 0;
         QString sizeText;
@@ -161,6 +212,11 @@ private:
     void rebuild();
     void listDirectory();
     void listTag();
+    /// The tags that still divide the files under `m_facets`, and those files.
+    void listFacets();
+    /// Whether this listing answers a tag question rather than a folder one.
+    /// Read off the tab and not stored, so the two cannot drift apart.
+    bool browsingFacets() const;
     /// One row, off whatever the system says about the file. `name` is what the
     /// row is called, which is the directory entry in a folder and the last
     /// component of the path in a tag listing.
@@ -174,6 +230,7 @@ private:
     QString m_directory;
     QString m_filter;
     QString m_selectedTag;
+    QStringList m_facets;
     bool m_showHidden = false;
     QString m_sortRole = QStringLiteral("name");
     bool m_sortAscending = true;

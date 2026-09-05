@@ -16,6 +16,7 @@ HEADERS += \
     Store.h \
     Xattr.h \
     Paths.h \
+    Roots.h \
     Open.h
 
 SOURCES += \
@@ -24,4 +25,5 @@ SOURCES += \
     Store.cpp \
     Xattr.cpp \
     Paths.cpp \
+    Roots.cpp \
     Open.cpp

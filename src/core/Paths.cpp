@@ -1,5 +1,7 @@
 #include "Paths.h"
 
+#include "Roots.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -30,6 +32,18 @@ namespace {
 PathState stateForErrno(int failure)
 {
     return (failure == ENOENT || failure == ENOTDIR) ? PathState::Missing : PathState::Unknown;
+}
+
+// The same answer, with the one question `errno` cannot be asked put to it
+// first: a name that is not there because the disk holding it is not here is
+// not a name that was deleted. `ENOENT` is what both look like from a `stat`,
+// and telling them apart is what a declared root is for.
+PathState stateForErrno(int failure, const QString &path)
+{
+    const PathState plain = stateForErrno(failure);
+    if (plain == PathState::Missing && underUnreachableRoot(path))
+        return PathState::Unreachable;
+    return plain;
 }
 
 // Which end of the name is not there.
@@ -69,8 +83,14 @@ QString unresolved(const QString &probe, const QString &path, QString *error, Pa
     }
     if (state)
         *state = found;
-    if (error)
-        *error = found == PathState::Missing ? missing(path) : detail;
+    if (error) {
+        if (found == PathState::Missing)
+            *error = missing(path);
+        else if (found == PathState::Unreachable)
+            *error = unreachableReason(probe);
+        else
+            *error = detail;
+    }
     return {};
 }
 
@@ -127,9 +147,16 @@ PathState pathState(const QString &path, QString *error)
     // Kept before anything else can overwrite it: building the message below
     // calls into Qt, and errno belongs to the stat.
     const int failure = errno;
-    if (error)
-        *error = QStringLiteral("%1: %2").arg(path, QString::fromLocal8Bit(strerror(failure)));
-    return stateForErrno(failure);
+    const PathState found = stateForErrno(failure, path);
+    if (error) {
+        // `No such file or directory` is what the system said and it is not
+        // what happened: the name is absent because the storage is, and a
+        // reader told the first goes looking for a deletion that never was.
+        *error = found == PathState::Unreachable
+            ? unreachableReason(path)
+            : QStringLiteral("%1: %2").arg(path, QString::fromLocal8Bit(strerror(failure)));
+    }
+    return found;
 }
 
 bool readDirectory(const QString &directory, QStringList *names, QStringList *unnameable,
@@ -142,7 +169,7 @@ bool readDirectory(const QString &directory, QStringList *names, QStringList *un
             *error = QStringLiteral("%1: %2").arg(directory,
                                                   QString::fromLocal8Bit(strerror(failure)));
         if (state)
-            *state = stateForErrno(failure);
+            *state = stateForErrno(failure, directory);
         return false;
     }
     if (state)
@@ -178,7 +205,7 @@ bool readDirectory(const QString &directory, QStringList *names, QStringList *un
             *error = QStringLiteral("%1: %2").arg(directory,
                                                   QString::fromLocal8Bit(strerror(failure)));
         if (state)
-            *state = stateForErrno(failure);
+            *state = stateForErrno(failure, directory);
         return false;
     }
     return true;

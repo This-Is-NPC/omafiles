@@ -76,15 +76,24 @@ A row whose file is gone is left out rather than listed as a path that is not th
 
 ## `omafiles tags`
 
-- **Usage:** `omafiles tags [dir]`
+- **Usage:** `omafiles tags [-t --tag <tag>] [dir]`
 - **Effect:** read-only
 
 List the tag vocabulary.
 
 One tag per line, sorted: the tag, a tab, and the number of rows carrying it. Under `--json` an array of `tag` and `count`. Scoped to `[dir]` it counts only the rows under it.
 
+`--tag` scopes it to a set of tags instead of to a tree, and the two combine: `tags --tag work` is the vocabulary that appears beside `work`, counted over the rows carrying it. Repeated, the tags are ANDed, the way `ls` ands them -- `tags --tag work --tag draft` is what still divides the files carrying both. The tags asked after are left out of the answer, because they are the scope rather than a division of it and each of them is on every row by construction.
+
+It is the listing the window walks when it reads tags as folders, and there it also hides a tag that every row of the scope carries: entering one would open onto the same list. That is a rule about what is worth walking into, and this verb is asked what is there, so it prints those.
+
+A tag scope that is not a valid tag is a usage error, the way it is for `ls`.
+
 ### Arguments
 - **`[dir]`**
+
+### Flags
+- **`-t --tag <tag>`** — AND this tag, and count what appears beside it
 
 ## `omafiles tag`
 
@@ -321,6 +330,81 @@ A name that is not valid UTF-8 is a path no index row can hold, so it is named o
 - **`--from-xattr`** — Prefer xattr over the index on conflict, unless the file has nothing to say.
 
   An empty xattr, or one no tag can be read out of, is read as a value the filesystem dropped rather than as tags somebody cleared: the index row is left alone, the path is named on stderr, and the run exits 1 because it walked away from a path it was asked to rebuild. Plain `reindex` is the repair -- it writes the row back over the file's copy.
+
+## `omafiles roots`
+
+- **Usage:** `omafiles roots <SUBCOMMAND>`
+
+Declare the trees the index may store rows relative to.
+
+A root buys two things, and both of them are about a disk that is not always here.
+
+A row under a root is written as the root's id and the rest of the way there, so remounting the same storage somewhere else leaves every tag where it was -- and two machines that mount the same NAS at different points are talking about the same rows. A row under no declared root keeps its absolute path, which is what every row was before roots existed and what every row on a machine that declares nothing stays.
+
+And a root that is declared and not here makes its rows `unreachable` rather than missing. Without one, an unmounted tree is `ENOENT` from a `stat`, which is exactly what every file in it having been deleted looks like -- so `prune` drops the rows and, on a filesystem with no `user.*` namespace to mirror them, that was the only copy of those tags on the machine. `prune` and `verify` both step over an unreachable row and say they did; `ls`, `tags` and `recent` leave it out of the answer and say so on stderr, which `--quiet` takes away.
+
+The declarations live in one jsonl file, `$XDG_CONFIG_HOME/omafiles/roots.jsonl` or `~/.config/omafiles/roots.jsonl` -- the same shape as the index, so the same eyes read both. A line that will not parse is exit 3 from every verb, the way a malformed index line is: guessing at which roots are declared would be guessing at which rows may be dropped.
+
+Whether the storage is here is asked three ways, weakest last. A declared `--check` is the sure one: a name that only exists when the storage does, because an unmounted mount point is usually still an empty directory and its being there proves nothing. Without it, a `--mount` root is here when something really is mounted where it says -- the test `mountpoint(1)` uses, which answers for a disk, a bind, sshfs, rclone and gvfs alike, because each of them is a filesystem of its own. And a root that is simply part of the filesystem is here when its directory is, which is the same test as before roots existed.
+
+## `omafiles roots ls`
+
+- **Usage:** `omafiles roots ls`
+- **Effect:** read-only
+
+List the declared roots, and whether each is here.
+
+One root per line: the id, a tab, the path, a tab, and `here` or `away`. Under `--json` an array of `id`, `path`, `mount`, `check` and `here`. The last field is the interesting one and it is not in the config file: whether the storage is plugged in is a question about this machine at this moment, and it is what decides whether `prune` may touch the rows under it.
+
+The default subcommand, so `roots` alone prints this.
+
+## `omafiles roots add`
+
+- **Usage:** `omafiles roots add <FLAGS> <path>`
+- **Effect:** modifies state
+
+Declare a root.
+
+The path is resolved, because everything compared against it is: a root declared through a symlink would hold no rows at all. An id already declared, and a path already declared under another id, are both refused rather than added beside.
+
+Nothing is rewritten here. The rows under the new root migrate on the next write that touches them, because the form a row takes on disk is decided when it is written; `roots migrate` does the whole index at once.
+
+### Arguments
+- **`<path>`**
+
+### Flags
+- **`--id <id>`** — What to call it, and what the index rows name
+- **`--mount`** — It arrives by being mounted, so being an empty directory means it is away
+- **`--check <path>`** — A path inside it that exists only when the storage does
+
+## `omafiles roots rm`
+
+- **Usage:** `omafiles roots rm <--id <id>>`
+- **Effect:** modifies state
+
+Undeclare a root.
+
+The rows stored under it come with it, rewritten as the absolute paths they resolve to now, and it says how many. That is not a convenience: a row names a declaration, so leaving them behind would leave rows nothing can place and every verb refusing to read the index until the line came back, which is not a state a command should be able to put somebody in.
+
+The index is committed before the declarations are written, so the half-done case is the harmless one -- rows that no longer name the root, beside a declaration nothing references. `--dry-run` counts the rows and writes neither.
+
+Remove a root while its storage is away and the rows are written under the mount point as it stands today, which is a path that is not there. They are still the rows, and declaring the root again puts them back; but the reason to do this is that the storage is gone for good, and the moment to do it is while it is plugged in.
+
+### Flags
+- **`--id <id>`**
+
+## `omafiles roots migrate`
+
+- **Usage:** `omafiles roots migrate`
+- **Effect:** modifies state
+
+Rewrite every index row in the form the roots give it now.
+
+A read and a write of the same rows, which is all a migration is: each one is written under whichever root holds it today, or back as an absolute path where no root does. It prints how many landed each way.
+
+It is never required. A row migrates on its own the next time something writes it, so declaring a root and carrying on gets there too; this is the way to get there at once, and the way to see how many rows a declaration actually took in. Undeclaring carries its own rows, so this is not a step before `roots rm` either.
+
+`--dry-run` counts without writing.
 
 ## `omafiles verify`
 

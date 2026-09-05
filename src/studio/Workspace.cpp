@@ -4,11 +4,26 @@
 #include <QFileInfo>
 
 namespace omafiles {
+namespace {
+// Empty until `main` sets it, and resolved only when a tab asks, so a studio
+// started with no argument opens exactly where it always did.
+QString g_startPath;
+} // namespace
+
+void TabState::setStartPath(const QString &path)
+{
+    g_startPath = path;
+}
+
+QString TabState::startPath()
+{
+    return g_startPath.isEmpty() ? QDir::homePath() : g_startPath;
+}
 
 TabState::TabState(QString kind, QObject *parent)
     : QObject(parent)
     , m_kind(std::move(kind))
-    , m_cwd(QDir::homePath())
+    , m_cwd(startPath())
 {
 }
 
@@ -16,10 +31,50 @@ QString TabState::title() const
 {
     if (m_kind == QLatin1String("graph"))
         return QStringLiteral("Graph");
+    if (m_kind == QLatin1String("tags")) {
+        if (m_facets.isEmpty())
+            return QStringLiteral("Tags");
+        // Sorted, not in the order they were walked. The two orders name the
+        // same files, and a title that changed with the route taken to it would
+        // make one question look like two.
+        QStringList sorted = m_facets;
+        sorted.sort();
+        return QStringLiteral("#") + sorted.join(QStringLiteral("/#"));
+    }
     if (!m_selectedTag.isEmpty())
         return QStringLiteral("#") + m_selectedTag;
     const QString name = QFileInfo(m_cwd).fileName();
     return name.isEmpty() ? m_cwd : name;
+}
+
+// Marks end with the listing they were made in, for the reason `setCwd` gives:
+// a mark you cannot see is one a destructive command would still act on.
+void TabState::setFacets(const QStringList &facets)
+{
+    if (m_facets == facets)
+        return;
+    m_facets = facets;
+    setMarked({});
+    emit facetsChanged();
+    emit titleChanged();
+}
+
+// Walking into a tag you are already under is not a move, and the listing
+// would not change: the same files answer `#work` and `#work/#work`.
+void TabState::enterFacet(const QString &tag)
+{
+    if (tag.isEmpty() || m_facets.contains(tag))
+        return;
+    setFacets(m_facets + QStringList{tag});
+}
+
+void TabState::leaveFacet()
+{
+    if (m_facets.isEmpty())
+        return;
+    QStringList rest = m_facets;
+    rest.removeLast();
+    setFacets(rest);
 }
 
 void TabState::setSelectedTag(const QString &tag)
@@ -283,6 +338,12 @@ PaneState *Workspace::paneAtIndex(int index) const
     return m_panes.at(index);
 }
 
+TabState *Workspace::tabAtIndex(int paneIndex, int tabIndex) const
+{
+    PaneState *pane = paneAtIndex(paneIndex);
+    return pane ? pane->tabList().value(tabIndex) : nullptr;
+}
+
 void Workspace::setFocusedPane(int index)
 {
     if (index < 0 || index >= m_panes.size() || index == m_focused)
@@ -311,6 +372,99 @@ void Workspace::addTabIn(int paneIndex, const QString &kind)
     m_panes.at(paneIndex)->addTab(kind);
     setFocusedPane(paneIndex);
     emit currentTabChanged();
+}
+
+void Workspace::openTabIn(int paneIndex, const QString &kind, const QString &directory)
+{
+    if (paneIndex < 0 || paneIndex >= m_panes.size())
+        return;
+    TabState *tab = m_panes.at(paneIndex)->addTab(kind);
+    if (tab && !directory.isEmpty())
+        tab->setCwd(directory);
+    setFocusedPane(paneIndex);
+    emit currentTabChanged();
+}
+
+void Workspace::splitWith(const QString &kind, const QString &directory)
+{
+    splitRight(kind);
+    PaneState *pane = paneAtIndex(m_focused);
+    TabState *tab = pane ? pane->current() : nullptr;
+    if (tab && !directory.isEmpty()) {
+        tab->setCwd(directory);
+        emit currentTabChanged();
+    }
+}
+
+namespace {
+
+// Everything a tab is showing, minus the marks.
+//
+// The marks name a set somebody assembled by hand to act on, and a second copy
+// of it in a second tab is a second chance to act on it by accident.
+void copyView(const TabState &from, TabState *to)
+{
+    to->setCwd(from.cwd());
+    to->setFacets(from.facets());
+    to->setSelectedTag(from.selectedTag());
+    to->setFilter(from.filter());
+    to->setViewMode(from.viewMode());
+    to->setShowHidden(from.showHidden());
+    to->setSortRole(from.sortRole());
+    to->setSortAscending(from.sortAscending());
+}
+
+} // namespace
+
+void Workspace::duplicateTab(int paneIndex, int tabIndex)
+{
+    PaneState *pane = paneAtIndex(paneIndex);
+    if (!pane)
+        return;
+    TabState *from = pane->tabList().value(tabIndex);
+    if (!from)
+        return;
+    if (TabState *tab = pane->addTab(from->kind()))
+        copyView(*from, tab);
+    setFocusedPane(paneIndex);
+    emit currentTabChanged();
+}
+
+// Backwards, so that closing one does not renumber the ones still to close.
+void Workspace::closeTabsAfter(int paneIndex, int tabIndex)
+{
+    PaneState *pane = paneAtIndex(paneIndex);
+    if (!pane || tabIndex < 0)
+        return;
+    for (int i = pane->tabCount() - 1; i > tabIndex; --i)
+        pane->closeTab(i);
+}
+
+// Made again in the other pane and then closed here, rather than handed over: a
+// `TabState` is a child of the pane that owns it. The pane it leaves has to keep
+// a tab -- `closeTab` refuses the last one -- so a pane showing only this tab
+// keeps it, and the entry that offers this is drawn only where it can be taken.
+void Workspace::moveTabToOtherPane(int paneIndex, int tabIndex)
+{
+    PaneState *pane = paneAtIndex(paneIndex);
+    PaneState *destination = otherPane(paneIndex);
+    if (!pane || !destination || pane->tabCount() < 2)
+        return;
+    TabState *from = pane->tabList().value(tabIndex);
+    if (!from)
+        return;
+    if (TabState *tab = destination->addTab(from->kind()))
+        copyView(*from, tab);
+    pane->closeTab(tabIndex);
+    setFocusedPane(m_panes.indexOf(destination));
+    emit currentTabChanged();
+}
+
+PaneState *Workspace::otherPane(int paneIndex) const
+{
+    if (m_panes.size() < 2 || paneIndex < 0 || paneIndex >= m_panes.size())
+        return nullptr;
+    return m_panes.at((paneIndex + 1) % m_panes.size());
 }
 
 void Workspace::closeTab(int paneIndex, int tabIndex)
