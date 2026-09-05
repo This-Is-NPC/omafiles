@@ -17,6 +17,13 @@ mise run build     # build/bin/omafiles and build/bin/omafiles-studio
 mise run studio    # open the window
 ```
 
+`mise run install` builds and puts both binaries, the desktop entry and the icon
+under `~/.local`, so the window is in the app menu and `omafiles` is a command
+anywhere — no root, and nothing under `/usr` for a package to collide with. Run
+it again to update, `mise run uninstall` to take it back out; the tag index is
+left where it is either way. `PREFIX=/usr/local mise run install` installs for
+everyone instead, building as you and sudoing only the copies.
+
 Released under the MIT license. `pkgbuild/omafiles.desktop` and `pkgbuild/omafiles.svg`
 are the desktop entry and icon. The Arch recipe is in the sibling `omarchy-pkgs` repo
 at `pkgbuilds/omafiles`.

@@ -13,6 +13,14 @@ run = ".scripts/build.sh"
 description = "Builds and opens the studio"
 run = ".scripts/studio.sh"
 
+[tasks.install]
+description = "Builds, then installs the binaries and desktop entry under ~/.local (PREFIX overrides)"
+run = ".scripts/install.sh"
+
+[tasks.uninstall]
+description = "Removes what install put under ~/.local (PREFIX overrides)"
+run = ".scripts/uninstall.sh"
+
 [tasks.test]
 description = "Builds and runs unit tests and the CLI e2e"
 run = ".scripts/test.sh"
