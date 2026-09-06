@@ -1,5 +1,8 @@
 #include "FolderModel.h"
 
+#include "Names.h"
+#include "Roots.h"
+
 #include "IndexModel.h"
 #include "Paths.h"
 #include "Roots.h"
@@ -16,6 +19,19 @@
 
 namespace omafiles {
 namespace {
+
+// A span, in the spelling `omafiles ls --since` takes, so the window and the
+// command line say an age the same way.
+QString spelledAge(qint64 seconds)
+{
+    if (seconds >= 86400)
+        return QStringLiteral("%1d").arg(seconds / 86400);
+    if (seconds >= 3600)
+        return QStringLiteral("%1h").arg(seconds / 3600);
+    if (seconds >= 60)
+        return QStringLiteral("%1m").arg(seconds / 60);
+    return QStringLiteral("%1s").arg(qMax<qint64>(seconds, 0));
+}
 
 QString formatSize(qint64 bytes)
 {
@@ -175,6 +191,15 @@ void FolderModel::setFacets(const QStringList &facets)
     rebuild();
 }
 
+void FolderModel::setUntagged(bool untagged)
+{
+    if (m_untagged == untagged)
+        return;
+    m_untagged = untagged;
+    emit facetsChanged();
+    rebuild();
+}
+
 bool FolderModel::browsingFacets() const
 {
     return m_tab && m_tab->kind() == QLatin1String("tags");
@@ -231,7 +256,7 @@ QString FolderModel::parentDirectory() const
 bool FolderModel::atRoot() const
 {
     if (browsingFacets())
-        return m_facets.isEmpty();
+        return m_facets.isEmpty() && !m_untagged;
     return !m_selectedTag.isEmpty() || QDir(m_directory).isRoot();
 }
 
@@ -307,6 +332,7 @@ void FolderModel::goHome()
     // The top of a tags tab is the vocabulary, not a folder: `~` there means
     // the same thing it means anywhere else, which is all the way back.
     if (browsingFacets()) {
+        m_tab->setUntagged(false);
         m_tab->setFacets({});
         return;
     }
@@ -364,6 +390,11 @@ void FolderModel::activate(const QString &path, const QString &kind)
     // came out of, so the two ways of going up would land in different places.
     if (kind == QLatin1String("parent")) {
         goUp();
+    } else if (kind == QLatin1String("untagged")) {
+        // The other place the root of a tags tab leads to. Not a facet -- "has
+        // no tag" is not a tag, and the facets are a query.
+        if (m_tab)
+            m_tab->setUntagged(true);
     } else if (kind == QLatin1String("tag")) {
         // Walking into a facet narrows the question. The path is empty on
         // these rows on purpose -- see `listFacets` -- so the tag is the name.
@@ -725,6 +756,29 @@ void FolderModel::listFacets()
         m_rows.append(parent);
     }
 
+    // The other thing the root of a tags tab leads to: not a tag, but the
+    // complement of every tag -- what has not been filed at all.
+    //
+    // Only at the root, because under `#work` it would be the empty set by
+    // construction. But it is there whether or not a root is declared: "every
+    // untagged file in the world" is not an answer and the scope for the
+    // question is a root, so a machine that has declared none is told that on
+    // opening it. A feature that is invisible until you already use it is one
+    // nobody finds -- the same reason the views panel draws its own empty state.
+    //
+    // It carries no count, and that is deliberate. Counting means reading every
+    // list of names and subtracting the index from it, on every rebuild --
+    // which is every keystroke in the filter box. The count arrives when you
+    // open it, which is where a directory's own count arrives too.
+    if (m_facets.isEmpty()
+        && (needle.isEmpty() || QStringLiteral("(no tag)").contains(needle))) {
+        Entry row;
+        row.name = QStringLiteral("(no tag)");
+        row.kind = QStringLiteral("untagged");
+        row.type = QStringLiteral("tag");
+        m_rows.append(row);
+    }
+
     QStringList declined;
     QVector<Entry> files;
     QMap<QString, int> counts;
@@ -800,6 +854,97 @@ void FolderModel::listFacets()
     m_rows += files;
 }
 
+// How many rows the complement will draw before it stops.
+//
+// The listing needs a size, a date and a type per row, and each of those is a
+// `stat` -- which is the walk of the disk this whole thing exists to avoid. A
+// tree with forty thousand unfiled files would spend that walk to draw rows
+// nobody scrolls to. So it draws a screenful and a half of them, says how many
+// there are, and names the filter as the way to narrow it -- the same bargain
+// the graph tab makes with a large index.
+constexpr int kUntaggedShown = 2000;
+
+// What carries no tag at all, out of the lists of names `sweep` writes.
+//
+// The index cannot answer this: it holds rows that carry a tag, so what has no
+// tag has no row, and the exact answer is a walk of the tree every time it is
+// asked. `omafiles ls --untagged` is that walk and stays exact; this is the
+// same answer out of a list that is as old as the last sweep, which is what
+// makes it affordable from a panel somebody is typing into.
+//
+// The age is said on the status line for that reason. A listing that is quietly
+// out of date is worse than one that is openly out of date, because only the
+// second can be judged.
+void FolderModel::listUntagged()
+{
+    Entry parent;
+    parent.name = QStringLiteral("..");
+    parent.kind = QStringLiteral("parent");
+    m_rows.append(parent);
+
+    if (roots().isEmpty()) {
+        m_error = QStringLiteral("no root is declared, so there is no scope for the "
+                                 "question \u00B7 `omafiles roots add --id <name> "
+                                 "-- <dir>` declares one, and `omafiles sweep` fills "
+                                 "it in");
+        return;
+    }
+
+    const QString needle = m_filter.trimmed().toLower();
+    QStringList notes;
+    qint64 oldest = -1;
+    int found = 0;
+    QVector<Entry> files;
+    for (const Root &root : roots()) {
+        if (!rootIsReachable(root)) {
+            notes.append(QStringLiteral("%1 is not here").arg(root.id));
+            continue;
+        }
+        QStringList names;
+        qint64 age = -1;
+        QString error;
+        if (!readNames(root, &names, &age, &error)) {
+            notes.append(error);
+            continue;
+        }
+        if (age < 0) {
+            notes.append(QStringLiteral("%1 has no list yet; `omafiles sweep` builds it")
+                             .arg(root.id));
+            continue;
+        }
+        oldest = qMax(oldest, age);
+        for (const QString &path : std::as_const(names)) {
+            if (m_index && !m_index->tagsForPath(path).isEmpty())
+                continue;
+            // Matched on the string before anything stats it: the filter is
+            // what makes a large answer usable, so it has to be the cheap step.
+            const QString name = path.mid(path.lastIndexOf(QLatin1Char('/')) + 1);
+            if (!needle.isEmpty() && !name.toLower().contains(needle))
+                continue;
+            if (!m_showHidden && name.startsWith(QLatin1Char('.')))
+                continue;
+            ++found;
+            if (files.size() >= kUntaggedShown)
+                continue;
+            files.append(describe(QFileInfo(path), name));
+        }
+    }
+
+    QStringList said;
+    if (oldest >= 0) {
+        said.append(QStringLiteral("as of %1 ago").arg(spelledAge(oldest)));
+    }
+    if (found > files.size()) {
+        said.append(QStringLiteral("%1 of %2 shown; filter to narrow it")
+                        .arg(files.size()).arg(found));
+    }
+    said += notes;
+    m_error = said.join(QString::fromUtf8(" \xc2\xb7 "));
+
+    applySort(&files);
+    m_rows += files;
+}
+
 // Every file in the index carrying the tag, wherever in the tree it is: the set
 // `omafiles ls --tag` answers with, so the window and the command line cannot
 // disagree about who carries a tag. A row whose file is gone is dropped; one the
@@ -854,7 +999,9 @@ void FolderModel::rebuild()
     beginResetModel();
     m_rows.clear();
     m_error.clear();
-    if (browsingFacets())
+    if (browsingFacets() && m_untagged)
+        listUntagged();
+    else if (browsingFacets())
         listFacets();
     else if (m_selectedTag.isEmpty())
         listDirectory();

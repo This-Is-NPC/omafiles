@@ -25,6 +25,7 @@ class FolderModel : public QAbstractListModel
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY queryChanged)
     Q_PROPERTY(QString selectedTag READ selectedTag WRITE setSelectedTag NOTIFY selectedTagChanged)
     Q_PROPERTY(QStringList facets READ facets WRITE setFacets NOTIFY facetsChanged)
+    Q_PROPERTY(bool untagged READ untagged WRITE setUntagged NOTIFY facetsChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY queryChanged)
     Q_PROPERTY(bool atRoot READ atRoot NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
@@ -76,6 +77,8 @@ public:
     /// answer does not change when it is asked the other way round.
     QStringList facets() const { return m_facets; }
     void setFacets(const QStringList &facets);
+    bool untagged() const { return m_untagged; }
+    void setUntagged(bool untagged);
 
     /// The tag this listing is showing, or empty for a directory listing.
     ///
@@ -214,6 +217,9 @@ private:
     void listTag();
     /// The tags that still divide the files under `m_facets`, and those files.
     void listFacets();
+    /// The complement of the vocabulary: what carries no tag at all, read out
+    /// of the lists of names `sweep` writes rather than by walking the disk.
+    void listUntagged();
     /// Whether this listing answers a tag question rather than a folder one.
     /// Read off the tab and not stored, so the two cannot drift apart.
     bool browsingFacets() const;
@@ -231,6 +237,7 @@ private:
     QString m_filter;
     QString m_selectedTag;
     QStringList m_facets;
+    bool m_untagged = false;
     bool m_showHidden = false;
     QString m_sortRole = QStringLiteral("name");
     bool m_sortAscending = true;

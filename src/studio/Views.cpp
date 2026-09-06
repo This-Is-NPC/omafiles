@@ -125,8 +125,17 @@ void Views::saveFolder(const QString &name, const QString &directory)
 
 void Views::saveQuery(const QString &name, const QStringList &tags)
 {
-    if (name.isEmpty() || tags.isEmpty())
+    if (name.isEmpty())
         return;
+    // A view is a folder or a set of tags, and the complement of every tag is
+    // neither. Saying so beats saving something that would open on the wrong
+    // listing: `view` has no shape for it yet, and inventing one here would put
+    // a row in the panel that the command line cannot make or read.
+    if (tags.isEmpty()) {
+        say(QStringLiteral("a view is a folder or a set of tags; "
+                           "(no tag) is neither, and cannot be saved yet"));
+        return;
+    }
     QStringList arguments{QStringLiteral("view"), QStringLiteral("add"),
                           QStringLiteral("--name"), name};
     for (const QString &tag : tags)

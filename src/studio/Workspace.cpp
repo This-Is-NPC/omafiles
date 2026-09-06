@@ -32,6 +32,8 @@ QString TabState::title() const
     if (m_kind == QLatin1String("graph"))
         return QStringLiteral("Graph");
     if (m_kind == QLatin1String("tags")) {
+        if (m_untagged)
+            return QStringLiteral("(no tag)");
         if (m_facets.isEmpty())
             return QStringLiteral("Tags");
         // Sorted, not in the order they were walked. The two orders name the
@@ -55,6 +57,22 @@ void TabState::setFacets(const QStringList &facets)
         return;
     m_facets = facets;
     setMarked({});
+    // Walking into a tag is walking out of the complement: a file that carries
+    // `#work` is not one of the files carrying nothing, so the two can never be
+    // on at once.
+    m_untagged = false;
+    emit facetsChanged();
+    emit titleChanged();
+}
+
+void TabState::setUntagged(bool untagged)
+{
+    if (m_untagged == untagged)
+        return;
+    m_untagged = untagged;
+    setMarked({});                           // the listing changed under them
+    if (untagged)
+        m_facets.clear();
     emit facetsChanged();
     emit titleChanged();
 }
@@ -70,6 +88,12 @@ void TabState::enterFacet(const QString &tag)
 
 void TabState::leaveFacet()
 {
+    // Out of the complement is back to the vocabulary, the same one step up
+    // that leaving a tag is.
+    if (m_untagged) {
+        setUntagged(false);
+        return;
+    }
     if (m_facets.isEmpty())
         return;
     QStringList rest = m_facets;
@@ -406,6 +430,7 @@ void copyView(const TabState &from, TabState *to)
 {
     to->setCwd(from.cwd());
     to->setFacets(from.facets());
+    to->setUntagged(from.untagged());
     to->setSelectedTag(from.selectedTag());
     to->setFilter(from.filter());
     to->setViewMode(from.viewMode());

@@ -45,7 +45,9 @@ at `pkgbuilds/omafiles`.
 - `]` / `[` — next, previous tab
 - Tags tab: a tag is a folder — `l` walks into one and narrows the listing to
   the files carrying every tag in the path, `h` takes the last one off, `~`
-  takes them all off. `#notes/#work` and `#work/#notes` are the same listing
+  takes them all off. `#notes/#work` and `#work/#notes` are the same listing.
+  `(no tag)` at the top is the other direction: what has not been filed at all,
+  out of the list `sweep` wrote, with the age of that list on the status line
 - Graph: `j` / `k` move nodes, `l` open, `Shift+h` / `Shift+j` / `Shift+k` / `Shift+l` pan, `+` / `-` / `=` zoom, `0` reset
 - `Ctrl+\` — split the pane
 - `Ctrl+,` / `Ctrl+.` — resize the split

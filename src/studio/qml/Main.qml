@@ -225,7 +225,7 @@ Window {
             return
         naming = true
         focusRegion = "filter"
-        filterField.text = onTags ? win.facetPath(activeTab.facets)
+        filterField.text = onTags ? win.facetPath(activeTab.facets, activeTab.untagged)
                                   : win.nameOf(activeFolder ? activeFolder.directory : "")
         filterField.focusEntry()
     }
@@ -246,7 +246,8 @@ Window {
             return
         editingPath = true
         focusRegion = "path"
-        pathField.text = onTags ? facetPath(activeTab.facets) : activeTab.cwd
+        pathField.text = onTags ? facetPath(activeTab.facets, activeTab.untagged)
+                                : activeTab.cwd
         pathField.focusEntry()
     }
 
@@ -256,7 +257,12 @@ Window {
                 // A query typed rather than walked to. The same words in
                 // another order are the same question, so nothing here cares
                 // which order they arrive in.
-                activeTab.facets = parseFacetPath(text)
+                if (text.trim().toLowerCase() === "(no tag)") {
+                    activeTab.untagged = true
+                } else {
+                    activeTab.untagged = false
+                    activeTab.facets = parseFacetPath(text)
+                }
             } else {
                 // Typing a path asks for that folder, which is a different
                 // question from the tag that may be on screen.
@@ -282,7 +288,12 @@ Window {
     // A list of tags, written the way the tab strip and the graph already spell
     // one, and read back from whatever somebody types: with or without the
     // hashes, separated by slashes, spaces or commas.
-    function facetPath(facets) {
+    function facetPath(facets, untagged) {
+        // The complement is not a tag and cannot be spelled as one, so it is
+        // spelled as what it is. Typing it back is how you get there without
+        // walking, which `parseFacetPath` is the other half of.
+        if (untagged)
+            return "(no tag)"
         if (!facets || facets.length === 0)
             return ""
         const sorted = facets.slice().sort()
@@ -1032,7 +1043,8 @@ Window {
                             if (!win.activeTab)
                                 return ""
                             if (win.activeTab.kind === "tags")
-                                return win.facetPath(win.activeTab.facets)
+                                return win.facetPath(win.activeTab.facets,
+                                                     win.activeTab.untagged)
                             if (win.activeTab.kind !== "files")
                                 return ""
                             return win.activeTab.selectedTag !== ""
@@ -2064,6 +2076,7 @@ Window {
                 filter: filesRoot.tab ? filesRoot.tab.filter : ""
                 selectedTag: filesRoot.tab ? filesRoot.tab.selectedTag : ""
                 facets: filesRoot.tab ? filesRoot.tab.facets : []
+                untagged: filesRoot.tab ? filesRoot.tab.untagged : false
                 showHidden: filesRoot.tab ? filesRoot.tab.showHidden : false
                 sortRole: filesRoot.tab ? filesRoot.tab.sortRole : "name"
                 sortAscending: filesRoot.tab ? filesRoot.tab.sortAscending : true
@@ -2185,6 +2198,7 @@ Window {
                             /// reach it, and what it shows on the right is how
                             /// many files it leads to rather than its own tags.
                             readonly property bool facet: row.kind === "tag"
+                                                          || row.kind === "untagged"
                             readonly property string tally: row.count >= 0
                                                             ? row.count.toString() : ""
                             readonly property bool details: filesRoot.viewMode === "details"
@@ -2401,7 +2415,8 @@ Window {
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         width: 30
                                         height: 30
-                                        kind: cell.kind === "tag" ? "tag"
+                                        kind: cell.kind === "tag"
+                                              || cell.kind === "untagged" ? "tag"
                                             : (cell.kind === "file" ? "file"
                                             : (cell.kind === "parent" ? "parent" : "folder"))
                                         ink: cell.kind === "file" ? Theme.dim : Theme.accent

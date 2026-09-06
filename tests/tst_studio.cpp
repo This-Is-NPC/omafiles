@@ -17,6 +17,7 @@
 #include "IndexModel.h"
 #include "Open.h"
 #include "Paths.h"
+#include "Roots.h"
 #include "Theme.h"
 #include "Verb.h"
 #include "Views.h"
@@ -243,6 +244,7 @@ private slots:
     void asksOneQuestionWhicheverWayItIsWalked();
     void choosesARowMenuEntryWithTheMouse();
     void opensAndSavesAView();
+    void walksIntoWhatCarriesNoTag();
 
 private:
     QQuickWindow *window() const;
@@ -4674,6 +4676,124 @@ void TestStudio::opensAndSavesAView()
     QCOMPARE(m_views->rowCount(), before);
 
     key(Qt::Key_Escape);
+    settle();
+}
+
+// The other place the root of a tags tab leads to: what carries no tag at all.
+//
+// The index cannot answer this, and that is the whole difficulty. It holds rows
+// that carry a tag, so what has no tag has no row, and the exact answer is a
+// walk of the tree on every question -- which is not something a panel somebody
+// is typing into can afford. So the answer comes out of the list of names
+// `sweep` writes, and the price of that is a listing as old as the last sweep.
+// The price has to be visible, which is what the status line is measured for
+// here.
+//
+// Both halves are written by hand rather than swept: nothing in this binary may
+// run the command line.
+void TestStudio::walksIntoWhatCarriesNoTag()
+{
+    QTemporaryDir cache;
+    QTemporaryDir shelf;
+    QVERIFY(cache.isValid());
+    QVERIFY(shelf.isValid());
+
+    const QDir room(shelf.path());
+    for (const char *name : {"filed.pdf", "unfiled.pdf", "later.pdf"}) {
+        QFile file(room.filePath(QString::fromLatin1(name)));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("x");
+    }
+
+    const QByteArray previousCache = qgetenv("XDG_CACHE_HOME");
+    qputenv("XDG_CACHE_HOME", cache.path().toUtf8());
+    const QVector<Root> previousRoots = setRoots({});
+    const auto restore = qScopeGuard([&previousCache, &previousRoots] {
+        qputenv("XDG_CACHE_HOME", previousCache);
+        setRoots(previousRoots);
+    });
+
+    tagDirectory(room.filePath(QStringLiteral("filed.pdf")), QStringLiteral("filed"));
+
+    m_workspace->addTab(QStringLiteral("tags"));
+    settle();
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    QVERIFY(folder);
+    const auto namesOfKind = [folder](const QString &wanted) {
+        QStringList names;
+        for (int i = 0; i < folder->property("count").toInt(); ++i) {
+            QVariantMap entry;
+            QMetaObject::invokeMethod(folder, "entryAt", Q_RETURN_ARG(QVariantMap, entry),
+                                      Q_ARG(int, i));
+            if (entry.value(QStringLiteral("kind")).toString() == wanted)
+                names.append(entry.value(QStringLiteral("name")).toString());
+        }
+        return names;
+    };
+
+    // The node is at the root of the vocabulary and nowhere else, and it has no
+    // path -- so nothing that acts on a file can reach it, the way a facet row
+    // cannot be reached either.
+    QCOMPARE(namesOfKind(QStringLiteral("untagged")),
+             QStringList{QStringLiteral("(no tag)")});
+    const int node = rowOf(QStringLiteral("(no tag)"));
+    QVERIFY(node >= 0);
+    QString path;
+    QMetaObject::invokeMethod(folder, "pathAt", Q_RETURN_ARG(QString, path), Q_ARG(int, node));
+    QVERIFY2(path.isEmpty(), "the complement row carried a path");
+
+    // It is offered on a machine that has declared nothing too, and opening it
+    // there says what a scope for the question would be. A feature invisible
+    // until you already use it is one nobody finds.
+    focusRow(QStringLiteral("(no tag)"));
+    key('l');
+    settle();
+    QVERIFY(tab()->untagged());
+    QCOMPARE(tab()->title(), QStringLiteral("(no tag)"));
+    QVERIFY2(folder->property("error").toString().contains(QStringLiteral("roots add")),
+             qPrintable(folder->property("error").toString()));
+
+    // Declared, and nothing has swept: the tab says that rather than drawing an
+    // empty folder, which would read as "everything is filed".
+    setRoots({Root{QStringLiteral("shelf"), room.absolutePath(), false, QString()}});
+    QMetaObject::invokeMethod(folder, "reload");
+    settle();
+    QVERIFY2(folder->property("error").toString().contains(QStringLiteral("no list yet")),
+             qPrintable(folder->property("error").toString()));
+
+    // With one, the listing is the list of names minus the index: `filed.pdf`
+    // has a row and the other two do not.
+    const QDir names(QDir(cache.path()).filePath(QStringLiteral("omafiles/names")));
+    QVERIFY(QDir().mkpath(names.absolutePath()));
+    QFile list(names.filePath(QStringLiteral("shelf")));
+    QVERIFY(list.open(QIODevice::WriteOnly | QIODevice::Text));
+    list.write("filed.pdf\nunfiled.pdf\n");   // `later.pdf` arrived after the sweep
+    list.close();
+    QMetaObject::invokeMethod(folder, "reload");
+    settle();
+
+    QCOMPARE(namesOfKind(QStringLiteral("file")), QStringList{QStringLiteral("unfiled.pdf")});
+    // Said out loud, because a listing that is quietly out of date cannot be
+    // judged and one that says its age can: `later.pdf` is on the disk and not
+    // in the answer, and the line on screen is what explains why.
+    const QString said = folder->property("error").toString();
+    QVERIFY2(said.contains(QStringLiteral("as of ")), qPrintable(said));
+
+    // Out of it is back to the vocabulary, the same one step up that leaving a
+    // tag is -- and walking into a tag from there leaves the complement, since
+    // a file carrying `#filed` is not one of the files carrying nothing.
+    key('h');
+    settle();
+    QVERIFY(!tab()->untagged());
+    QCOMPARE(tab()->title(), QStringLiteral("Tags"));
+    focusRow(QStringLiteral("(no tag)"));
+    key('l');
+    settle();
+    QVERIFY(tab()->untagged());
+    tab()->setFacets(QStringList{QStringLiteral("filed")});
+    QVERIFY2(!tab()->untagged(), "a facet and the complement were both on at once");
+
+    m_workspace->closeCurrentTab();
     settle();
 }
 

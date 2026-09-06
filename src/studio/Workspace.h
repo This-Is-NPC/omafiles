@@ -34,6 +34,7 @@ class TabState : public QObject
     /// and `#draft/#work` name the same files, and the only thing the order is
     /// for is knowing which one `h` takes back off.
     Q_PROPERTY(QStringList facets READ facets WRITE setFacets NOTIFY facetsChanged)
+    Q_PROPERTY(bool untagged READ untagged WRITE setUntagged NOTIFY facetsChanged)
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY filterChanged)
     Q_PROPERTY(QString viewMode READ viewMode WRITE setViewMode NOTIFY viewModeChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
@@ -57,6 +58,15 @@ public:
     QString cwd() const { return m_cwd; }
     QStringList facets() const { return m_facets; }
     void setFacets(const QStringList &facets);
+    /// Whether a tags tab is standing in the complement of its vocabulary --
+    /// what carries no tag at all.
+    ///
+    /// Not a facet, and it cannot be one: the facets are a query, `#a/#b` is
+    /// `ls --tag a --tag b`, and "has no tag" is not a tag. It is the other
+    /// place the root of a tags tab leads to, so it takes a flag of its own and
+    /// the two are exclusive by construction.
+    bool untagged() const { return m_untagged; }
+    void setUntagged(bool untagged);
     Q_INVOKABLE void enterFacet(const QString &tag);
     Q_INVOKABLE void leaveFacet();
     QString filter() const { return m_filter; }
@@ -115,6 +125,7 @@ private:
     QString m_selectedNode;
     QString m_cwd;
     QStringList m_facets;
+    bool m_untagged = false;
     QString m_filter;
     QString m_viewMode = QStringLiteral("list");
     bool m_showHidden = false;

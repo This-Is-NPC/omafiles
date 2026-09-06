@@ -37,6 +37,7 @@ SOURCES += \
     ../src/core/Xattr.cpp \
     ../src/core/Paths.cpp \
     ../src/core/Roots.cpp \
+    ../src/core/Names.cpp \
     ../src/core/Open.cpp
 
 HEADERS += \
