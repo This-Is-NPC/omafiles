@@ -4639,6 +4639,42 @@ void TestStudio::opensAndSavesAView()
 
     m_workspace->closeCurrentTab();
     settle();
+
+    // A view is a row like any other row: `m` over it opens a menu, and the
+    // menu is how one is taken off the panel. Without it a view could be made
+    // from the window and only unmade from a prompt.
+    key('v');
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("views"));
+    const int before = m_views->rowCount();
+    key('m');
+    QVERIFY2(root->property("blocked").toBool(), "m over a view opened nothing");
+    QVERIFY2(menuLabels(QStringLiteral("viewMenu")).contains(QStringLiteral("Copy the command")),
+             qPrintable(menuLabels(QStringLiteral("viewMenu")).join(QLatin1String(" | "))));
+
+    m_clipboard->copy(QString());
+    QVERIFY(chooseInMenu(QStringLiteral("viewMenu"), QStringLiteral("Copy the command")));
+    QVERIFY2(m_clipboard->lastCopied().startsWith(QStringLiteral("omafiles ls")),
+             qPrintable(m_clipboard->lastCopied()));
+
+    // And forgetting one goes out through the command line, like every other
+    // change this window makes.
+    verbRuns().clear();
+    key('v');
+    key('m');
+    const QString first = m_views->at(0).value(QStringLiteral("name")).toString();
+    // The keyboard has to still be there after the menu closed: the menu takes
+    // the focus and hands it back, and handing back the region without the
+    // focus left the window answering nothing at all.
+    QVERIFY2(root->property("blocked").toBool(), "m over a view opened nothing the second time");
+    QVERIFY(chooseInMenu(QStringLiteral("viewMenu"), QStringLiteral("Forget ") + first));
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(), (QStringList{"view", "rm", "--name", first}));
+    // The recorder answers without writing anything, so the panel still holds
+    // what it held: what this checks is the command, not the removal.
+    QCOMPARE(m_views->rowCount(), before);
+
+    key(Qt::Key_Escape);
+    settle();
 }
 
 QTEST_MAIN(TestStudio)

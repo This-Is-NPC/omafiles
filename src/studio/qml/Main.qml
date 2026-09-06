@@ -65,7 +65,7 @@ Window {
                                     && activeTab.kind === "graph" && activeGraph !== null
     readonly property bool blocked: commandPalette.visible || helpSheet.visible
                                     || fileMenu.visible || tabMenu.visible
-                                    || openWithMenu.visible
+                                    || openWithMenu.visible || viewMenu.visible
                                     || newTabMenu.visible || editingPath || filtering || naming
 
     // ---------------------------------------------------------------- keymap
@@ -100,7 +100,7 @@ Window {
             { key: "Space", label: "mark row" },
             { key: "a", label: "mark all" },
             { key: "A", label: "clear marks" },
-            { key: "m", label: "menu for row or tab" },
+            { key: "m", label: "menu for a row, a tab or a view" },
             { key: "Menu", label: "menu for row or tab" },
             { key: "Shift F10", label: "menu for row or tab" } ] },
         { title: "view", keys: [
@@ -172,6 +172,12 @@ Window {
                     { key: "m", label: "menu" },
                     { key: "l", label: "open" },
                     { key: "j k", label: "node" }]
+        if (focusRegion === "views")
+            return [{ key: "?", label: "keys" },
+                    { key: "Esc", label: "back" },
+                    { key: "m", label: "menu" },
+                    { key: "j k", label: "move" },
+                    { key: "Enter", label: "open" }]
         if (focusRegion === "tags")
             return [{ key: "?", label: "keys" },
                     { key: "Esc", label: "back" },
@@ -180,6 +186,7 @@ Window {
         return [{ key: "?", label: "keys" },
                 { key: ":", label: "cmd" },
                 { key: "Space", label: "mark" },
+                { key: "v", label: "views" },
                 { key: "t", label: "tags" },
                 { key: "/", label: "filter" },
                 { key: "m", label: "menu" },
@@ -322,6 +329,12 @@ Window {
         if (!activeViewsList)
             return
         focusRegion = "views"
+        // The focus as well as the region. `t` and `v` are pressed while the
+        // window already holds it, so setting the region alone was enough --
+        // but this is also what the view menu returns to when it closes, and
+        // there the focus is on a scope that has just gone invisible. Without
+        // this the keyboard went dead after using that menu once.
+        root.forceActiveFocus()
         if (Views.count > 0 && activeViewsList.currentIndex < 0)
             activeViewsList.currentIndex = 0
     }
@@ -455,6 +468,33 @@ Window {
         }
         const pos = listing.mapToItem(root, 0, item.y - listing.contentY)
         openFileMenuAt(pos.x + 24, pos.y + item.height)
+    }
+
+    function openViewMenuAt(row, x, y) {
+        if (row < 0 || row >= Views.count)
+            return
+        IndexModel.clearNotice()
+        focusRegion = "views"
+        if (activeViewsList)
+            activeViewsList.currentIndex = row
+        viewMenu.targetRow = row
+        viewMenu.returnFocus = win.focusViews
+        viewMenu.openAt(x, y)
+    }
+
+    // Opened by `m` while the views are being walked, so it has to place
+    // itself: under the row if the row is on screen, in the middle if not.
+    function openViewMenuForCursor() {
+        const views = activeViewsList
+        if (!views || views.currentIndex < 0)
+            return
+        const item = views.itemAtIndex(views.currentIndex)
+        if (!item) {
+            openViewMenuAt(views.currentIndex, root.width / 2, root.height / 3)
+            return
+        }
+        const pos = views.mapToItem(root, 0, item.y - views.contentY)
+        openViewMenuAt(views.currentIndex, pos.x - 180, pos.y + item.height)
     }
 
     function openTabMenuAt(paneIndex, tabIndex, x, y) {
@@ -681,6 +721,11 @@ Window {
             return true
         if (handleEndKey(event, text, true))
             return true
+        if (text === "m" || event.key === Qt.Key_Menu
+                || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+            openViewMenuForCursor()
+            return true
+        }
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
                 || event.key === Qt.Key_Space || text === "l") {
             openView(views.currentIndex)
@@ -1553,6 +1598,51 @@ Window {
         }
 
         ContextMenu {
+            id: viewMenu
+            objectName: "viewMenu"
+            anchors.fill: parent
+            property int targetRow: -1
+            readonly property var target: viewMenu.targetRow >= 0
+                                          ? Views.at(viewMenu.targetRow) : ({})
+            readonly property string targetName: viewMenu.target.name || ""
+            readonly property bool isFolder: viewMenu.target.kind === "folder"
+
+            actions: [
+                { id: "open", label: "Open", key: "l", when: viewMenu.targetName !== "" },
+                { id: "open-pane", label: "Open in other pane",
+                  when: viewMenu.targetName !== "" },
+                // What it asks, as the command line that asks it: a view is a
+                // thing to read as well as to open, and this is how it gets
+                // out of the window and into a script.
+                { id: "copy", label: "Copy the command",
+                  when: viewMenu.targetName !== "" },
+                { id: "forget", label: "Forget " + viewMenu.targetName,
+                  when: viewMenu.targetName !== "" }
+            ]
+
+            onChosen: function (id) {
+                const view = viewMenu.target
+                if (!view || !view.name)
+                    return
+                switch (id) {
+                case "open": win.openView(viewMenu.targetRow); break
+                case "open-pane":
+                    win.takeFocus()
+                    if (viewMenu.isFolder)
+                        Workspace.splitWith("files", view.dir)
+                    else {
+                        Workspace.splitRight("tags")
+                        if (Workspace.currentTab)
+                            Workspace.currentTab.facets = view.tags
+                    }
+                    break
+                case "copy": Clipboard.copy("omafiles " + view.asks); break
+                case "forget": Views.forget(view.name); break
+                }
+            }
+        }
+
+        ContextMenu {
             id: newTabMenu
             anchors.fill: parent
             property int targetPaneIndex: 0
@@ -1840,6 +1930,11 @@ Window {
             walkingViews: win.focusRegion === "views" && win.activeDock === dock
 
             onViewActivated: function (row) { win.openView(row) }
+            onViewMenuRequested: function (row, x, y) {
+                Workspace.focusedPane = paneRoot.paneIndex
+                win.activeDock = dock
+                win.openViewMenuAt(row, x, y)
+            }
 
             onTagActivated: function (name) {
                 win.takeFocus()

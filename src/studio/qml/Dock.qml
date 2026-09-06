@@ -28,6 +28,7 @@ Rectangle {
     property alias viewsList: viewsList
     signal tagActivated(string tag)
     signal viewActivated(int row)
+    signal viewMenuRequested(int row, real x, real y)
 
     color: Theme.panel
 
@@ -133,7 +134,18 @@ Rectangle {
                 }
 
                 HoverHandler { id: viewHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: dock.viewActivated(viewRow.index) }
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onTapped: function (point, button) {
+                        if (button === Qt.RightButton) {
+                            const at = viewRow.mapToItem(null, point.position.x,
+                                                         point.position.y)
+                            dock.viewMenuRequested(viewRow.index, at.x, at.y)
+                            return
+                        }
+                        dock.viewActivated(viewRow.index)
+                    }
+                }
             }
         }
 
