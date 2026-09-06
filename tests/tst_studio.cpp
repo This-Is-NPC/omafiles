@@ -240,6 +240,7 @@ private slots:
     void offersTheApplicationsRegisteredForTheFile();
     void walksTagsAsIfTheyWereFolders();
     void asksOneQuestionWhicheverWayItIsWalked();
+    void choosesARowMenuEntryWithTheMouse();
 
 private:
     QQuickWindow *window() const;
@@ -542,9 +543,15 @@ QStringList TestStudio::menuLabels(const QString &objectName) const
 
 bool TestStudio::chooseInMenu(const QString &objectName, const QString &label)
 {
-    const int at = menuLabels(objectName).indexOf(label);
+    const QStringList labels = menuLabels(objectName);
+    const int at = labels.indexOf(label);
     if (at < 0)
         return false;
+    // Counted from the top, which is where `openAt` puts the cursor. Not
+    // forced there first: a menu that answers a pointer nobody is touching
+    // would still land on the right entry if it were, and this counting from
+    // zero is what fails loudly when the mouse starts fighting the keyboard
+    // again.
     for (int i = 0; i < at; ++i)
         key('j');
     key(Qt::Key_Return);
@@ -4377,6 +4384,85 @@ void TestStudio::asksOneQuestionWhicheverWayItIsWalked()
     QVERIFY2(!marked.contains(QString()), "a tag row ended up in the marked set");
 
     m_workspace->closeCurrentTab();
+    settle();
+}
+
+// The menu answered the keyboard and swallowed the mouse.
+//
+// Every case in this file drove it with `m`, `j` and Enter, and every one of
+// them passed while clicking an entry did nothing but close the menu. The
+// `FocusScope` holding the panel had no size -- nobody ever gave it one -- and
+// Qt Quick delivers a press to a child only when the point is inside its
+// ancestors, so a zero-by-zero scope hands every click straight through to the
+// scrim behind it. Keyboard focus does not care about geometry, which is why
+// only half the menu was ever broken and why no test noticed.
+void TestStudio::choosesARowMenuEntryWithTheMouse()
+{
+    const QString file = QDir(m_tree.path()).filePath(QStringLiteral("one.txt"));
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    QObject *root = m_engine->rootObjects().first();
+    QVERIFY2(root->property("blocked").toBool(), "m did not open the row menu");
+
+    const int at = menuLabels(QStringLiteral("fileMenu")).indexOf(QStringLiteral("Copy path"));
+    QVERIFY(at >= 0);
+
+    QQuickItem *popup = findAccessibleItem(window()->contentItem(), QAccessible::PopupMenu,
+                                           QStringLiteral("Menu"));
+    QVERIFY2(popup, "no row menu popup on screen");
+    QQuickItem *list = findAccessibleItem(popup, QAccessible::List);
+    QVERIFY(list);
+    QQuickItem *entry = viewItemAt(list, at);
+    QVERIFY2(entry, "the entry to click has not been built");
+
+    const QPointF centre = entry->mapToScene(QPointF(entry->width() / 2, entry->height() / 2));
+    m_clipboard->copy(QString());
+    QTest::mouseMove(window(), centre.toPoint());
+    settle();
+    // Hovering moves the highlight, which is the whole of what a pointer
+    // expects from a menu: the entry under it lights up before it is clicked.
+    QCOMPARE(list->property("currentIndex").toInt(), at);
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier, centre.toPoint());
+    settle();
+
+    QCOMPARE(m_clipboard->lastCopied(), file);
+    QCOMPARE(root->property("blocked").toBool(), false);
+
+    // And again by the road a person actually takes: the menu opened by a
+    // right-click, so the pointer is already inside the panel when it appears.
+    QQuickItem *listing = qobject_cast<QQuickItem *>(
+        filesRoot()->property("view").value<QObject *>());
+    QVERIFY(listing);
+    QQuickItem *row = viewItemAt(listing, rowOf(QStringLiteral("one.txt")));
+    QVERIFY(row);
+    const QPointF onRow = row->mapToScene(QPointF(row->width() / 2, row->height() / 2));
+    QTest::mouseClick(window(), Qt::RightButton, Qt::NoModifier, onRow.toPoint());
+    settle();
+    QVERIFY2(root->property("blocked").toBool(), "a right-click opened no menu");
+
+    QQuickItem *reopened = findAccessibleItem(window()->contentItem(), QAccessible::PopupMenu,
+                                              QStringLiteral("Menu"));
+    QVERIFY(reopened);
+    QQuickItem *rows = findAccessibleItem(reopened, QAccessible::List);
+    QVERIFY(rows);
+    const int second =
+        menuLabels(QStringLiteral("fileMenu")).indexOf(QStringLiteral("Copy name"));
+    QVERIFY(second >= 0);
+    QQuickItem *pick = viewItemAt(rows, second);
+    QVERIFY2(pick, "the entry to click has not been built");
+    const QPointF spot = pick->mapToScene(QPointF(pick->width() / 2, pick->height() / 2));
+    m_clipboard->copy(QString());
+    QTest::mouseMove(window(), spot.toPoint());
+    settle();
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier, spot.toPoint());
+    settle();
+    QCOMPARE(m_clipboard->lastCopied(), QStringLiteral("one.txt"));
+
+    // The pointer is left where the last case put it, and the menu answers it
+    // now, so parking it off the window is how this one stops deciding what
+    // the next one's menu opens on.
+    QTest::mouseMove(window(), QPoint(int(window()->width() * 0.35),
+                                      int(window()->height() * 0.85)));
     settle();
 }
 

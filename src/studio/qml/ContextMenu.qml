@@ -10,6 +10,11 @@ Item {
     property var returnFocus: function () {}
     signal chosen(string id)
 
+    /// Where the pointer was when it last moved the cursor, in this menu's own
+    /// coordinates. See the delegate below: it is what tells a mouse that moved
+    /// from a list that moved under a mouse that did not.
+    property point lastPointer: Qt.point(-1, -1)
+
     visible: false
     z: 90
 
@@ -53,6 +58,7 @@ Item {
         panel.width = menu.panelWidth()
         panel.x = x
         panel.y = y
+        menu.lastPointer = Qt.point(-1, -1)
         list.currentIndex = menu.shown.length > 0 ? 0 : -1
         visible = true
         clampPanel()
@@ -129,6 +135,9 @@ Item {
 
             Accessible.role: Accessible.PopupMenu
             Accessible.name: "Menu"
+            // Eats a click that lands on the panel but on no entry -- the
+            // margin, or the gap under a short list -- so it does not fall
+            // through to the scrim and close the menu.
             MouseArea {
                 anchors.fill: parent
                 onClicked: function (mouse) { mouse.accepted = true }
@@ -176,9 +185,52 @@ Item {
                         font.family: Theme.fontFamily
                         font.pixelSize: 11
                     }
+                    // The three things the command palette's list learned and
+                    // this one never did.
+                    //
+                    // Hovering is the whole of what a pointer expects from a
+                    // menu: the entry under it lights up before it is clicked.
+                    // Without it the highlight sat on the first row whatever
+                    // the mouse did, so the menu looked like it was ignoring
+                    // the mouse even where the click landed.
+                    //
+                    // Only where the pointer really moved, which is harder to
+                    // ask than it looks. Walking the cursor with `j` scrolls
+                    // the list, the rows slide under a mouse nobody is
+                    // touching, and Qt re-delivers hover for every one of them
+                    // -- so the naive version has the keyboard and a still
+                    // mouse pulling in opposite directions, and `j` twenty
+                    // times lands somewhere else entirely. The position is
+                    // compared in the menu's own coordinates, where a scroll
+                    // does not move the pointer and a hand does. Every menu on
+                    // the desktop ignores a still pointer, for this reason.
+                    //
+                    // `preventStealing` is the other half. A ListView is a
+                    // Flickable, and a Flickable takes the grab from a child
+                    // the moment a press turns into a drag -- which a real
+                    // mouse does on the way down often enough to matter, and a
+                    // synthesised one never does. That is why the keyboard
+                    // tests never caught this.
                     MouseArea {
                         anchors.fill: parent
+                        hoverEnabled: true
+                        preventStealing: true
+                        onPositionChanged: function (mouse) {
+                            const here = itemRow.mapToItem(menu, mouse.x, mouse.y)
+                            const unseen = menu.lastPointer.x < 0
+                            const still = Math.abs(here.x - menu.lastPointer.x) < 1
+                                       && Math.abs(here.y - menu.lastPointer.y) < 1
+                            menu.lastPointer = here
+                            // The first position a menu hears about is where
+                            // the pointer already was when it opened -- a menu
+                            // opens under the pointer that asked for it -- and
+                            // that is not a hand choosing an entry.
+                            if (unseen || still)
+                                return
+                            list.currentIndex = itemRow.index
+                        }
                         onClicked: {
+                            list.currentIndex = itemRow.index
                             menu.chosen(itemRow.modelData.id)
                             menu.close()
                         }
