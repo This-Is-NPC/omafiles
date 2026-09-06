@@ -18,6 +18,7 @@
 #include <QJsonObject>
 #include <QMap>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTextStream>
 
@@ -266,6 +267,10 @@ Keeping it true:
                                     a directory, or --all for the whole index
   reindex  [--from-xattr] [dir]     rebuild rows from the files' own tags
                                     exit 1 if it had to walk away from a path
+  sweep    [--status] [dir]         the run you do not watch: adopt what the
+                                    files carry, count what is gone, drop
+                                    nothing; the declared roots by default
+                                    --status prints the last run's receipt
   verify   [dir]                    exit 1 if index and disk disagree
                                     walks the current directory by default
 
@@ -395,6 +400,7 @@ struct Takes {
     bool all = false;
     bool root = false;
     bool view = false;
+    bool status = false;
 };
 
 // The six `tag` subcommands, each with its own flags. `dispatch` gates the
@@ -1598,7 +1604,8 @@ QStringList completionFor(const QStringList &words)
         QStringLiteral("has"),    QStringLiteral("json"),    QStringLiteral("recent"),
         QStringLiteral("open"),   QStringLiteral("mv"),      QStringLiteral("cp"),
         QStringLiteral("trash"),  QStringLiteral("rm"),      QStringLiteral("prune"),
-        QStringLiteral("reindex"), QStringLiteral("verify"), QStringLiteral("export"),
+        QStringLiteral("reindex"), QStringLiteral("sweep"),   QStringLiteral("verify"),
+        QStringLiteral("export"),
         QStringLiteral("roots"),  QStringLiteral("view"),
         QStringLiteral("import"), QStringLiteral("batch"),   QStringLiteral("completions")};
     static const QStringList globals = {QStringLiteral("--json"), QStringLiteral("--dry-run"),
@@ -1696,6 +1703,8 @@ QStringList completionFor(const QStringList &words)
         }
         if (verb == QLatin1String("reindex"))
             flags << QStringLiteral("--from-xattr");
+        if (verb == QLatin1String("sweep"))
+            flags << QStringLiteral("--status");
         if (verb == QLatin1String("prune"))
             flags << QStringLiteral("--all");
         return uniqueSorted(flags);
@@ -3012,6 +3021,380 @@ int cmdReindex(const Globals &g, Session &s, bool fromXattr, const QStringList &
     return s.incomplete && !s.deferred ? kIncomplete : kOk;
 }
 
+// ------------------------------------------------------------------- sweep
+
+// How long `sweep` waits for another writer before it gives up.
+//
+// Every other verb waits five seconds and then exits 3, which is right for a
+// command somebody typed and watched. This is the one meant to run when nobody
+// asked it to, so it does the opposite: a second, and a lock it does not get is
+// not a failure -- it is a run that stepped aside, and the next one does the
+// same work over the same trees. Anything else would mean that tagging a file
+// in the window while a sweep happened to be walking either stalled the window
+// or mailed somebody an exit 3, and a routine that does either is a routine
+// that gets turned off.
+constexpr int kSweepLockWait = 1000;
+
+// Where the last run's receipt lives.
+//
+// State, and neither data nor a declaration: it records that something
+// happened rather than what the index or the roots are, losing it costs only
+// the answer to "when did this last run", and nothing reads it back into a
+// decision. `$XDG_STATE_HOME` is the directory the basedir spec names for
+// exactly that.
+QString sweepReceiptPath()
+{
+    QString stateHome = QString::fromLocal8Bit(qgetenv("XDG_STATE_HOME"));
+    if (stateHome.isEmpty())
+        stateHome = QDir::homePath() + QStringLiteral("/.local/state");
+    return QDir(stateHome).filePath(QStringLiteral("omafiles/sweep.json"));
+}
+
+// What one run found. The counts are what the receipt keeps; the paths are what
+// the run itself prints, because a receipt naming every path would grow without
+// bound and the run has already said them.
+struct SweepRun {
+    QStringList trees;
+    QStringList adopted;      // a file carrying tags the index had never heard of
+    QStringList merged;       // row and file made to agree, one gaining from the other
+    QStringList gone;         // a row whose file is not there -- counted, never dropped
+    QStringList unreadable;   // a file that is there and whose tags are not readable
+    int skipped = 0;          // a row on a disk in a drawer, or one nobody may look at
+};
+
+QJsonArray asJsonArray(const QStringList &values)
+{
+    QJsonArray array;
+    for (const QString &value : values)
+        array.append(value);
+    return array;
+}
+
+// One tree, under one hold of the lock.
+//
+// The hold is the whole reason this is a pass and not a walk: the window writes
+// through this same CLI now, so a sweep that held the index across every
+// declared root would surface as `store: cannot lock` in somebody's row menu.
+// One tree, one lock, one commit, and the lock goes back between them.
+void sweepOneTree(const Globals &g, Session &s, const QString &tree, SweepRun *run,
+                  QVector<Record> *written)
+{
+    // Asked before the walk, so a row this run is about to write is not then
+    // looked up as a row whose file might be gone.
+    for (const Record &record : s.store.records()) {
+        if (!isUnderDirectory(record.path, tree))
+            continue;
+        QString error;
+        const PathState state = pathState(record.path, &error);
+        if (state == PathState::Present)
+            continue;
+        // "I may not look" is not "it is gone", and neither is "the disk is in
+        // a drawer" -- the distinction `prune` turns on, and this verb counts
+        // rather than acts on either way.
+        if (state == PathState::Missing)
+            run->gone.append(record.path);
+        else
+            ++run->skipped;
+    }
+
+    for (const QString &path : tagWalk(tree, true)) {
+        QStringList carried;
+        QString warning;
+        if (!readTagsXattr(path, &carried, &warning)) {
+            run->unreadable.append(path);
+            warn(g, warning);
+            continue;
+        }
+        QStringList rejected;
+        const QStringList clean = salvagedTags(carried, &rejected);
+        const Record existing = s.store.get(path);
+        const bool indexed = !existing.path.isEmpty();
+        if (!indexed && clean.isEmpty())
+            continue;                       // nothing on either side to work from
+
+        // The one rule the whole verb is: the union, both ways, and never a
+        // removal. The row keeps every tag it holds and gains every tag the
+        // file carries, which is what makes a file moved, copied or restored
+        // by something else come home on its own; and it is why this can be
+        // left running unwatched, where `reindex` -- which lets one side win
+        // outright -- cannot.
+        QStringList united = existing.tags;
+        united.append(clean);
+        united = uniqueSorted(std::move(united));
+
+        bool changed = false;
+        if (!indexed || united != existing.tags) {
+            QString error;
+            const Record record = stamped(path, united, &error, nullptr, existing.tagged);
+            if (record.path.isEmpty()) {
+                // Walked past between the walk and here. Not something to
+                // report at: the next run will find it or it will not be there.
+                ++run->skipped;
+                continue;
+            }
+            s.store.put(record);
+            written->append(record);
+            changed = true;
+            (indexed ? run->merged : run->adopted).append(path);
+        }
+
+        // And the file's own copy gains whatever the row holds and it does not
+        // -- the other half of the union, so `verify` stops calling the pair
+        // `xattr-differs` rather than being told about it every run.
+        //
+        // Except over a value this could not read whole. Writing the salvaged
+        // tags back over `good,Bad Tag` would delete `Bad Tag` from the file,
+        // and a verb that may not remove a tag may not remove one by rewriting
+        // the value it lives in either. `verify` goes on reporting that one,
+        // and `tag clear` is the verb licensed to drop it.
+        if (rejected.isEmpty() && uniqueSorted(carried) != united) {
+            Record mirror;
+            mirror.path = path;
+            mirror.tags = united;
+            mirrorTags(g, s, mirror);
+            if (!changed)
+                run->merged.append(path);
+        }
+    }
+}
+
+// Which trees a run sweeps.
+//
+// Named, or every declared root that is here. The second is the answer that
+// matters: a run nobody is watching cannot take its scope from where it was
+// started, and `roots ls` is already the list of the trees this machine keeps
+// tags on. A machine that has declared none has no such list, so it is asked
+// for a directory rather than handed the current one.
+QStringList sweepTrees(const QStringList &positionals, int *status)
+{
+    QString dir = optionalDir(positionals, status);
+    if (*status != kOk)
+        return {};
+    if (!dir.isEmpty()) {
+        if (cannotLookInto(dir)) {
+            fail(QStringLiteral("sweep: %1 is unreadable; nothing under it was swept")
+                     .arg(dir));
+            *status = kIncomplete;
+            return {};
+        }
+        return {dir};
+    }
+    if (roots().isEmpty()) {
+        fail(QStringLiteral("sweep: no directory was named and no root is declared; "
+                            "name one -- `omafiles sweep <dir>` -- or declare the trees "
+                            "this machine keeps tags on with `omafiles roots add`"));
+        *status = kUsage;
+        return {};
+    }
+    QStringList trees;
+    for (const Root &root : roots()) {
+        // A root that is not here is not a failure and never was: that is the
+        // disk in the drawer this whole distinction exists for.
+        if (!rootIsReachable(root))
+            continue;
+        QString canonical = canonicalPath(root.path, nullptr);
+        trees.append(canonical.isEmpty() ? root.path : canonical);
+    }
+    return trees;
+}
+
+int printSweepStatus(const Globals &g, const QStringList &positionals)
+{
+    if (!positionals.isEmpty()) {
+        fail(QStringLiteral("sweep: --status reports the last run; it takes no directory"));
+        return kUsage;
+    }
+    QFile file(sweepReceiptPath());
+    QJsonObject receipt;
+    if (file.open(QIODevice::ReadOnly)) {
+        const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+        if (doc.isObject())
+            receipt = doc.object();
+    }
+    // A receipt nobody has written yet is an answer and not an error: it says
+    // the routine has never run, which is what somebody asking is asking.
+    if (receipt.isEmpty()) {
+        if (g.json) {
+            printJson(QJsonObject{{QStringLiteral("at"), 0},
+                                  {QStringLiteral("trees"), QJsonArray{}},
+                                  {QStringLiteral("adopted"), 0},
+                                  {QStringLiteral("merged"), 0},
+                                  {QStringLiteral("gone"), 0},
+                                  {QStringLiteral("unreadable"), 0},
+                                  {QStringLiteral("skipped"), 0}});
+        } else {
+            out() << "never\n";
+        }
+        return kOk;
+    }
+    if (g.json) {
+        printJson(receipt);
+        return kOk;
+    }
+    // The shape `tags` and `roots ls` print in: one fact to a line, tab
+    // separated, so `cut -f2` gets the value out of any of them.
+    const qint64 at = static_cast<qint64>(receipt.value(QStringLiteral("at")).toDouble());
+    // Local wall clock carrying its own offset. `Qt::ISODate` over a local
+    // QDateTime prints no offset at all, which is a timestamp nobody can place
+    // once the machine has travelled or the clocks have gone back.
+    const QDateTime when = QDateTime::fromSecsSinceEpoch(at);
+    out() << "at\t" << when.toOffsetFromUtc(when.offsetFromUtc()).toString(Qt::ISODate)
+          << '\n';
+    out() << "seconds\t"
+          << QString::number(receipt.value(QStringLiteral("seconds")).toDouble(), 'f', 1)
+          << '\n';
+    const QJsonArray trees = receipt.value(QStringLiteral("trees")).toArray();
+    for (const QJsonValue &tree : trees)
+        out() << "tree\t" << tree.toString() << '\n';
+    for (const char *field : {"adopted", "merged", "gone", "unreadable", "skipped"}) {
+        out() << field << '\t'
+              << receipt.value(QString::fromLatin1(field)).toInt() << '\n';
+    }
+    return kOk;
+}
+
+void writeSweepReceipt(const SweepRun &run, qint64 milliseconds)
+{
+    const QString path = sweepReceiptPath();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+        return;                              // a receipt nobody could write is not the run
+    const QJsonObject receipt{
+        {QStringLiteral("at"), QDateTime::currentSecsSinceEpoch()},
+        {QStringLiteral("seconds"), milliseconds / 1000.0},
+        {QStringLiteral("trees"), asJsonArray(run.trees)},
+        {QStringLiteral("adopted"), run.adopted.size()},
+        {QStringLiteral("merged"), run.merged.size()},
+        {QStringLiteral("gone"), run.gone.size()},
+        {QStringLiteral("unreadable"), run.unreadable.size()},
+        {QStringLiteral("skipped"), run.skipped}};
+    file.write(QJsonDocument(receipt).toJson(QJsonDocument::Compact));
+    file.write("\n");
+    file.commit();
+}
+
+// The run you do not watch.
+//
+// It is the routine as a verb, so there is one implementation and a timer, if
+// there is ever a timer, is three lines calling this. Two rules make it safe to
+// leave alone: it only ever makes the index know more -- see the union in
+// `sweepOneTree` -- and it steps aside rather than making anybody wait. What it
+// finds and will not touch, it counts and names the verb for: a row whose file
+// is gone is `prune`'s to drop, and never this one's.
+int cmdSweep(const Globals &g, Session &s, bool status, const QStringList &positionals)
+{
+    if (status) {
+        // A batch prints nothing until it commits, so a read in the middle of
+        // one could only answer about rows a later line might still take away.
+        // Every other read verb is refused by name up there; this one is a
+        // flag, so it is refused here.
+        if (s.deferred) {
+            fail(QStringLiteral("batch: sweep --status only reads; run it on its own"));
+            return kUsage;
+        }
+        return printSweepStatus(g, positionals);
+    }
+
+    int scopeStatus = kOk;
+    const QStringList trees = sweepTrees(positionals, &scopeStatus);
+    if (scopeStatus != kOk)
+        return scopeStatus;
+    if (trees.isEmpty()) {
+        // Roots are declared and not one of them is here. Every disk in a
+        // drawer at once is unusual and not wrong, and there is nothing to
+        // report about it but that nothing was swept.
+        warn(g, QStringLiteral("sweep: no declared root is here; nothing was swept"));
+        if (g.json)
+            printJson(QJsonObject{{QStringLiteral("trees"), QJsonArray{}}});
+        return kOk;
+    }
+
+    const qint64 started = QDateTime::currentMSecsSinceEpoch();
+    SweepRun run;
+    QStringList untouched;
+    for (int i = 0; i < trees.size(); ++i) {
+        const QString &tree = trees.at(i);
+        QString error;
+        if (s.deferred) {
+            // Inside a `batch` the lock, the commit and the receipt all belong
+            // to the batch, and there is nothing to take or give back here.
+        } else if (g.dryRun) {
+            if (!s.opened && !s.store.load(&error)) {
+                fail(error);
+                return kStore;
+            }
+        } else {
+            s.store.setLockTimeout(kSweepLockWait);
+            if (!s.store.lockAndLoad(&error)) {
+                untouched = trees.mid(i);
+                break;
+            }
+        }
+        s.opened = true;
+
+        QVector<Record> written;
+        sweepOneTree(g, s, tree, &run, &written);
+        run.trees.append(tree);
+        // `announce` is false because the run has one answer for every tree it
+        // swept and prints it below; a per-tree array would be one JSON
+        // document per pass on a stdout that carries one.
+        const int committed = finish(g, s, written, false);
+        if (committed != kOk)
+            return committed;
+    }
+
+    if (!untouched.isEmpty()) {
+        warn(g, QStringLiteral("sweep: another writer holds the index; stepped aside "
+                               "with %1 tree(s) unswept -- %2")
+                    .arg(untouched.size())
+                    .arg(untouched.join(QStringLiteral(", "))));
+    }
+    if (!g.dryRun && !s.deferred && !run.trees.isEmpty())
+        writeSweepReceipt(run, QDateTime::currentMSecsSinceEpoch() - started);
+
+    // Nothing at all from inside a batch, in either shape: the batch has one
+    // answer for the whole run and prints it after its own commit.
+    if (!s.deferred) {
+        if (g.json) {
+            printJson(QJsonObject{{QStringLiteral("trees"), asJsonArray(run.trees)},
+                                  {QStringLiteral("adopted"), asJsonArray(run.adopted)},
+                                  {QStringLiteral("merged"), asJsonArray(run.merged)},
+                                  {QStringLiteral("gone"), asJsonArray(run.gone)},
+                                  {QStringLiteral("unreadable"), asJsonArray(run.unreadable)},
+                                  {QStringLiteral("skipped"), run.skipped}});
+        } else {
+            QStringList touched = run.adopted + run.merged;
+            touched.sort();
+            for (const QString &path : touched)
+                out() << path << '\n';
+        }
+    }
+
+    // The summary is a note beside a run that succeeded, which is what stderr
+    // is for here and what `--quiet` is documented to take away. The counts are
+    // the whole point of the verb -- what it changed, and what it found and
+    // deliberately did not.
+    QStringList parts{QStringLiteral("adopted %1").arg(run.adopted.size()),
+                      QStringLiteral("merged %1").arg(run.merged.size())};
+    if (!run.gone.isEmpty())
+        parts << QStringLiteral("gone %1").arg(run.gone.size());
+    if (!run.unreadable.isEmpty())
+        parts << QStringLiteral("unreadable %1").arg(run.unreadable.size());
+    if (run.skipped > 0)
+        parts << QStringLiteral("skipped %1").arg(run.skipped);
+    warn(g, QStringLiteral("sweep: %1").arg(parts.join(QStringLiteral(", "))));
+    if (!run.gone.isEmpty()) {
+        warn(g, QStringLiteral("sweep: a row whose file is gone is counted here and "
+                               "never dropped; `omafiles prune` drops them"));
+    }
+    // Exit 0 whatever it counted. A file nobody may read and a row whose file
+    // is gone are both findings rather than failures of the run, and a routine
+    // whose status is nonzero every week over the same chmod is a routine whose
+    // status nobody reads. `verify` is the verb that exits 1 over a finding.
+    return kOk;
+}
+
 // A detail stays one field on one line whatever it quotes. It carries the bytes
 // a file's `user.omafiles.tags` holds, and those are anybody's, so a tab is
 // written `\t`, a newline `\n`, and a backslash `\\` so the first two cannot be
@@ -3561,6 +3944,7 @@ struct Parsed {
     bool untagged = false;
     bool fromXattr = false;
     bool all = false;
+    bool status = false;
     QStringList positionals;
 };
 
@@ -3678,6 +4062,14 @@ int parseFlags(QStringList args, Parsed *parsed, const Takes &takes)
                 return kUsage;
             }
             parsed->fromXattr = true;
+            continue;
+        }
+        if (arg == QLatin1String("--status")) {
+            if (!takes.status) {
+                fail(QStringLiteral("unexpected %1").arg(arg));
+                return kUsage;
+            }
+            parsed->status = true;
             continue;
         }
         if (arg == QLatin1String("--all")) {
@@ -4115,6 +4507,13 @@ int dispatch(const Globals &g, Session &s, QStringList rest)
         if (parsedStatus != kOk)
             return parsedStatus;
         return cmdReindex(g, s, parsed.fromXattr, parsed.positionals);
+    }
+    if (cmd == QLatin1String("sweep")) {
+        Parsed parsed;
+        const int parsedStatus = parseFlags(rest, &parsed, {.status = true});
+        if (parsedStatus != kOk)
+            return parsedStatus;
+        return cmdSweep(g, s, parsed.status, parsed.positionals);
     }
     if (cmd == QLatin1String("view")) {
         QString sub;

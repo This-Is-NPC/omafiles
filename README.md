@@ -85,6 +85,22 @@ declared and not here makes its rows unreachable rather than missing — which i
 the difference between `prune` doing its job and `prune` throwing away the tags
 of an archive that is sitting in a drawer.
 
+Tags travel with the file in its own xattr, so something else moving, copying or
+restoring a file does not lose them — it only loses the index row. `sweep` reads
+them home:
+
+```bash
+omafiles sweep            # every declared root that is here
+omafiles sweep --status   # what the last run found
+```
+
+It is the routine as a verb rather than a daemon, so there is one thing to read
+the behaviour of and nothing to install to try it. It only ever makes the index
+know more: row and file are merged both ways and nothing is removed from either,
+a row whose file is gone is counted and left where it is — `prune` is still the
+verb that drops one, and it still asks — and a run that cannot take the index
+lock steps aside rather than making the window wait.
+
 Every verb is in [the command line](docs/cli.md).
 
 The list is the folder — a folder shut, one that is missing, and one that is

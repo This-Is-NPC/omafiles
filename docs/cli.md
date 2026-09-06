@@ -35,6 +35,7 @@ A dry run makes every refusal this program decides for itself -- a directory han
   - `mv`, `cp` -- `from`, `to` and `rows`, the rows the move or the copy left behind
   - `rm`, `trash` -- one `removed` array of paths
   - `prune` -- one `dropped` array of paths
+  - `sweep` -- `trees`, `adopted`, `merged`, `gone` and `unreadable`, each an array of paths, and `skipped`, a count; `--status` instead gives `at`, `seconds`, `trees` and one number per count
   - `verify` -- one `problems` array of `problem`, `path` and `detail`
   - `open` -- an array of `program`, `arguments`, `mime` and `desktop`, one per path
 
@@ -330,6 +331,39 @@ A name that is not valid UTF-8 is a path no index row can hold, so it is named o
 - **`--from-xattr`** — Prefer xattr over the index on conflict, unless the file has nothing to say.
 
   An empty xattr, or one no tag can be read out of, is read as a value the filesystem dropped rather than as tags somebody cleared: the index row is left alone, the path is named on stderr, and the run exits 1 because it walked away from a path it was asked to rebuild. Plain `reindex` is the repair -- it writes the row back over the file's copy.
+
+## `omafiles sweep`
+
+- **Usage:** `omafiles sweep [--status] [dir]`
+- **Effect:** modifies state
+
+The run you do not watch.
+
+It is the routine as a verb. Whatever ends up firing it -- a timer, a hook, you at a prompt on a Friday -- runs this one command, so there is one implementation and one thing to read the behaviour of, and a schedule is three lines of configuration rather than a second program.
+
+Two rules make it safe to leave alone.
+
+It only ever makes the index know more. Row and file are merged both ways -- the row keeps every tag it holds and gains every tag the file carries, and the file's own `user.omafiles.tags` gains whatever the row holds and it does not -- and nothing is ever removed from either. That is what brings a file back on its own after something else moved, copied or restored it: the tags travelled with it in the xattr, and this is what reads them home. It is also where this parts company with `reindex`, which lets one side win outright and so has to be pointed at a tree by somebody who knows which side is right. A file carrying a value no tag can be read out of is the one thing it will not rewrite, because writing the salvaged tags back would delete the rest of that value, and a verb that may not remove a tag may not remove one that way either. `verify` goes on reporting it and `tag clear` is the verb licensed to drop it.
+
+And it never drops a row. A row whose file is gone is counted, said on stderr, and left exactly where it is -- `prune` is the verb for that, it asks before it acts, and it stays a decision a person makes. Dropping rows is the one thing an unwatched run must not do, because a row is sometimes the only copy of those tags on the machine.
+
+What it sweeps, with no `[dir]`, is every declared root that is here -- `roots ls` is already the list of trees this machine keeps tags on, and a run nobody is watching cannot take its scope from where it happened to be started. A machine that has declared no roots has no such list, so it asks for a directory instead of assuming the current one.
+
+One tree is one hold of the index lock: it locks, walks that tree, commits, and gives the lock back before the next one. The window writes through this same CLI, so a sweep that held the index across every root would surface as `store: cannot lock` in somebody's row menu. And a lock it cannot get in a second it does not wait for: it says which trees it left, and exits 0. That is not a failure -- it is a run that stepped aside, and the next one does the same work over the same trees. A routine that mailed you an exit 3 every time you tagged a file in the window is a routine you would turn off.
+
+It exits 0 whatever it counted, for the same reason. A file nobody may read and a row whose file is gone are findings, not failures of the run, and a status that is nonzero every week over the same chmod is a status nobody reads. `verify` is the verb that exits 1 over a finding.
+
+It prints the paths it changed, one per line, and says what it did on stderr -- `sweep: adopted 3, merged 1, gone 2`. Under `--json` an object of `trees`, `adopted`, `merged`, `gone` and `unreadable`, each an array of paths, and `skipped`, a count of the rows it could not judge. `--quiet` takes the stderr away and leaves the paths, which is the shape to run it in unattended.
+
+### Arguments
+- **`[dir]`** — Tree to sweep; defaults to every declared root that is here
+
+### Flags
+- **`--status`** — Print the last run's receipt and sweep nothing.
+
+  One fact to a line, tab separated, the shape `tags` and `roots ls` print in: when it last ran and how long it took, a `tree` line per tree it swept, and the counts. `never` where it has not run. Under `--json` the same as an object.
+
+  The receipt is one file, `$XDG_STATE_HOME/omafiles/sweep.json` or `~/.local/state/omafiles/sweep.json`. State rather than data: it records that something happened, nothing reads it back into a decision, and deleting it costs only the answer to when this last ran. A dry run does not write one, and neither does a run that stepped aside with nothing swept.
 
 ## `omafiles view`
 

@@ -248,6 +248,7 @@ def main():
         check_batch_json_prints_nothing_on_rollback(data, workspace)
         check_has_on_a_path_nobody_may_look_at(data, workspace)
         check_an_unplugged_root_is_not_a_deleted_file(data, workspace)
+        check_a_sweep_only_ever_adds(data, workspace)
 
     print("ok")
 
@@ -5309,6 +5310,144 @@ def check_an_unplugged_root_is_not_a_deleted_file(data, workspace):
     assert swept.returncode == 0, swept.stderr
     assert "contract.pdf" in swept.stdout, swept.stdout
 
+
+def check_a_sweep_only_ever_adds(data, workspace):
+    """The routine as a verb: it adopts, it merges both ways, it drops nothing.
+
+    The tags travel with the file in its own xattr, so something else moving,
+    copying or restoring a file loses the index row and not the tags. Nothing
+    read them back without somebody deciding which side won: plain `reindex`
+    writes the row over the file and `reindex --from-xattr` writes the file over
+    the row, and a run nobody is watching cannot be trusted with either. This
+    one takes the union, both ways, and never removes -- which is what makes it
+    safe to leave running."""
+    home = workspace / "sweepcase"
+    config = home / "config"
+    state = home / "state"
+    tree = home / "tree"
+    for path in (config, state, tree):
+        path.mkdir(parents=True)
+    # Its own state directory as well as its own config: the receipt is written
+    # under $XDG_STATE_HOME, and a suite that wrote into the real one would be
+    # leaving a file on the machine that ran it.
+    env = {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(state)}
+
+    # Never having run is an answer, not an error.
+    fresh = run(data, "sweep", "--status", extra_env=env)
+    assert fresh.returncode == 0, fresh.stderr
+    assert fresh.stdout.splitlines() == ["never"], fresh.stdout
+
+    # A file something else put here, carrying the tags it left with, that the
+    # index has never heard of -- which is what a restore from a backup, or a
+    # `cp --preserve=xattr`, looks like from in here.
+    restored = tree / "restored.md"
+    restored.write_text("r")
+    os.setxattr(restored, "user.omafiles.tags", b"trip,photo")
+    swept = run(data, "sweep", str(tree), extra_env=env)
+    assert swept.returncode == 0, swept.stderr
+    assert swept.stdout.splitlines() == [str(restored.resolve())], swept.stdout
+    assert "adopted 1" in swept.stderr, swept.stderr
+    assert run(data, "tag", "ls", "--", str(restored),
+               extra_env=env).stdout.split() == ["photo", "trip"]
+
+    # Both ways, and never a removal. The row holds a tag the file does not and
+    # the file carries one the row does not; either `reindex` would settle this
+    # by throwing one of them away.
+    kept = tree / "kept.md"
+    kept.write_text("k")
+    run(data, "tag", "add", "--tag", "row-side", "--", str(kept), extra_env=env)
+    os.setxattr(kept, "user.omafiles.tags", b"file-side")
+    merged = run(data, "sweep", str(tree), extra_env=env)
+    assert merged.returncode == 0, merged.stderr
+    assert "merged 1" in merged.stderr, merged.stderr
+    assert run(data, "tag", "ls", "--", str(kept),
+               extra_env=env).stdout.split() == ["file-side", "row-side"]
+    assert os.getxattr(kept, "user.omafiles.tags") == b"file-side,row-side"
+    # With both copies holding the same thing there is nothing left to report.
+    assert run(data, "verify", str(tree), extra_env=env).returncode == 0
+
+    # A value no tag can be read out of is the one thing it will not rewrite:
+    # salvaging the readable half back over it would delete the rest, and a verb
+    # that may not remove a tag may not remove one that way either.
+    odd = tree / "odd.md"
+    odd.write_text("o")
+    os.setxattr(odd, "user.omafiles.tags", b"good,Bad Tag")
+    assert run(data, "sweep", str(tree), extra_env=env).returncode == 0
+    assert run(data, "tag", "ls", "--", str(odd), extra_env=env).stdout.split() == ["good"]
+    assert os.getxattr(odd, "user.omafiles.tags") == b"good,Bad Tag"
+
+    # A row whose file is gone is counted, named as somebody else's job, and
+    # left exactly where it is. Dropping one is the single thing an unwatched
+    # run must never do: a row is sometimes the only copy of those tags here.
+    restored.unlink()
+    counted = run(data, "sweep", str(tree), extra_env=env)
+    assert counted.returncode == 0, counted.stderr
+    assert "gone 1" in counted.stderr, counted.stderr
+    assert "omafiles prune" in counted.stderr, counted.stderr
+    assert "restored.md" in run(data, "export", extra_env=env).stdout
+
+    # A writer that already holds the index does not get waited out, and the run
+    # that found it held did not fail -- it stepped aside, and the next one does
+    # the same work over the same trees. A routine that mailed an exit 3 every
+    # time somebody tagged a file in the window is a routine you turn off.
+    #
+    # The lock is QLockFile's: a pid, the program that pid is running, and a
+    # hostname. Forged from this process because it has to name a writer that is
+    # really alive -- Qt reads a lock whose pid is dead, or whose pid is now
+    # running something else, as stale and takes it. The program is the basename
+    # of /proc/<pid>/exe, which is where Qt looks and is not /proc/<pid>/comm.
+    lock = data / "omafiles" / "index.jsonl.lock"
+    lock.write_text(f"{os.getpid()}\n{Path(os.readlink('/proc/self/exe')).name}\n"
+                    f"{os.uname().nodename}\n")
+    try:
+        aside = run(data, "sweep", str(tree), extra_env=env)
+    finally:
+        lock.unlink(missing_ok=True)
+    assert aside.returncode == 0, (aside.returncode, aside.stderr)
+    assert "stepped aside" in aside.stderr, aside.stderr
+    assert str(tree.resolve()) in aside.stderr, aside.stderr
+
+    # With no directory the scope is the declared roots and not wherever the run
+    # was started from. A machine that has declared none has no such list, so it
+    # is asked for one rather than handed the current directory.
+    nowhere = run(data, "sweep", extra_env=env, cwd=tree)
+    assert nowhere.returncode == 1, (nowhere.returncode, nowhere.stderr)
+    assert "no root is declared" in nowhere.stderr, nowhere.stderr
+    declared = run(data, "roots", "add", "--id", "swept", "--", str(tree), extra_env=env)
+    assert declared.returncode == 0, declared.stderr
+    rooted = run(data, "sweep", extra_env=env)
+    assert rooted.returncode == 0, rooted.stderr
+
+    # And the receipt says what that run found, in the shape `tags` and
+    # `roots ls` print in: one fact to a line, tab separated.
+    receipt = dict(line.split("\t", 1) for line
+                   in run(data, "sweep", "--status", extra_env=env).stdout.splitlines())
+    assert receipt["tree"] == str(tree.resolve()), receipt
+    assert receipt["gone"] == "1", receipt
+    assert (state / "omafiles" / "sweep.json").is_file()
+
+    # A dry run sweeps nothing, and a receipt is for what happened.
+    before = (state / "omafiles" / "sweep.json").read_text()
+    previewed = tree / "previewed.md"
+    previewed.write_text("p")
+    os.setxattr(previewed, "user.omafiles.tags", b"previewed")
+    preview = run(data, "--dry-run", "sweep", str(tree), extra_env=env)
+    assert preview.returncode == 0, preview.stderr
+    assert str(previewed.resolve()) in preview.stdout, preview.stdout
+    assert run(data, "tag", "ls", "--", str(previewed), extra_env=env).stdout.strip() == ""
+    assert (state / "omafiles" / "sweep.json").read_text() == before
+
+    # The JSON shape docs/cli.md declares.
+    shaped = json.loads(run(data, "--json", "sweep", str(tree), extra_env=env).stdout)
+    assert set(shaped) == {"trees", "adopted", "merged", "gone",
+                           "unreadable", "skipped"}, shaped
+    assert shaped["adopted"] == [str(previewed.resolve())], shaped
+    assert shaped["gone"] == [str(restored.resolve())], shaped
+    assert shaped["trees"] == [str(tree.resolve())], shaped
+
+    # Undeclaring carries the rows out as absolute paths, so what this case
+    # declared cannot leave the index unreadable to everything after it.
+    assert run(data, "roots", "rm", "--id", "swept", extra_env=env).returncode == 0
 
 if __name__ == "__main__":
     main()
