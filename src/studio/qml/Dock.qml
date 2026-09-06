@@ -57,10 +57,13 @@ Rectangle {
         // is only matters at the moment it opens. Above the vocabulary because
         // it is a shorter list somebody chose, where the vocabulary is a long
         // one the index grew.
+        // Always here, empty or not. It used to appear only once something was
+        // in it, which meant a person with nothing saved saw no panel, pressed
+        // no key, and never found out that saving was a thing -- a feature you
+        // have to already be using before it will show you where it lives.
         Item {
             width: parent.width
             height: 14
-            visible: Views.count > 0 || dock.walkingViews
 
             Label { quiet: true; text: "views" }
             Label {
@@ -78,7 +81,7 @@ Rectangle {
             // vocabulary underneath has to stay reachable however many views
             // somebody saves.
             height: Math.min(contentHeight, column.height * 0.34)
-            visible: Views.count > 0 || dock.walkingViews
+            visible: Views.count > 0
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             model: Views
@@ -134,7 +137,16 @@ Rectangle {
             }
         }
 
-        Item { width: 1; height: 2; visible: viewsList.visible }
+        // What the list says when there is nothing in it: where they come
+        // from, in the words of the two ways to make one.
+        Label {
+            width: parent.width
+            visible: Views.count === 0
+            quiet: true
+            text: "nothing saved yet · m to save one"
+        }
+
+        Item { width: 1; height: 2 }
 
         Item {
             width: parent.width

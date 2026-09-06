@@ -315,11 +315,14 @@ Window {
             activeTagsList.currentIndex = 0
     }
 
+    // Focused even with nothing in it, so `v` shows where views live rather
+    // than doing nothing at all -- which is the same key answering the same
+    // question either way.
     function focusViews() {
-        if (!activeViewsList || Views.count === 0)
+        if (!activeViewsList)
             return
         focusRegion = "views"
-        if (activeViewsList.currentIndex < 0)
+        if (Views.count > 0 && activeViewsList.currentIndex < 0)
             activeViewsList.currentIndex = 0
     }
 
@@ -1822,7 +1825,8 @@ Window {
             // for two copies of the same tag vocabulary where the names should
             // be -- and back for as long as `t` is walking it, because a key
             // the sheet names without a condition has to work at every size.
-            visible: dock.holdsTags && (paneRoot.width >= 640 || dock.walking)
+            visible: dock.holdsTags && (paneRoot.width >= 640 || dock.walking
+                                        || dock.walkingViews)
 
             tab: paneRoot.pane.current
             // A Loader's payload has no static type -- it is whichever component
