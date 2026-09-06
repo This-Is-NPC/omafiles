@@ -249,6 +249,7 @@ def main():
         check_has_on_a_path_nobody_may_look_at(data, workspace)
         check_an_unplugged_root_is_not_a_deleted_file(data, workspace)
         check_a_sweep_only_ever_adds(data, workspace)
+        check_a_list_of_names_is_not_the_index(data, workspace)
 
     print("ok")
 
@@ -5324,13 +5325,16 @@ def check_a_sweep_only_ever_adds(data, workspace):
     home = workspace / "sweepcase"
     config = home / "config"
     state = home / "state"
+    cache = home / "cache"
     tree = home / "tree"
-    for path in (config, state, tree):
+    for path in (config, state, cache, tree):
         path.mkdir(parents=True)
-    # Its own state directory as well as its own config: the receipt is written
-    # under $XDG_STATE_HOME, and a suite that wrote into the real one would be
-    # leaving a file on the machine that ran it.
-    env = {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(state)}
+    # Its own state and cache directories as well as its own config: the receipt
+    # goes under $XDG_STATE_HOME and the list of names under $XDG_CACHE_HOME,
+    # and a suite that wrote into the real ones would be leaving files on the
+    # machine that ran it.
+    env = {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(state),
+           "XDG_CACHE_HOME": str(cache)}
 
     # Never having run is an answer, not an error.
     fresh = run(data, "sweep", "--status", extra_env=env)
@@ -5439,8 +5443,8 @@ def check_a_sweep_only_ever_adds(data, workspace):
 
     # The JSON shape docs/cli.md declares.
     shaped = json.loads(run(data, "--json", "sweep", str(tree), extra_env=env).stdout)
-    assert set(shaped) == {"trees", "adopted", "merged", "gone",
-                           "unreadable", "skipped"}, shaped
+    assert set(shaped) == {"trees", "adopted", "merged", "gone", "unreadable",
+                           "skipped", "listed", "unlistable"}, shaped
     assert shaped["adopted"] == [str(previewed.resolve())], shaped
     assert shaped["gone"] == [str(restored.resolve())], shaped
     assert shaped["trees"] == [str(tree.resolve())], shaped
@@ -5448,6 +5452,116 @@ def check_a_sweep_only_ever_adds(data, workspace):
     # Undeclaring carries the rows out as absolute paths, so what this case
     # declared cannot leave the index unreadable to everything after it.
     assert run(data, "roots", "rm", "--id", "swept", extra_env=env).returncode == 0
+
+def check_a_list_of_names_is_not_the_index(data, workspace):
+    """The cache `--untagged` answers out of, and the line around it.
+
+    `--untagged` is the one listing here that cannot come out of the index: the
+    index holds rows that carry a tag, and what has no tag has no row. So the
+    exact answer costs a walk of the tree, every time, for a question somebody
+    wants to ask from a panel. The list of names is what makes it instant, and
+    the whole risk of having one is that it gets mistaken for the index -- so
+    what is measured here is that it is derived, dated, disposable, and that
+    the exact answer is still there beside it."""
+    home = workspace / "namescase"
+    config = home / "config"
+    state = home / "state"
+    cache = home / "cache"
+    tree = home / "tree"
+    for path in (config, state, cache, tree):
+        path.mkdir(parents=True)
+    env = {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(state),
+           "XDG_CACHE_HOME": str(cache)}
+
+    (tree / "sub").mkdir()
+    filed = tree / "sub" / "filed.md"
+    loose = tree / "sub" / "loose.md"
+    for path in (filed, loose):
+        path.write_text("x")
+
+    # An id is a name and not a path: it is what every index row carries and it
+    # is the file name of the list, so `..` in one would be a list written
+    # somewhere else entirely. Folded as it is declared, the way a tag is.
+    refused = run(data, "roots", "add", "--id", "../oops", "--", str(tree), extra_env=env)
+    assert refused.returncode == 1, refused.stderr
+    assert "is not an id" in refused.stderr, refused.stderr
+    assert run(data, "roots", "add", "--id", "Names", "--",
+               str(tree), extra_env=env).returncode == 0
+    assert run(data, "roots", extra_env=env).stdout.split("\t")[0] == "names"
+
+    run(data, "tag", "add", "--tag", "filed", "--", str(filed), extra_env=env)
+
+    # Nothing has swept, so there is no list -- and that is said rather than
+    # answered around. A short answer is exit 1 here as it is everywhere else.
+    blind = run(data, "ls", "--untagged", "--cached", extra_env=env)
+    assert blind.returncode == 1, (blind.returncode, blind.stdout)
+    assert blind.stdout == "", blind.stdout
+    assert "has no list of names yet" in blind.stderr, blind.stderr
+
+    assert run(data, "sweep", extra_env=env).returncode == 0
+    listing = cache / "omafiles" / "names" / "names"
+    assert listing.is_file(), sorted(cache.rglob("*"))
+    # Relative to the root, sorted, one to a line: a remount moves the root and
+    # invalidates nothing, and `sort` is what every reader is allowed to assume.
+    assert listing.read_text().splitlines() == ["sub", "sub/filed.md", "sub/loose.md"]
+
+    # And the cached answer is the walking answer, to the path.
+    walked = run(data, "ls", "--untagged", str(tree), extra_env=env)
+    cached = run(data, "ls", "--untagged", "--cached", extra_env=env)
+    assert cached.returncode == 0, cached.stderr
+    assert cached.stdout == walked.stdout, (cached.stdout, walked.stdout)
+    assert str(filed.resolve()) not in cached.stdout, cached.stdout
+    assert "from a list of names built" in cached.stderr, cached.stderr
+
+    # It is as old as the last sweep and says so, which is the whole contract:
+    # a file made since is not in it, and nothing here stats a path on the way
+    # out, because that would be the walk again.
+    later = tree / "sub" / "later.md"
+    later.write_text("l")
+    loose.unlink()
+    stale = run(data, "ls", "--untagged", "--cached", extra_env=env)
+    assert str(later.resolve()) not in stale.stdout, stale.stdout
+    assert str(loose.resolve()) in stale.stdout, stale.stdout
+    # The exact answer is still there, beside it and not replaced by it.
+    fresh = run(data, "ls", "--untagged", str(tree), extra_env=env)
+    assert str(later.resolve()) in fresh.stdout, fresh.stdout
+    assert str(loose.resolve()) not in fresh.stdout, fresh.stdout
+
+    # The age is said in the spelling `--since` takes, so one vocabulary covers
+    # asking about a span and being told one.
+    os.utime(listing, (time.time() - 10800, time.time() - 10800))
+    dated = run(data, "ls", "--untagged", "--cached", extra_env=env)
+    assert "built 3h ago" in dated.stderr, dated.stderr
+    assert run(data, "--quiet", "ls", "--untagged", "--cached",
+               extra_env=env).stderr == ""
+
+    # Scoped, it is scoped the way the walk is: `[dir]` is about what is in the
+    # directory, not about the directory.
+    scoped = run(data, "ls", "--untagged", "--cached", str(tree / "sub"), extra_env=env)
+    # A line and not a substring: every path under it starts with the directory.
+    assert str((tree / "sub").resolve()) not in scoped.stdout.splitlines(), scoped.stdout
+    assert str(loose.resolve()) in scoped.stdout.splitlines(), scoped.stdout
+
+    # Two refusals, each naming the way to ask the question instead.
+    everywhere = run(data, "ls", "--untagged", "--cached", str(workspace), extra_env=env)
+    assert everywhere.returncode == 1, everywhere.stderr
+    assert "under no declared root" in everywhere.stderr, everywhere.stderr
+    alone = run(data, "ls", "--cached", extra_env=env)
+    assert alone.returncode == 1, alone.stderr
+    assert "answers --untagged" in alone.stderr, alone.stderr
+
+    # Disposable, and nothing refuses to run without it. Deleting the whole
+    # directory costs one sweep and no information.
+    shutil.rmtree(cache / "omafiles")
+    assert run(data, "ls", "--untagged", str(tree), extra_env=env).returncode == 0
+    assert run(data, "verify", str(tree), extra_env=env).returncode == 0
+    assert run(data, "sweep", extra_env=env).returncode == 0
+    assert listing.is_file()
+
+    # A list belongs to a declaration: undeclaring the root takes it away, since
+    # nothing will ever read a list for a root nobody declares.
+    assert run(data, "roots", "rm", "--id", "Names", extra_env=env).returncode == 0
+    assert not listing.exists(), sorted(cache.rglob("*"))
 
 if __name__ == "__main__":
     main()

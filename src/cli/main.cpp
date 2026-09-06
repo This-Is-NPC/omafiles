@@ -1,3 +1,4 @@
+#include "Names.h"
 #include "Open.h"
 #include "Paths.h"
 #include "Roots.h"
@@ -222,8 +223,10 @@ Tags:
 
 Asking:
   ls       [--tag <tag>]... [--any <tag>]... [--untagged]
-           [--ext <ext>]... [--since <duration>] [dir]
+           [--cached] [--ext <ext>]... [--since <duration>] [dir]
                                     --since counts from when it was tagged
+                                    --cached answers --untagged out of the
+                                    list sweep built, and says its age
   tags     [dir]
   has      --tag <tag> -- <path>    exit 0 if tagged, 1 if not
   json     -- <path>
@@ -447,6 +450,19 @@ qint64 parseDuration(const QString &text, QString *error)
         return -1;
     error->clear();
     return n * scale;
+}
+
+// A span of seconds in the spelling `--since` accepts, so the one vocabulary
+// covers both saying an age and asking about one.
+QString spelledDuration(qint64 seconds)
+{
+    if (seconds >= 86400)
+        return QStringLiteral("%1d").arg(seconds / 86400);
+    if (seconds >= 3600)
+        return QStringLiteral("%1h").arg(seconds / 3600);
+    if (seconds >= 60)
+        return QStringLiteral("%1m").arg(seconds / 60);
+    return QStringLiteral("%1s").arg(qMax<qint64>(seconds, 0));
 }
 
 QString normalizeExt(QString ext)
@@ -1076,7 +1092,7 @@ const Exclusion kUntaggedExcludes[] = {
 };
 
 int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringList &anys,
-           bool untagged, const QStringList &exts, qint64 sinceSeconds,
+           bool untagged, bool cached, const QStringList &exts, qint64 sinceSeconds,
            const QStringList &positionals)
 {
     // The contradictions before anything else is resolved: a flag that cannot
@@ -1103,6 +1119,16 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
             return kUsage;
         }
     }
+    // `--cached` is a way of answering `--untagged`, not a question of its own.
+    // Every other listing already comes out of the index, which is one file and
+    // is read whole; there is nothing a cache could make faster about it, so a
+    // flag accepted there would be a flag that did nothing.
+    if (cached && !untagged) {
+        fail(QStringLiteral("ls: --cached answers --untagged without walking the disk; "
+                            "every other listing is the index, which is already read "
+                            "whole"));
+        return kUsage;
+    }
 
     int status = kOk;
     const QString dir = optionalDir(positionals, &status);
@@ -1117,7 +1143,84 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
     QStringList unreadable;
     QStringList unnamed;
     QStringList skipped;
-    if (untagged) {
+    // Whole trees the cached answer could not cover. Kept apart from `skipped`
+    // because these are sentences about a root and that one is suffixed with
+    // `it was not listed`, which is about a path.
+    QStringList uncovered;
+    if (untagged && cached) {
+        // The whole point is that nothing here touches the disk: no walk, and
+        // no `stat` on the way out either. What comes back is what the tree
+        // held when the list was built, which is why the age is said out loud
+        // below and why plain `--untagged` stays exact.
+        QVector<Root> scope;
+        if (dir.isEmpty()) {
+            scope = roots();
+        } else if (const Root *holding = rootFor(dir)) {
+            scope.append(*holding);
+        }
+        if (roots().isEmpty()) {
+            fail(QStringLiteral("ls: --cached answers out of a root's list of names, "
+                                "and no root is declared; `omafiles roots add` declares "
+                                "the trees this machine keeps tags on"));
+            return kUsage;
+        }
+        if (scope.isEmpty()) {
+            fail(QStringLiteral("ls: %1 is under no declared root, so there is no list "
+                                "of names covering it; plain `--untagged` walks it")
+                     .arg(dir));
+            return kUsage;
+        }
+
+        qint64 oldest = -1;
+        for (const Root &root : std::as_const(scope)) {
+            // A disk in a drawer has a list and the paths in it are not
+            // reachable. Saying so is the same answer every other verb gives.
+            if (!rootIsReachable(root)) {
+                uncovered.append(QStringLiteral("root %1 is declared and not here, so "
+                                                "nothing under it was listed")
+                                     .arg(root.id));
+                continue;
+            }
+            QStringList names;
+            qint64 age = -1;
+            QString error;
+            if (!readNames(root, &names, &age, &error)) {
+                uncovered.append(error);
+                continue;
+            }
+            if (age < 0) {
+                uncovered.append(QStringLiteral("root %1 has no list of names yet, so "
+                                                "nothing under it was listed; "
+                                                "`omafiles sweep` builds one")
+                                     .arg(root.id));
+                continue;
+            }
+            oldest = qMax(oldest, age);
+            for (const QString &path : std::as_const(names)) {
+                // `tagWalk` does not yield the directory it was pointed at, so
+                // neither does this: `ls --untagged ~/docs` is about what is in
+                // ~/docs.
+                if (!dir.isEmpty() && (path == dir || !isUnderDirectory(path, dir)))
+                    continue;
+                if (!s.store.get(path).tags.isEmpty())
+                    continue;
+                if (!matchesExt(path, exts))
+                    continue;
+                Record row;
+                row.path = path;
+                hits.append(row);
+            }
+        }
+        // Said whatever the age turns out to be, because the contract is that
+        // this answer is as old as the last sweep and not that it is fresh. A
+        // note beside a run that succeeded, so `--quiet` takes it away.
+        if (oldest >= 0) {
+            warn(g, QStringLiteral("ls: from a list of names built %1 ago; "
+                                   "`omafiles sweep` rebuilds it, and plain --untagged "
+                                   "walks the disk and is exact")
+                        .arg(spelledDuration(oldest)));
+        }
+    } else if (untagged) {
         // `[dir]` is optional, and `verify`, `reindex` and `prune` all read an
         // absent one as the current directory.
         const QString root = dir.isEmpty() ? QDir::currentPath() : dir;
@@ -1212,6 +1315,8 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
         // not look at has no row to be.
         warn(g, QStringLiteral("ls: %1; it was not listed").arg(error));
     }
+    for (const QString &tree : uncovered)
+        warn(g, QStringLiteral("ls: %1").arg(tree));
     if (undated > 0) {
         warn(g, QStringLiteral("ls: %1 matching row(s) predate the tagged field, so "
                                "--since cannot judge them; they are stamped the next "
@@ -1223,7 +1328,10 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
     // The undated count is not one of these: those rows are there and the index
     // simply cannot date them, which is a narrower answer rather than a shorter
     // one. See `kIncomplete`.
-    return unreadable.isEmpty() && unnamed.isEmpty() && skipped.isEmpty() ? kOk : kIncomplete;
+    return unreadable.isEmpty() && unnamed.isEmpty() && skipped.isEmpty()
+            && uncovered.isEmpty()
+        ? kOk
+        : kIncomplete;
 }
 
 // A verb that removes something asks first, unless told not to.
@@ -1691,7 +1799,11 @@ QStringList completionFor(const QStringList &words)
             // Not the ones already contradicted by what is on the line: a flag
             // the verb will refuse is completion for an error message. Asked of
             // the same table the refusal reads.
+            // `--cached` is a way of answering `--untagged` and is refused
+            // without it, so it is offered only once that is on the line.
             const bool untagged = before.contains(QLatin1String("--untagged"));
+            if (untagged)
+                flags << QStringLiteral("--cached");
             for (const Exclusion &excluded : kUntaggedExcludes) {
                 if (untagged)
                     flags.removeAll(QString(excluded.flag));
@@ -3060,6 +3172,8 @@ struct SweepRun {
     QStringList gone;         // a row whose file is not there -- counted, never dropped
     QStringList unreadable;   // a file that is there and whose tags are not readable
     int skipped = 0;          // a row on a disk in a drawer, or one nobody may look at
+    int listed = 0;           // paths written to a root's list of names
+    int unlistable = 0;       // names the list's one-path-to-a-line format cannot hold
 };
 
 QJsonArray asJsonArray(const QStringList &values)
@@ -3077,7 +3191,7 @@ QJsonArray asJsonArray(const QStringList &values)
 // declared root would surface as `store: cannot lock` in somebody's row menu.
 // One tree, one lock, one commit, and the lock goes back between them.
 void sweepOneTree(const Globals &g, Session &s, const QString &tree, SweepRun *run,
-                  QVector<Record> *written)
+                  QVector<Record> *written, const Root *cacheFor)
 {
     // Asked before the walk, so a row this run is about to write is not then
     // looked up as a row whose file might be gone.
@@ -3097,7 +3211,15 @@ void sweepOneTree(const Globals &g, Session &s, const QString &tree, SweepRun *r
             ++run->skipped;
     }
 
+    // The walk is the expensive half of this verb and two things want it: the
+    // tags each file carries, and the plain list of what is there. Collecting
+    // the second costs a string per path and saves a second walk of the disk --
+    // see `Names.h` for what that list is and is not.
+    QStringList names;
+    const QString base = tree.endsWith(QLatin1Char('/')) ? tree : tree + QLatin1Char('/');
     for (const QString &path : tagWalk(tree, true)) {
+        if (cacheFor && path.startsWith(base))
+            names.append(path.mid(base.size()));
         QStringList carried;
         QString warning;
         if (!readTagsXattr(path, &carried, &warning)) {
@@ -3156,6 +3278,26 @@ void sweepOneTree(const Globals &g, Session &s, const QString &tree, SweepRun *r
                 run->merged.append(path);
         }
     }
+
+    // Written outside the store entirely -- a different file, in a different
+    // directory, under no lock. That is the point: the walk can be long without
+    // anybody's `tag add` waiting on it, which is what makes a cache built by
+    // the routine affordable at all.
+    //
+    // Only for a tree that is exactly a declared root. The list is per root and
+    // a walk of one folder inside one cannot produce it; writing a partial list
+    // would be worse than having none, because `--cached` would answer out of
+    // it and call the answer whole.
+    if (!cacheFor || g.dryRun)
+        return;
+    int dropped = 0;
+    QString error;
+    if (!writeNames(cacheFor->id, names, &dropped, &error)) {
+        warn(g, error);
+        return;
+    }
+    run->listed += names.size() - dropped;
+    run->unlistable += dropped;
 }
 
 // Which trees a run sweeps.
@@ -3221,7 +3363,8 @@ int printSweepStatus(const Globals &g, const QStringList &positionals)
                                   {QStringLiteral("merged"), 0},
                                   {QStringLiteral("gone"), 0},
                                   {QStringLiteral("unreadable"), 0},
-                                  {QStringLiteral("skipped"), 0}});
+                                  {QStringLiteral("skipped"), 0},
+                                  {QStringLiteral("listed"), 0}});
         } else {
             out() << "never\n";
         }
@@ -3246,7 +3389,8 @@ int printSweepStatus(const Globals &g, const QStringList &positionals)
     const QJsonArray trees = receipt.value(QStringLiteral("trees")).toArray();
     for (const QJsonValue &tree : trees)
         out() << "tree\t" << tree.toString() << '\n';
-    for (const char *field : {"adopted", "merged", "gone", "unreadable", "skipped"}) {
+    for (const char *field : {"adopted", "merged", "gone", "unreadable", "skipped",
+                              "listed"}) {
         out() << field << '\t'
               << receipt.value(QString::fromLatin1(field)).toInt() << '\n';
     }
@@ -3268,7 +3412,8 @@ void writeSweepReceipt(const SweepRun &run, qint64 milliseconds)
         {QStringLiteral("merged"), run.merged.size()},
         {QStringLiteral("gone"), run.gone.size()},
         {QStringLiteral("unreadable"), run.unreadable.size()},
-        {QStringLiteral("skipped"), run.skipped}};
+        {QStringLiteral("skipped"), run.skipped},
+        {QStringLiteral("listed"), run.listed}};
     file.write(QJsonDocument(receipt).toJson(QJsonDocument::Compact));
     file.write("\n");
     file.commit();
@@ -3334,7 +3479,13 @@ int cmdSweep(const Globals &g, Session &s, bool status, const QStringList &posit
         s.opened = true;
 
         QVector<Record> written;
-        sweepOneTree(g, s, tree, &run, &written);
+        // A list of names belongs to a root, so it is written only where the
+        // tree being swept is one. `sweep` with no `[dir]` is every declared
+        // root, which is how the caches get built without anybody asking.
+        const Root *declared = rootFor(tree);
+        if (declared && declared->path != tree)
+            declared = nullptr;
+        sweepOneTree(g, s, tree, &run, &written, declared);
         run.trees.append(tree);
         // `announce` is false because the run has one answer for every tree it
         // swept and prints it below; a per-tree array would be one JSON
@@ -3362,7 +3513,9 @@ int cmdSweep(const Globals &g, Session &s, bool status, const QStringList &posit
                                   {QStringLiteral("merged"), asJsonArray(run.merged)},
                                   {QStringLiteral("gone"), asJsonArray(run.gone)},
                                   {QStringLiteral("unreadable"), asJsonArray(run.unreadable)},
-                                  {QStringLiteral("skipped"), run.skipped}});
+                                  {QStringLiteral("skipped"), run.skipped},
+                                  {QStringLiteral("listed"), run.listed},
+                                  {QStringLiteral("unlistable"), run.unlistable}});
         } else {
             QStringList touched = run.adopted + run.merged;
             touched.sort();
@@ -3383,6 +3536,10 @@ int cmdSweep(const Globals &g, Session &s, bool status, const QStringList &posit
         parts << QStringLiteral("unreadable %1").arg(run.unreadable.size());
     if (run.skipped > 0)
         parts << QStringLiteral("skipped %1").arg(run.skipped);
+    if (run.listed > 0)
+        parts << QStringLiteral("listed %1").arg(run.listed);
+    if (run.unlistable > 0)
+        parts << QStringLiteral("unlistable %1").arg(run.unlistable);
     warn(g, QStringLiteral("sweep: %1").arg(parts.join(QStringLiteral(", "))));
     if (!run.gone.isEmpty()) {
         warn(g, QStringLiteral("sweep: a row whose file is gone is counted here and "
@@ -3608,6 +3765,13 @@ int cmdRoots(const Globals &g, Session &s, const QString &sub, const QString &id
             return kUsage;
         }
         QString error;
+        // The id is a name and not a path: every index row names its root, and
+        // the name cache is one file per root with this for a file name.
+        const QString wanted = normalizeRootId(id, &error);
+        if (wanted.isEmpty()) {
+            fail(error);
+            return kUsage;
+        }
         // Resolved, because everything compared against it is: a root declared
         // through a symlink would hold no rows at all.
         PathState state = PathState::Missing;
@@ -3621,9 +3785,9 @@ int cmdRoots(const Globals &g, Session &s, const QString &sub, const QString &id
             return kUsage;
         }
         for (const Root &root : declared) {
-            if (root.id == id) {
+            if (root.id == wanted) {
                 fail(QStringLiteral("roots add: %1 is already declared, at %2")
-                         .arg(id, root.path));
+                         .arg(wanted, root.path));
                 return kUsage;
             }
             if (root.path == path) {
@@ -3632,14 +3796,15 @@ int cmdRoots(const Globals &g, Session &s, const QString &sub, const QString &id
                 return kUsage;
             }
         }
-        declared.append(Root{id, path, mount, check});
+        declared.append(Root{wanted, path, mount, check});
         if (!saveRoots(file, declared, &error)) {
             fail(error);
             return kStore;
         }
         setRoots(declared);
         if (g.json)
-            printJson(QJsonObject{{QStringLiteral("id"), id}, {QStringLiteral("path"), path}});
+            printJson(QJsonObject{{QStringLiteral("id"), wanted},
+                                  {QStringLiteral("path"), path}});
         else
             out() << path << '\n';
         return kOk;
@@ -3650,7 +3815,12 @@ int cmdRoots(const Globals &g, Session &s, const QString &sub, const QString &id
             fail(QStringLiteral("roots rm: --id is required"));
             return kUsage;
         }
-        if (!rootById(id)) {
+        // Folded the way `add` folded it, so `--id Archive` reaches the root
+        // it declared -- but only after the spelling as typed has been tried,
+        // because a declaration written before the rule existed is still one
+        // somebody has to be able to remove.
+        const QString wanted = rootById(id) ? id : normalizeRootId(id, nullptr);
+        if (wanted.isEmpty() || !rootById(wanted)) {
             fail(QStringLiteral("roots rm: %1 is not declared").arg(id));
             return kUsage;
         }
@@ -3669,14 +3839,14 @@ int cmdRoots(const Globals &g, Session &s, const QString &sub, const QString &id
 
         QVector<Root> kept;
         for (const Root &root : declared) {
-            if (root.id != id)
+            if (root.id != wanted)
                 kept.append(root);
         }
         const QVector<Root> before = setRoots(kept);
 
         int carried = 0;
         for (const Record &record : s.store.records()) {
-            if (record.root != id)
+            if (record.root != wanted)
                 continue;
             Record rewritten = record;
             rewritten.root.clear();
@@ -3694,7 +3864,7 @@ int cmdRoots(const Globals &g, Session &s, const QString &sub, const QString &id
         if (g.dryRun) {
             setRoots(before);
             if (g.json)
-                printJson(QJsonObject{{QStringLiteral("id"), id},
+                printJson(QJsonObject{{QStringLiteral("id"), wanted},
                                       {QStringLiteral("rows"), carried}});
             else
                 out() << carried << " row(s) would be written back as absolute paths\n";
@@ -3704,8 +3874,12 @@ int cmdRoots(const Globals &g, Session &s, const QString &sub, const QString &id
             fail(error);
             return kStore;
         }
+        // The list of names goes with the declaration: it is one file per root,
+        // and a root nobody declares is one nothing will ever read a list for.
+        // Losing it costs a sweep and no information, which is what a cache is.
+        forgetNames(wanted);
         if (g.json)
-            printJson(QJsonObject{{QStringLiteral("id"), id},
+            printJson(QJsonObject{{QStringLiteral("id"), wanted},
                                   {QStringLiteral("rows"), carried}});
         else if (carried > 0)
             out() << carried << " row(s) written back as absolute paths\n";
@@ -3942,6 +4116,7 @@ struct Parsed {
     QString name;
     bool mount = false;
     bool untagged = false;
+    bool cached = false;
     bool fromXattr = false;
     bool all = false;
     bool status = false;
@@ -3982,6 +4157,10 @@ int parseFlags(QStringList args, Parsed *parsed, const Takes &takes)
         }
         if (allowLsFlags && arg == QLatin1String("--untagged")) {
             parsed->untagged = true;
+            continue;
+        }
+        if (allowLsFlags && arg == QLatin1String("--cached")) {
+            parsed->cached = true;
             continue;
         }
         if (allowLsFlags && arg == QLatin1String("--ext")) {
@@ -4411,8 +4590,8 @@ int dispatch(const Globals &g, Session &s, QStringList rest)
                 return kUsage;
             }
         }
-        return cmdLs(g, s, ands, anys, parsed.untagged, parsed.exts, sinceSeconds,
-                     parsed.positionals);
+        return cmdLs(g, s, ands, anys, parsed.untagged, parsed.cached, parsed.exts,
+                     sinceSeconds, parsed.positionals);
     }
     if (cmd == QLatin1String("tags")) {
         Parsed parsed;

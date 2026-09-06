@@ -101,6 +101,20 @@ a row whose file is gone is counted and left where it is — `prune` is still th
 verb that drops one, and it still asks — and a run that cannot take the index
 lock steps aside rather than making the window wait.
 
+`sweep` also writes down what it saw, so the one question the index cannot
+answer stops costing a walk:
+
+```bash
+omafiles ls --untagged --cached      # instant, and it tells you how old it is
+omafiles ls --untagged ~/scans       # walks the disk, exact
+```
+
+That list is a cache and the difference matters: the index is what you marked,
+with a mirror in each file's own xattr and worth backing up; the list is what is
+on the disk, lives in `$XDG_CACHE_HOME/omafiles/names`, and deleting it costs one
+sweep and nothing else. Both answers are offered rather than one pretending to be
+the other.
+
 Every verb is in [the command line](docs/cli.md).
 
 The list is the folder — a folder shut, one that is missing, and one that is

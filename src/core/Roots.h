@@ -26,6 +26,17 @@ struct Root {
     QString check;
 };
 
+/// The id a root may be declared under, folded, or empty with a reason.
+///
+/// `[a-z0-9][a-z0-9._-]{0,63}` -- the shape of a name rather than of a path.
+/// Two things read an id and both of them need it to be one: every index row
+/// names its root, so an id holding a `/` or a newline is a row nothing can
+/// place; and the name cache is one file per root with the id for a file name,
+/// so `..` would be a cache written somewhere else entirely. Folded to lower
+/// case for the reason a tag is: `Archive` and `archive` naming two different
+/// roots is a distinction nobody means to draw.
+QString normalizeRootId(const QString &raw, QString *error);
+
 /// Where the declarations live: one JSON object per line, the shape the index
 /// uses, so the same eyes and the same tools read both.
 QString defaultRootsPath();

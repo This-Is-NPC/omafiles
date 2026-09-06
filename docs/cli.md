@@ -35,7 +35,7 @@ A dry run makes every refusal this program decides for itself -- a directory han
   - `mv`, `cp` -- `from`, `to` and `rows`, the rows the move or the copy left behind
   - `rm`, `trash` -- one `removed` array of paths
   - `prune` -- one `dropped` array of paths
-  - `sweep` -- `trees`, `adopted`, `merged`, `gone` and `unreadable`, each an array of paths, and `skipped`, a count; `--status` instead gives `at`, `seconds`, `trees` and one number per count
+  - `sweep` -- `trees`, `adopted`, `merged`, `gone` and `unreadable`, each an array of paths, and `skipped`, `listed` and `unlistable`, counts; `--status` instead gives `at`, `seconds`, `trees` and one number per count
   - `verify` -- one `problems` array of `problem`, `path` and `detail`
   - `open` -- an array of `program`, `arguments`, `mime` and `desktop`, one per path
 
@@ -72,6 +72,17 @@ A row whose file is gone is left out rather than listed as a path that is not th
 - **`-t --tag <tag>`** — AND this tag
 - **`--any <tag>`** — OR this tag
 - **`--untagged`** — Files and folders carrying no tags under [dir], or the current directory
+- **`--cached`** — Answer `--untagged` out of the list `sweep` built, without walking the disk.
+
+  `--untagged` is the one listing here that cannot come out of the index: the index holds rows that carry a tag, and what has no tag has no row, so the only way to answer exactly is to walk the tree on every question. That is seconds, every time, for a question somebody wants to ask from a panel. This answers it out of a sorted list of names -- the thing `locate` has answered out of for thirty years -- and half a million paths is about thirty megabytes of it.
+
+  The list is a cache in the strict sense and it is written down here so nobody mistakes it for the index. The index is what you marked: it has human authorship, a mirror in each file's own xattr, and it is the thing to back up. The list is what is on the disk: it is derived, it lives in `$XDG_CACHE_HOME/omafiles/names`, one file per root named by the root's id and holding paths relative to it, and deleting the whole directory costs one `sweep` and no information. No verb refuses to run without it.
+
+  It is as old as the last sweep, and the run says so rather than letting a caller assume otherwise: `ls: from a list of names built 3h ago`. Nothing here stats a path on the way out either -- that would be the walk again -- so a file deleted since the sweep is still listed. Plain `--untagged` walks the disk and is exact; this one is instant and dated, and the two are offered rather than one pretending to be the other.
+
+  It answers under declared roots and nowhere else, because that is the unit a list is kept for. A `[dir]` under no declared root is refused by name, with plain `--untagged` named as the way to ask it. A root that is declared and not here, and a root nothing has swept yet, are each said on stderr and the run exits 1, the way every short answer here does.
+
+  Refused without `--untagged`: every other listing is the index, which is one file read whole, and there is nothing a cache could make faster about it.
 - **`--ext <ext>`** — Filter by extension
 - **`--since <duration>`** — Tagged in the last duration, e.g. 7d
 
@@ -353,7 +364,9 @@ One tree is one hold of the index lock: it locks, walks that tree, commits, and 
 
 It exits 0 whatever it counted, for the same reason. A file nobody may read and a row whose file is gone are findings, not failures of the run, and a status that is nonzero every week over the same chmod is a status nobody reads. `verify` is the verb that exits 1 over a finding.
 
-It prints the paths it changed, one per line, and says what it did on stderr -- `sweep: adopted 3, merged 1, gone 2`. Under `--json` an object of `trees`, `adopted`, `merged`, `gone` and `unreadable`, each an array of paths, and `skipped`, a count of the rows it could not judge. `--quiet` takes the stderr away and leaves the paths, which is the shape to run it in unattended.
+It builds the list of names `ls --untagged --cached` answers out of, for every tree it sweeps that is exactly a declared root -- the walk is the expensive half of this verb and two things want it, so it is done once. That list is written outside the store entirely: a different file, in a different directory, under no lock, which is what makes a long walk affordable at all. A tree that is not a root gets none, because a list is per root and a walk of one folder inside one cannot produce it.
+
+It prints the paths it changed, one per line, and says what it did on stderr -- `sweep: adopted 3, merged 1, gone 2`. Under `--json` an object of `trees`, `adopted`, `merged`, `gone` and `unreadable`, each an array of paths, and `skipped`, `listed` and `unlistable`, counts of the rows it could not judge, the paths it wrote to a list of names, and the names that list's one-path-to-a-line format cannot hold. `--quiet` takes the stderr away and leaves the paths, which is the shape to run it in unattended.
 
 ### Arguments
 - **`[dir]`** — Tree to sweep; defaults to every declared root that is here
@@ -429,6 +442,8 @@ A root buys two things, and both of them are about a disk that is not always her
 A row under a root is written as the root's id and the rest of the way there, so remounting the same storage somewhere else leaves every tag where it was -- and two machines that mount the same NAS at different points are talking about the same rows. A row under no declared root keeps its absolute path, which is what every row was before roots existed and what every row on a machine that declares nothing stays.
 
 And a root that is declared and not here makes its rows `unreachable` rather than missing. Without one, an unmounted tree is `ENOENT` from a `stat`, which is exactly what every file in it having been deleted looks like -- so `prune` drops the rows and, on a filesystem with no `user.*` namespace to mirror them, that was the only copy of those tags on the machine. `prune` and `verify` both step over an unreachable row and say they did; `ls`, `tags` and `recent` leave it out of the answer and say so on stderr, which `--quiet` takes away.
+
+An id is `[a-z0-9][a-z0-9._-]{0,63}` and is folded to lower case as it is declared, so `Archive` and `archive` are one root and not two. It is a name rather than a path because two things read it and both need it to be one: every index row names its root, so an id holding a `/` is a row nothing can place, and the list of names `sweep` builds is one file per root with the id for a file name. `roots rm` takes the spelling as typed first and the folded one after, so a declaration written before the rule can still be removed. Removing a root drops its list of names with it.
 
 The declarations live in one jsonl file, `$XDG_CONFIG_HOME/omafiles/roots.jsonl` or `~/.config/omafiles/roots.jsonl` -- the same shape as the index, so the same eyes read both. A line that will not parse is exit 3 from every verb, the way a malformed index line is: guessing at which roots are declared would be guessing at which rows may be dropped.
 

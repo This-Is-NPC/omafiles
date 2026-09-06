@@ -45,6 +45,31 @@ bool isMountPoint(const QString &path)
 
 } // namespace
 
+QString normalizeRootId(const QString &raw, QString *error)
+{
+    const QString folded = raw.trimmed().toLower();
+    bool shaped = !folded.isEmpty() && folded.size() <= 64;
+    for (int i = 0; shaped && i < folded.size(); ++i) {
+        const QChar c = folded.at(i);
+        const bool alnum = (c >= QLatin1Char('a') && c <= QLatin1Char('z'))
+            || (c >= QLatin1Char('0') && c <= QLatin1Char('9'));
+        // The first character carries the whole rule about `.`: an id that may
+        // not begin with one cannot be `.` or `..`, which are the two names a
+        // directory of caches must never be handed.
+        shaped = alnum || (i > 0
+                           && (c == QLatin1Char('-') || c == QLatin1Char('_')
+                               || c == QLatin1Char('.')));
+    }
+    if (!shaped) {
+        if (error)
+            *error = QStringLiteral("roots: %1 is not an id; letters, digits, `-`, `_` "
+                                    "and `.`, starting with a letter or a digit, at "
+                                    "most 64").arg(raw);
+        return {};
+    }
+    return folded;
+}
+
 QString defaultRootsPath()
 {
     QString configHome = QString::fromLocal8Bit(qgetenv("XDG_CONFIG_HOME"));
