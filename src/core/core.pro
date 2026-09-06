@@ -17,6 +17,7 @@ HEADERS += \
     Xattr.h \
     Paths.h \
     Roots.h \
+    View.h \
     Open.h
 
 SOURCES += \
@@ -26,4 +27,5 @@ SOURCES += \
     Xattr.cpp \
     Paths.cpp \
     Roots.cpp \
+    View.cpp \
     Open.cpp

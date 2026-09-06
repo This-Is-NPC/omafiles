@@ -18,9 +18,9 @@ DESTDIR = $$OUT_PWD/../../bin
 
 INCLUDEPATH += $$PWD/../core
 
-HEADERS += Theme.h IndexModel.h Workspace.h GraphItem.h FolderModel.h Clipboard.h Verb.h
+HEADERS += Theme.h IndexModel.h Workspace.h GraphItem.h FolderModel.h Clipboard.h Verb.h Views.h
 SOURCES += main.cpp Theme.cpp IndexModel.cpp Workspace.cpp GraphItem.cpp FolderModel.cpp \
-           Clipboard.cpp Verb.cpp
+           Clipboard.cpp Verb.cpp Views.cpp
 RESOURCES += resources.qrc
 
 LIBS           += -L$$OUT_PWD/../core -lomafilescore

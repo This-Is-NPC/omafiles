@@ -34,6 +34,7 @@ at `pkgbuilds/omafiles`.
 - `l` / `Enter` — open a file or enter a folder
 - `h` — go back up
 - `t` — tag panel
+- `v` — saved views
 - `/` — filter the folder
 - `:` — commands
 - `Esc` — back to the list
@@ -58,6 +59,19 @@ omafiles tag add --tag work -- ~/docs/invoice.pdf
 omafiles ls --tag work
 omafiles tags
 ```
+
+A folder, a tag and a query are one thing saved, so there is one verb for all
+three and one list in the panel beside the files:
+
+```bash
+omafiles view add --name receipts --tag finance --tag invoice
+omafiles view add --name "to file" -- ~/scans
+omafiles view
+```
+
+`v` walks that list and Enter opens whichever kind the row turned out to be — a
+tag view as a tags tab standing on its query, a folder view as a folder. In the
+window, `Save this as a view` in the row menu saves what is on screen.
 
 A disk that is not always plugged in wants a declared root:
 

@@ -19,6 +19,7 @@
 #include "Paths.h"
 #include "Theme.h"
 #include "Verb.h"
+#include "Views.h"
 #include "Workspace.h"
 
 #include <QAccessible>
@@ -241,6 +242,7 @@ private slots:
     void walksTagsAsIfTheyWereFolders();
     void asksOneQuestionWhicheverWayItIsWalked();
     void choosesARowMenuEntryWithTheMouse();
+    void opensAndSavesAView();
 
 private:
     QQuickWindow *window() const;
@@ -276,6 +278,7 @@ private:
     Theme *m_theme = nullptr;
     IndexModel *m_index = nullptr;
     Clipboard *m_clipboard = nullptr;
+    Views *m_views = nullptr;
     Workspace *m_workspace = nullptr;
     QQmlApplicationEngine *m_engine = nullptr;
 };
@@ -372,6 +375,21 @@ void TestStudio::initTestCase()
 
     writeIndex();
 
+    // One of each kind, so the panel has something in it: `v` is on the key
+    // sheet, and a key the sweep presses over an empty list proves nothing.
+    {
+        const QDir config(QDir(m_desktop.path()).filePath(QStringLiteral("config")));
+        QVERIFY(config.mkpath(QStringLiteral("omafiles")));
+        QFile views(config.filePath(QStringLiteral("omafiles/views.jsonl")));
+        QVERIFY(views.open(QIODevice::WriteOnly | QIODevice::Text));
+        views.write(QStringLiteral("{\"name\":\"the notes\",\"tags\":[\"notes\"]}\n"
+                                   "{\"name\":\"alpha\",\"dir\":\"%1\"}\n")
+                        .arg(QDir(m_tree.path()).filePath(QStringLiteral("alpha")))
+                        .toUtf8());
+    }
+
+
+
     // Nothing is registered or injected here.
     //
     // Every type is declared in its header and registered by the build, and
@@ -395,7 +413,9 @@ void TestStudio::initTestCase()
                                                             QStringLiteral("Workspace"));
     m_clipboard = m_engine->singletonInstance<Clipboard *>(QStringLiteral("omafiles"),
                                                             QStringLiteral("Clipboard"));
-    QVERIFY(m_theme && m_index && m_workspace && m_clipboard);
+    m_views = m_engine->singletonInstance<Views *>(QStringLiteral("omafiles"),
+                                                    QStringLiteral("Views"));
+    QVERIFY(m_theme && m_index && m_workspace && m_clipboard && m_views);
     QVERIFY(window());
     QVERIFY(QTest::qWaitForWindowExposed(window()));
 }
@@ -1141,6 +1161,21 @@ void TestStudio::listsEveryFileCarryingATagWhereverItIs()
     // after it.
     const auto restore = qScopeGuard([this] {
         writeIndex();
+
+    // One of each kind, so the panel has something in it: `v` is on the key
+    // sheet, and a key the sweep presses over an empty list proves nothing.
+    {
+        const QDir config(QDir(m_desktop.path()).filePath(QStringLiteral("config")));
+        QVERIFY(config.mkpath(QStringLiteral("omafiles")));
+        QFile views(config.filePath(QStringLiteral("omafiles/views.jsonl")));
+        QVERIFY(views.open(QIODevice::WriteOnly | QIODevice::Text));
+        views.write(QStringLiteral("{\"name\":\"the notes\",\"tags\":[\"notes\"]}\n"
+                                   "{\"name\":\"alpha\",\"dir\":\"%1\"}\n")
+                        .arg(QDir(m_tree.path()).filePath(QStringLiteral("alpha")))
+                        .toUtf8());
+    }
+
+
         m_index->reload();
     });
 
@@ -1418,6 +1453,21 @@ void TestStudio::saysWhenNothingInTheIndexCanBeReached()
         QFile::setPermissions(shut, QFileDevice::ReadOwner | QFileDevice::WriteOwner
                                         | QFileDevice::ExeOwner);
         writeIndex();
+
+    // One of each kind, so the panel has something in it: `v` is on the key
+    // sheet, and a key the sweep presses over an empty list proves nothing.
+    {
+        const QDir config(QDir(m_desktop.path()).filePath(QStringLiteral("config")));
+        QVERIFY(config.mkpath(QStringLiteral("omafiles")));
+        QFile views(config.filePath(QStringLiteral("omafiles/views.jsonl")));
+        QVERIFY(views.open(QIODevice::WriteOnly | QIODevice::Text));
+        views.write(QStringLiteral("{\"name\":\"the notes\",\"tags\":[\"notes\"]}\n"
+                                   "{\"name\":\"alpha\",\"dir\":\"%1\"}\n")
+                        .arg(QDir(m_tree.path()).filePath(QStringLiteral("alpha")))
+                        .toUtf8());
+    }
+
+
         m_index->reload();
     });
     const QStringList vanished = {QDir(scratch.path()).filePath(QStringLiteral("was-here.txt")),
@@ -2233,6 +2283,21 @@ void TestStudio::drawsEveryView()
              "the graph drew no colour the empty one did not");
 
     writeIndex();
+
+    // One of each kind, so the panel has something in it: `v` is on the key
+    // sheet, and a key the sweep presses over an empty list proves nothing.
+    {
+        const QDir config(QDir(m_desktop.path()).filePath(QStringLiteral("config")));
+        QVERIFY(config.mkpath(QStringLiteral("omafiles")));
+        QFile views(config.filePath(QStringLiteral("omafiles/views.jsonl")));
+        QVERIFY(views.open(QIODevice::WriteOnly | QIODevice::Text));
+        views.write(QStringLiteral("{\"name\":\"the notes\",\"tags\":[\"notes\"]}\n"
+                                   "{\"name\":\"alpha\",\"dir\":\"%1\"}\n")
+                        .arg(QDir(m_tree.path()).filePath(QStringLiteral("alpha")))
+                        .toUtf8());
+    }
+
+
     m_index->reload();
     m_workspace->closeCurrentTab();
     settle();
@@ -2559,6 +2624,21 @@ void TestStudio::saysHowMuchOfTheIndexTheGraphDrew()
              QStringLiteral("1 tags · %1 of %2 files").arg(drawn).arg(total));
 
     writeIndex();
+
+    // One of each kind, so the panel has something in it: `v` is on the key
+    // sheet, and a key the sweep presses over an empty list proves nothing.
+    {
+        const QDir config(QDir(m_desktop.path()).filePath(QStringLiteral("config")));
+        QVERIFY(config.mkpath(QStringLiteral("omafiles")));
+        QFile views(config.filePath(QStringLiteral("omafiles/views.jsonl")));
+        QVERIFY(views.open(QIODevice::WriteOnly | QIODevice::Text));
+        views.write(QStringLiteral("{\"name\":\"the notes\",\"tags\":[\"notes\"]}\n"
+                                   "{\"name\":\"alpha\",\"dir\":\"%1\"}\n")
+                        .arg(QDir(m_tree.path()).filePath(QStringLiteral("alpha")))
+                        .toUtf8());
+    }
+
+
     m_index->reload();
     settle();
     QCOMPARE(graph->property("summary").toString(), QStringLiteral("7 tags · 7 files"));
@@ -2841,6 +2921,21 @@ void TestStudio::noticesTheIndexChangingUnderIt()
     // And put the fixture back, so the tests after this one see what they
     // were written against.
     writeIndex();
+
+    // One of each kind, so the panel has something in it: `v` is on the key
+    // sheet, and a key the sweep presses over an empty list proves nothing.
+    {
+        const QDir config(QDir(m_desktop.path()).filePath(QStringLiteral("config")));
+        QVERIFY(config.mkpath(QStringLiteral("omafiles")));
+        QFile views(config.filePath(QStringLiteral("omafiles/views.jsonl")));
+        QVERIFY(views.open(QIODevice::WriteOnly | QIODevice::Text));
+        views.write(QStringLiteral("{\"name\":\"the notes\",\"tags\":[\"notes\"]}\n"
+                                   "{\"name\":\"alpha\",\"dir\":\"%1\"}\n")
+                        .arg(QDir(m_tree.path()).filePath(QStringLiteral("alpha")))
+                        .toUtf8());
+    }
+
+
     QTRY_VERIFY_WITH_TIMEOUT(!indexModelHasTag(m_index, QStringLiteral("watched")), 4000);
     QTRY_COMPARE(m_index->tagRowCount(), before);
 }
@@ -3025,7 +3120,8 @@ void TestStudio::everyDocumentedKeyIsAnswered()
     struct Case { const char *key; const char *setup; };
     static const Case cases[] = {
         {"j", ""},        {"k", ""},        {"l", ""},        {"h", ""},
-        {"~", ""},        {"t", ""},        {"m", ""},        {"s", ""},
+        {"~", ""},        {"t", ""},        {"v", ""},        {"m", ""},
+        {"s", ""},
         {"S", ""},        {"G", ""},        {"a", ""},        {".", ""},
         {"g", "twice"},                    // one `g` only arms the second
         {"A", "mark"},                     // needs something to clear
@@ -3342,6 +3438,23 @@ void TestStudio::writesTheDocumentationShots()
                         .toUtf8());
     }
     index.close();
+
+    // Views of its own, about the workshop in the picture. The fixture the rest
+    // of this file uses has two that mean nothing here -- a folder that is not
+    // in this tree, and a tag nothing in it carries -- and a documentation
+    // picture is the one place where what is on screen has to be about what is
+    // on screen.
+    {
+        QFile views(QDir(QDir(m_desktop.path()).filePath(QStringLiteral("config")))
+                        .filePath(QStringLiteral("omafiles/views.jsonl")));
+        QVERIFY(views.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text));
+        views.write(QStringLiteral("{\"name\":\"to file\",\"dir\":\"%1/scans\"}\n"
+                                   "{\"name\":\"this quarter\",\"tags\":[\"q3\"]}\n"
+                                   "{\"name\":\"receipts\",\"tags\":[\"finance\",\"invoice\"]}\n")
+                        .arg(root)
+                        .toUtf8());
+    }
+    m_views->reload();
 
     m_index->reload();
     tab()->setCwd(root);
@@ -4463,6 +4576,68 @@ void TestStudio::choosesARowMenuEntryWithTheMouse()
     // the next one's menu opens on.
     QTest::mouseMove(window(), QPoint(int(window()->width() * 0.35),
                                       int(window()->height() * 0.85)));
+    settle();
+}
+
+// A folder, a tag and a query are one list, and one keystroke opens whichever
+// kind the row turned out to be.
+void TestStudio::opensAndSavesAView()
+{
+    QObject *root = m_engine->rootObjects().first();
+    QVERIFY2(m_views->rowCount() >= 2, "the fixture saved no views");
+
+    QStringList names;
+    for (int i = 0; i < m_views->rowCount(); ++i)
+        names.append(m_views->at(i).value(QStringLiteral("name")).toString());
+    QVERIFY2(names.contains(QStringLiteral("the notes")), qPrintable(names.join(QLatin1String(" "))));
+
+    // `v` walks the panel, `h` leaves it the way it leaves the tag list.
+    key('v');
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("views"));
+    key('h');
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+
+    // A tag view opens as a tags tab standing on its query.
+    const int tagged = names.indexOf(QStringLiteral("the notes"));
+    QMetaObject::invokeMethod(root, "openView", Q_ARG(QVariant, QVariant(tagged)));
+    settle();
+    QCOMPARE(tab()->kind(), QStringLiteral("tags"));
+    QCOMPARE(tab()->facets(), QStringList{QStringLiteral("notes")});
+
+    // And it is saved by the same road it is opened: what is on screen, by a
+    // name, through the command line the shell would have used.
+    verbRuns().clear();
+    QMetaObject::invokeMethod(root, "startNaming");
+    settle();
+    QVERIFY2(root->property("naming").toBool(), "nothing asked for a name");
+    QMetaObject::invokeMethod(root, "finishNaming", Q_ARG(QVariant, QVariant(true)),
+                              Q_ARG(QVariant, QVariant(QStringLiteral("my notes"))));
+    settle();
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(),
+             (QStringList{"view", "add", "--name", "my notes", "--tag", "notes"}));
+    m_workspace->closeCurrentTab();
+    settle();
+
+    // A folder view opens as a folder.
+    const int folder = names.indexOf(QStringLiteral("alpha"));
+    QMetaObject::invokeMethod(root, "openView", Q_ARG(QVariant, QVariant(folder)));
+    settle();
+    QCOMPARE(tab()->kind(), QStringLiteral("files"));
+    QCOMPARE(cwd(), QDir(m_tree.path()).filePath(QStringLiteral("alpha")));
+
+    verbRuns().clear();
+    QMetaObject::invokeMethod(root, "startNaming");
+    settle();
+    QMetaObject::invokeMethod(root, "finishNaming", Q_ARG(QVariant, QVariant(true)),
+                              Q_ARG(QVariant, QVariant(QStringLiteral("inner"))));
+    settle();
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(),
+             (QStringList{"view", "add", "--name", "inner", "--",
+                          QDir(m_tree.path()).filePath(QStringLiteral("alpha"))}));
+
+    m_workspace->closeCurrentTab();
     settle();
 }
 

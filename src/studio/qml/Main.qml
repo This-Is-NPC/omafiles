@@ -34,6 +34,10 @@ Window {
     property var activeDock: null
     property bool filtering: false
     property bool editingPath: false
+    /// Naming a view. The third thing this window has ever asked to be typed,
+    /// and it borrows the filter bar to ask it -- one text box for one prompt
+    /// at a time, where two bars would be two places to look.
+    property bool naming: false
     property string focusRegion: "list"
     property bool pendingG: false
     property var paneItems: ({})
@@ -46,6 +50,7 @@ Window {
     readonly property var activeFolder: activeFilesRoot ? activeFilesRoot.folder : null
     readonly property var activeListing: activeFilesRoot ? activeFilesRoot.view : null
     readonly property var activeTagsList: activeDock ? activeDock.tagsList : null
+    readonly property var activeViewsList: activeDock ? activeDock.viewsList : null
     // A list is on screen. Two kinds of tab draw one: a folder, and a set of
     // tags read as folders. They share the view, the keys and the model, so
     // almost everything that asks this question means either of them.
@@ -61,7 +66,7 @@ Window {
     readonly property bool blocked: commandPalette.visible || helpSheet.visible
                                     || fileMenu.visible || tabMenu.visible
                                     || openWithMenu.visible
-                                    || newTabMenu.visible || editingPath || filtering
+                                    || newTabMenu.visible || editingPath || filtering || naming
 
     // ---------------------------------------------------------------- keymap
     //
@@ -111,6 +116,7 @@ Window {
             { key: "Enter", label: "keep filter" },
             { key: "Esc", label: "clear filter" },
             { key: "t", label: "tag panel" },
+            { key: "v", label: "saved views" },
             { key: "Enter", label: "toggle tag" },
             { key: "Space", label: "toggle tag" },
             { key: "h", label: "leave the tag panel" },
@@ -204,6 +210,30 @@ Window {
         takeFocus()
     }
 
+    // Saving what is on screen: the folder, or the tag query. The name is the
+    // only thing that cannot be read off the window, so it is the only thing
+    // asked for.
+    function startNaming() {
+        if (!onFiles)
+            return
+        naming = true
+        focusRegion = "filter"
+        filterField.text = onTags ? win.facetPath(activeTab.facets)
+                                  : win.nameOf(activeFolder ? activeFolder.directory : "")
+        filterField.focusEntry()
+    }
+
+    function finishNaming(accept, text) {
+        naming = false
+        if (accept && activeTab) {
+            if (onTags)
+                Views.saveQuery(text, activeTab.facets)
+            else if (activeFolder)
+                Views.saveFolder(text, activeFolder.directory)
+        }
+        takeFocus()
+    }
+
     function startPathEdit() {
         if (!onFiles)
             return
@@ -283,6 +313,27 @@ Window {
             activeTagsList.currentIndex = chosen
         else if (activeTagsList.currentIndex < 0)
             activeTagsList.currentIndex = 0
+    }
+
+    function focusViews() {
+        if (!activeViewsList || Views.count === 0)
+            return
+        focusRegion = "views"
+        if (activeViewsList.currentIndex < 0)
+            activeViewsList.currentIndex = 0
+    }
+
+    // A view is a folder or a set of tags, and which it is only matters here.
+    function openView(row) {
+        const view = Views.at(row)
+        if (!view || !view.name)
+            return
+        takeFocus()
+        if (view.kind === "folder") {
+            Workspace.openTabIn(Workspace.focusedPane, "files", view.dir)
+            return
+        }
+        openTagsTab(view.tags)
     }
 
     function toggleTagAt(row) {
@@ -431,6 +482,8 @@ Window {
     // How many rows fit in the list the keyboard is walking. The tag panel
     // draws 25px rows with a pixel between them, the file views 30.
     function pageStep() {
+        if (focusRegion === "views")
+            return activeViewsList ? Math.max(1, Math.floor(activeViewsList.height / 26)) : 6
         if (focusRegion === "tags")
             return activeTagsList ? Math.max(1, Math.floor(activeTagsList.height / 26)) : 10
         const listing = activeListing
@@ -447,6 +500,13 @@ Window {
                                                  IndexModel.tagRowCount() - 1))
     }
 
+    function moveViewCursor(delta) {
+        const views = activeViewsList
+        if (!views)
+            return
+        views.currentIndex = Math.max(0, Math.min(views.currentIndex + delta, Views.count - 1))
+    }
+
     function moveByDelta(delta) {
         if (onGraph) {
             const graph = activeGraph
@@ -454,7 +514,9 @@ Window {
                 graph.stepSelection(delta)
             return
         }
-        if (focusRegion === "tags")
+        if (focusRegion === "views")
+            moveViewCursor(delta)
+        else if (focusRegion === "tags")
             moveTagCursor(delta)
         else
             moveCursor(delta)
@@ -467,7 +529,11 @@ Window {
                 graph.selectEnd(last)
             return
         }
-        if (focusRegion === "tags") {
+        if (focusRegion === "views") {
+            const views = activeViewsList
+            if (views)
+                views.currentIndex = last ? Math.max(0, Views.count - 1) : 0
+        } else if (focusRegion === "tags") {
             const tags = activeTagsList
             if (tags)
                 tags.currentIndex = last ? Math.max(0, IndexModel.tagRowCount() - 1) : 0
@@ -600,6 +666,26 @@ Window {
         return false
     }
 
+    function handleViewKey(event, text) {
+        const views = activeViewsList
+        if (!views)
+            return false
+        if (text === "h" || event.key === Qt.Key_Left) {
+            takeFocus()
+            return true
+        }
+        if (handleMoveKey(event, text))
+            return true
+        if (handleEndKey(event, text, true))
+            return true
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                || event.key === Qt.Key_Space || text === "l") {
+            openView(views.currentIndex)
+            return true
+        }
+        return false
+    }
+
     function handleListKey(event, text) {
         const listing = activeListing
         const folder = activeFolder
@@ -646,6 +732,7 @@ Window {
         case "h": folder.goUp(); return true
         case "~": folder.goHome(); return true
         case "t": focusTags(); return true
+        case "v": focusViews(); return true
         case "m": openFileMenuForListing(); return true
         case "a": folder.markAll(); return true
         case "A": folder.clearMarks(); return true
@@ -782,8 +869,9 @@ Window {
         if (!onFiles)
             return
 
-        const handled = focusRegion === "tags" ? handleTagKey(event, text)
-                                               : handleListKey(event, text)
+        const handled = focusRegion === "views" ? handleViewKey(event, text)
+                      : focusRegion === "tags"  ? handleTagKey(event, text)
+                                                : handleListKey(event, text)
         if (handled)
             event.accepted = true
     }
@@ -996,7 +1084,7 @@ Window {
             Item {
                 id: filterBar
                 width: parent.width
-                height: win.filtering ? 34 : 0
+                height: win.filtering || win.naming ? 34 : 0
                 visible: height > 0
                 clip: true
 
@@ -1007,16 +1095,27 @@ Window {
 
                 Entry {
                     id: filterField
+                    objectName: "filterEntry"
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.leftMargin: 10
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    lead: "/"
-                    placeholder: "filter this folder"
+                    lead: win.naming ? "" : "/"
+                    placeholder: win.naming ? "name this view" : "filter this folder"
                     onTextChanged: if (win.filtering && win.activeTab) win.activeTab.filter = text
-                    onAccepted: win.finishFilter(false)
-                    onCancelled: win.finishFilter(true)
+                    onAccepted: function (value) {
+                        if (win.naming)
+                            win.finishNaming(true, value)
+                        else
+                            win.finishFilter(false)
+                    }
+                    onCancelled: {
+                        if (win.naming)
+                            win.finishNaming(false, "")
+                        else
+                            win.finishFilter(true)
+                    }
                 }
             }
 
@@ -1046,7 +1145,9 @@ Window {
                 // and it is gone as soon as they ask the next thing; the two
                 // errors under it describe a condition that will still be there
                 // to read afterwards.
-                message: IndexModel.notice !== ""
+                message: Views.error !== ""
+                         ? Views.error
+                         : IndexModel.notice !== ""
                          ? IndexModel.notice
                          : (win.activeFolder && win.activeFolder.error !== ""
                             ? win.activeFolder.error : IndexModel.error)
@@ -1062,6 +1163,8 @@ Window {
             commands: [
                 { id: "add-files", label: "New files tab", key: "Ctrl+T" },
                 { id: "add-tags", label: "New tags tab", key: "" },
+                { id: "save-view", label: "Save this as a view", key: "" },
+                { id: "views", label: "Saved views", key: "v" },
                 { id: "add-graph", label: "New graph tab", key: "" },
                 { id: "close-tab", label: "Close tab", key: "Ctrl+W" },
                 { id: "split", label: "Split right", key: "Ctrl+\\" },
@@ -1090,6 +1193,8 @@ Window {
                 switch (id) {
                 case "add-files": Workspace.addTab("files"); break
                 case "add-tags": Workspace.addTab("tags"); break
+                case "save-view": Qt.callLater(win.startNaming); break
+                case "views": Qt.callLater(win.focusViews); break
                 case "add-graph": Workspace.addTab("graph"); break
                 case "close-tab": Workspace.closeCurrentTab(); break
                 case "split": Workspace.splitRight("files"); break
@@ -1251,6 +1356,12 @@ Window {
                 // tags tab is that tag and every one that still divides it.
                 { id: "browse-tag", label: "Browse #" + fileMenu.firstTag,
                   when: fileMenu.firstTag !== "" },
+                // A folder and a query are pinned by the same entry, because
+                // they are the same thing saved: what is on screen, by a name.
+                { id: "save-view",
+                  label: win.onTags ? "Save this query as a view"
+                                    : "Save this folder as a view",
+                  when: win.onFiles },
                 { id: "leave-tag", label: "Leave tag listing",
                   when: win.activeTab !== null && win.activeTab.selectedTag !== "" },
                 // Not offered where the row already carries it: applying a
@@ -1345,6 +1456,7 @@ Window {
                     if (win.activeTab) win.activeTab.selectedTag = fileMenu.firstTag
                     break
                 case "browse-tag": win.openTagsTab([fileMenu.firstTag]); break
+                case "save-view": Qt.callLater(win.startNaming); break
                 case "leave-tag": if (win.activeTab) win.activeTab.selectedTag = ""; break
                 case "tag-add": IndexModel.tagAdd(paths, fileMenu.focusedTag); break
                 case "tag-rm": IndexModel.tagRemove(paths, fileMenu.focusedTag); break
@@ -1698,8 +1810,13 @@ Window {
             id: dock
             Layout.fillHeight: true
             Layout.preferredWidth: 252
+            // The panel belongs to both list tabs: the views in it are how you
+            // get anywhere, and a tags tab needs them as much as a folder does.
             readonly property bool holdsTags: paneRoot.pane.current
-                                              && paneRoot.pane.current.kind === "files"
+                                              && (paneRoot.pane.current.kind === "files"
+                                                  || paneRoot.pane.current.kind === "tags")
+            showTags: paneRoot.pane.current
+                      && paneRoot.pane.current.kind === "files"
             // Dropped whole in a pane too narrow to hold it and a list at the
             // same time -- splitting the window is asking for two lists, not
             // for two copies of the same tag vocabulary where the names should
@@ -1716,6 +1833,9 @@ Window {
             entry: content.item && content.item.entry !== undefined ? content.item.entry : ({})
             // qmllint enable missing-property
             walking: win.focusRegion === "tags" && win.activeDock === dock
+            walkingViews: win.focusRegion === "views" && win.activeDock === dock
+
+            onViewActivated: function (row) { win.openView(row) }
 
             onTagActivated: function (name) {
                 win.takeFocus()

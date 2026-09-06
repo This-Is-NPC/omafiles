@@ -331,6 +331,59 @@ A name that is not valid UTF-8 is a path no index row can hold, so it is named o
 
   An empty xattr, or one no tag can be read out of, is read as a value the filesystem dropped rather than as tags somebody cleared: the index row is left alone, the path is named on stderr, and the run exits 1 because it walked away from a path it was asked to rebuild. Plain `reindex` is the repair -- it writes the row back over the file's copy.
 
+## `omafiles view`
+
+- **Usage:** `omafiles view <SUBCOMMAND>`
+
+Save a way of asking, by name.
+
+A folder, a tag and a query are one thing here, which is why there is one verb and not three: a view is either a place or a set of tags, and both are `ls` with something filled in. Pinning a folder needs no feature of its own -- it is a view with a `dir`. The window lists them in the panel beside the file list and opens one with a keystroke; a tag view opens as a tags tab standing on that query, a folder view as a folder.
+
+They live in one jsonl file, `$XDG_CONFIG_HOME/omafiles/views.jsonl` or `~/.config/omafiles/views.jsonl` -- the shape the index and the roots use, so the same eyes read all three.
+
+A view is a folder or a set of tags and never both. Scoping a tag query to a folder is a question the window cannot walk, because a tags tab is not standing anywhere, and a view that means one thing at a prompt and another in a panel is worse than one that says it cannot. `ls --tag work ~/docs` still asks it at a prompt.
+
+The roadmap's example spells a saved search with `--untagged` in it. That one waits: `--untagged` walks the disk on every run, so a view carrying it would take seconds to open every time the panel drew it, and the cache that fixes it is not built yet.
+
+## `omafiles view ls`
+
+- **Usage:** `omafiles view ls`
+- **Effect:** read-only
+
+List the saved views.
+
+One per line: the name, a tab, and the command line it stands for -- so a view is a thing you can read as well as open. Under `--json` an array of `name`, `dir` and `tags`.
+
+The default subcommand, so `view` alone prints this.
+
+## `omafiles view add`
+
+- **Usage:** `omafiles view add <--name <name>> [-t --tag <tag>] [dir]`
+- **Effect:** modifies state
+
+Save a view.
+
+A name already saved is replaced rather than added beside: a panel with two entries reading `boletos` is a panel you have to open both of to tell apart. The comparison folds case, for the same reason.
+
+A name may hold letters, digits, spaces, `-`, `_` and `.`, at most 64 -- it is typed at a prompt and shown in a panel, so it may hold a space where a tag may not, and it may not hold the tab or the newline that would make the file unreadable a line at a time.
+
+### Arguments
+- **`[dir]`** — A folder to open instead; not with --tag
+
+### Flags
+- **`--name <name>`**
+- **`-t --tag <tag>`** — AND this tag
+
+## `omafiles view rm`
+
+- **Usage:** `omafiles view rm <--name <name>>`
+- **Effect:** modifies state
+
+Forget a view
+
+### Flags
+- **`--name <name>`**
+
 ## `omafiles roots`
 
 - **Usage:** `omafiles roots <SUBCOMMAND>`

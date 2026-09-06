@@ -18,7 +18,8 @@ SOURCES += \
     ../src/core/Store.cpp \
     ../src/core/Xattr.cpp \
     ../src/core/Paths.cpp \
-    ../src/core/Roots.cpp
+    ../src/core/Roots.cpp \
+    ../src/core/View.cpp
 
 HEADERS += \
     ../src/core/Tag.h \
@@ -26,4 +27,5 @@ HEADERS += \
     ../src/core/Store.h \
     ../src/core/Xattr.h \
     ../src/core/Paths.h \
-    ../src/core/Roots.h
+    ../src/core/Roots.h \
+    ../src/core/View.h

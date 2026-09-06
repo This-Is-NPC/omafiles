@@ -1,6 +1,7 @@
 #include "Open.h"
 #include "Paths.h"
 #include "Roots.h"
+#include "View.h"
 #include "Store.h"
 #include "Tag.h"
 #include "Xattr.h"
@@ -118,7 +119,8 @@ bool takesValue(const QString &arg)
     return arg == QLatin1String("-t") || arg == QLatin1String("--tag")
         || arg == QLatin1String("--any") || arg == QLatin1String("--ext")
         || arg == QLatin1String("--since") || arg == QLatin1String("--from")
-        || arg == QLatin1String("--id") || arg == QLatin1String("--check");
+        || arg == QLatin1String("--id") || arg == QLatin1String("--check")
+        || arg == QLatin1String("--name");
 }
 
 void applyGlobal(Globals *g, const QString &arg)
@@ -242,6 +244,13 @@ Moving:
   rm       <path>...                delete, then drop the rows
                                     both refuse the whole list over an
                                     operand they cannot take
+
+Saved:
+  view ls                           the saved views: name, then what it asks
+                                    `view` alone prints it too
+  view add --name <name>            save one: a set of tags, or a folder
+           [--tag <tag>]... [dir]   a view is one or the other, never both
+  view rm  --name <name>
 
 Keeping it true:
   roots ls                          the declared roots, and whether each is
@@ -385,6 +394,7 @@ struct Takes {
     bool fromXattr = false;
     bool all = false;
     bool root = false;
+    bool view = false;
 };
 
 // The six `tag` subcommands, each with its own flags. `dispatch` gates the
@@ -1589,7 +1599,7 @@ QStringList completionFor(const QStringList &words)
         QStringLiteral("open"),   QStringLiteral("mv"),      QStringLiteral("cp"),
         QStringLiteral("trash"),  QStringLiteral("rm"),      QStringLiteral("prune"),
         QStringLiteral("reindex"), QStringLiteral("verify"), QStringLiteral("export"),
-        QStringLiteral("roots"),
+        QStringLiteral("roots"),  QStringLiteral("view"),
         QStringLiteral("import"), QStringLiteral("batch"),   QStringLiteral("completions")};
     static const QStringList globals = {QStringLiteral("--json"), QStringLiteral("--dry-run"),
                                         QStringLiteral("--yes"), QStringLiteral("--quiet"),
@@ -3026,6 +3036,151 @@ QString escapedDetail(const QString &detail)
 
 // Exit 1 when it found something, the way `diff` does: a check that always
 // succeeds is a check nothing can be built on.
+// The saved ways of asking, by name.
+//
+// A folder, a tag and a query are one thing here: a view is either a place or a
+// set of tags, and both of them are `ls` with something filled in. That is why
+// pinning a folder needed no feature of its own -- it is a view with a `dir`.
+int cmdView(const Globals &g, Session &s, const QString &sub, const QString &name,
+            const QStringList &tags, const QStringList &positionals)
+{
+    Q_UNUSED(s)
+    const QString file = defaultViewsPath();
+    QVector<View> views;
+    QString error;
+    if (!loadViews(file, &views, &error)) {
+        fail(error);
+        return kStore;
+    }
+
+    if (sub.isEmpty() || sub == QLatin1String("ls")) {
+        if (g.json) {
+            QJsonArray array;
+            for (const View &view : std::as_const(views)) {
+                QJsonArray viewTags;
+                for (const QString &tag : view.tags)
+                    viewTags.append(tag);
+                array.append(QJsonObject{
+                    {QStringLiteral("name"), view.name},
+                    {QStringLiteral("dir"), view.dir},
+                    {QStringLiteral("tags"), viewTags},
+                });
+            }
+            printJson(array);
+        } else {
+            // The name, then what it asks -- as the command line that asks it,
+            // so a view is a thing you can read as well as open.
+            for (const View &view : std::as_const(views)) {
+                QString asks = QStringLiteral("ls");
+                for (const QString &tag : view.tags)
+                    asks += QStringLiteral(" --tag ") + tag;
+                if (!view.dir.isEmpty())
+                    asks += QLatin1Char(' ') + view.dir;
+                out() << view.name << '\t' << asks << '\n';
+            }
+        }
+        return kOk;
+    }
+
+    if (sub == QLatin1String("add")) {
+        if (name.isEmpty()) {
+            fail(QStringLiteral("view add: --name is required"));
+            return kUsage;
+        }
+        const QString clean = normalizeViewName(name, &error);
+        if (clean.isEmpty()) {
+            fail(error);
+            return kUsage;
+        }
+        if (tags.isEmpty() && positionals.isEmpty()) {
+            fail(QStringLiteral("view add: a view asks something; give it a --tag or a folder"));
+            return kUsage;
+        }
+        // Refused rather than half-honoured. A tag query scoped to a folder is
+        // a question the window cannot walk -- a tags tab is not standing
+        // anywhere -- and a view that means one thing at a prompt and another
+        // in a panel is worse than one that says it cannot.
+        if (!tags.isEmpty() && !positionals.isEmpty()) {
+            fail(QStringLiteral("view add: a view is a folder or a set of tags, not both; "
+                                "the window has no way to walk a tag query inside a folder"));
+            return kUsage;
+        }
+        if (positionals.size() > 1) {
+            fail(QStringLiteral("view add: takes at most one folder"));
+            return kUsage;
+        }
+
+        View view;
+        view.name = clean;
+        view.tags = tags;
+        if (!positionals.isEmpty()) {
+            PathState state = PathState::Missing;
+            view.dir = canonicalPath(positionals.first(), &error, &state);
+            if (view.dir.isEmpty()) {
+                fail(error);
+                return pathStatus(state);
+            }
+            if (!QFileInfo(view.dir).isDir()) {
+                fail(QStringLiteral("view add: %1 is not a folder").arg(view.dir));
+                return kUsage;
+            }
+        }
+
+        // Replaced rather than added beside: a panel with two entries reading
+        // `boletos` is a panel you have to open both of to tell apart.
+        bool replaced = false;
+        for (View &already : views) {
+            if (already.name.compare(clean, Qt::CaseInsensitive) == 0) {
+                already = view;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced)
+            views.append(view);
+
+        if (g.dryRun) {
+            out() << clean << '\n';
+            return kOk;
+        }
+        if (!saveViews(file, views, &error)) {
+            fail(error);
+            return kStore;
+        }
+        if (g.json)
+            printJson(QJsonObject{{QStringLiteral("name"), clean}});
+        else
+            out() << clean << '\n';
+        return kOk;
+    }
+
+    if (sub == QLatin1String("rm")) {
+        if (name.isEmpty()) {
+            fail(QStringLiteral("view rm: --name is required"));
+            return kUsage;
+        }
+        QVector<View> kept;
+        for (const View &view : std::as_const(views)) {
+            if (view.name.compare(name, Qt::CaseInsensitive) != 0)
+                kept.append(view);
+        }
+        if (kept.size() == views.size()) {
+            fail(QStringLiteral("view rm: no view called %1").arg(name));
+            return kUsage;
+        }
+        if (g.dryRun)
+            return kOk;
+        if (!saveViews(file, kept, &error)) {
+            fail(error);
+            return kStore;
+        }
+        return kOk;
+    }
+
+    fail(QStringLiteral("unknown command: view %1 (try omafiles view --help)").arg(sub));
+    return kUsage;
+}
+
 // The declarations, and the two ways to change them.
 //
 // Read as well as written here rather than left to a text editor, because the
@@ -3401,6 +3556,7 @@ struct Parsed {
     QString from;
     QString id;
     QString check;
+    QString name;
     bool mount = false;
     bool untagged = false;
     bool fromXattr = false;
@@ -3461,6 +3617,19 @@ int parseFlags(QStringList args, Parsed *parsed, const Takes &takes)
             }
             parsed->since = value;
             parsed->sinceGiven = true;
+            continue;
+        }
+        if (arg == QLatin1String("--name")) {
+            if (!takes.view) {
+                fail(QStringLiteral("unexpected %1").arg(arg));
+                return kUsage;
+            }
+            QString value;
+            if (!consumeValue(args, &i, &value)) {
+                fail(QStringLiteral("--name needs a value"));
+                return kUsage;
+            }
+            parsed->name = value;
             continue;
         }
         if (arg == QLatin1String("--id") || arg == QLatin1String("--check")) {
@@ -3753,13 +3922,14 @@ int dispatch(const Globals &g, Session &s, QStringList rest)
         // the rows out from under the declaration it removes, and `migrate`
         // rewrites them. Taking the lock for the other two would make listing
         // your own declarations wait on somebody else's `tag add`.
+        const bool viewOnly = cmd == QLatin1String("view");
         const bool rootsReads = cmd == QLatin1String("roots")
             && rest.value(0) != QLatin1String("migrate")
             && rest.value(0) != QLatin1String("rm");
         // A dry run commits nothing and writes no xattr, so it wants the lock
         // no more than `ls` does -- and a preview that cannot run where a read
         // can is a preview nobody can use on a read-only index.
-        s.writes = !onlyReads(cmd) && !tagLs && !rootsReads && !g.dryRun;
+        s.writes = !onlyReads(cmd) && !tagLs && !rootsReads && !viewOnly && !g.dryRun;
     }
     if (cmd == QLatin1String("tag")) {
         if (rest.isEmpty()) {
@@ -3945,6 +4115,25 @@ int dispatch(const Globals &g, Session &s, QStringList rest)
         if (parsedStatus != kOk)
             return parsedStatus;
         return cmdReindex(g, s, parsed.fromXattr, parsed.positionals);
+    }
+    if (cmd == QLatin1String("view")) {
+        QString sub;
+        if (!rest.isEmpty() && !rest.first().startsWith(QLatin1Char('-')))
+            sub = rest.takeFirst();
+        Parsed parsed;
+        const int parsedStatus = parseFlags(rest, &parsed, {.tag = true, .view = true});
+        if (parsedStatus != kOk)
+            return parsedStatus;
+        QStringList tags;
+        if (!parsed.tags.isEmpty()) {
+            QString error;
+            tags = normalizeTags(parsed.tags, &error);
+            if (tags.isEmpty()) {
+                fail(error);
+                return kUsage;
+            }
+        }
+        return cmdView(g, s, sub, parsed.name, tags, parsed.positionals);
     }
     if (cmd == QLatin1String("roots")) {
         QString sub;

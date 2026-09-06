@@ -2045,7 +2045,7 @@ def listed_verbs(text):
         # `tag` and `roots` are the two verbs with subcommands of their own, so
         # what a reader reads there is two words and not one.
         found.add(f"{words[0]} {words[1]}"
-                  if words[0] in ("tag", "roots") and len(words) > 1
+                  if words[0] in ("tag", "roots", "view") and len(words) > 1
                   else words[0])
     return found
 

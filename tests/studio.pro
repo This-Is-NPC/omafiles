@@ -29,6 +29,8 @@ SOURCES += \
     ../src/studio/FolderModel.cpp \
     ../src/studio/Clipboard.cpp \
     ../src/studio/Verb.cpp \
+    ../src/studio/Views.cpp \
+    ../src/core/View.cpp \
     ../src/core/Tag.cpp \
     ../src/core/Record.cpp \
     ../src/core/Store.cpp \
@@ -44,7 +46,8 @@ HEADERS += \
     ../src/studio/GraphItem.h \
     ../src/studio/FolderModel.h \
     ../src/studio/Clipboard.h \
-    ../src/studio/Verb.h
+    ../src/studio/Verb.h \
+    ../src/studio/Views.h
 
 # The same qrc the studio ships, so the test drives the QML that runs.
 RESOURCES += ../src/studio/resources.qrc
