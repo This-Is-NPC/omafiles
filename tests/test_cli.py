@@ -250,6 +250,7 @@ def main():
         check_an_unplugged_root_is_not_a_deleted_file(data, workspace)
         check_a_sweep_only_ever_adds(data, workspace)
         check_a_list_of_names_is_not_the_index(data, workspace)
+        check_mv_renames_a_set_by_rule(data, workspace)
 
     print("ok")
 
@@ -5562,6 +5563,97 @@ def check_a_list_of_names_is_not_the_index(data, workspace):
     # nothing will ever read a list for a root nobody declares.
     assert run(data, "roots", "rm", "--id", "Names", extra_env=env).returncode == 0
     assert not listing.exists(), sorted(cache.rglob("*"))
+
+def check_mv_renames_a_set_by_rule(data, workspace):
+    """mv --replace/--with and --pattern: a set renamed in place, tags kept.
+
+    Every destination is settled before any rename is made, the plan a dry run
+    prints is the receipt the run prints, and the rows follow the files."""
+    room = workspace / "byrule"
+    room.mkdir()
+    shots = [room / f"img-{n}.jpg" for n in ("a", "b", "c")]
+    for shot in shots:
+        shot.write_text(shot.name)
+    run(data, "tag", "add", "--tag", "trip", "--", str(shots[0]), str(shots[2]))
+    beside = room / "notes.txt"
+    beside.write_text("n")
+
+    # The flags go together, the template only knows four tokens, and a bare
+    # --pattern is a template with nothing in it.
+    lonely = run(data, "mv", "--with", "x", "--", str(shots[0]))
+    assert lonely.returncode == 1 and "go together" in lonely.stderr, lonely.stderr
+    assert run(data, "mv", "--replace", "", "--with", "x", "--", str(shots[0])).returncode == 1
+    bogus = run(data, "mv", "--pattern", "{date}{ext}", "--", str(shots[0]))
+    assert bogus.returncode == 1 and "unknown token {date}" in bogus.stderr, bogus.stderr
+    assert run(data, "mv", "--pattern", "", "--", str(shots[0])).returncode == 1
+    assert run(data, "mv", "--replace", "img", "--with", "pic").returncode == 1
+    assert all(shot.exists() for shot in shots), "a refusal renamed something"
+
+    # The plan, before anything moves: old, tab, new, one to a line, and under
+    # --json the object `mv <old> <new>` answers in, one per rename.
+    planned = run(data, "--dry-run", "mv", "--replace", "img", "--with", "pic",
+                  "--", *map(str, shots))
+    assert planned.returncode == 0, planned.stderr
+    assert planned.stdout.splitlines() == [
+        f"{shot.resolve()}\t{room.resolve() / shot.name.replace('img', 'pic')}"
+        for shot in shots], planned.stdout
+    assert all(shot.exists() for shot in shots), "a dry run renamed something"
+    shaped = json.loads(run(data, "--json", "--dry-run", "mv", "--replace", "img",
+                            "--with", "pic", "--", *map(str, shots)).stdout)
+    assert [set(one) for one in shaped] == [{"from", "to", "rows"}] * 3, shaped
+    assert [[row["tags"] for row in one["rows"]] for one in shaped] == [[["trip"]], [], [["trip"]]]
+
+    # The run prints the same receipt, and the rows went with the files.
+    renamed = run(data, "mv", "--replace", "img", "--with", "pic", "--", *map(str, shots))
+    assert renamed.returncode == 0, renamed.stderr
+    assert renamed.stdout == planned.stdout, renamed.stdout
+    pics = [room / f"pic-{n}.jpg" for n in ("a", "b", "c")]
+    assert all(pic.exists() for pic in pics) and not any(shot.exists() for shot in shots)
+    assert run(data, "tag", "ls", "--", str(pics[0])).stdout.split() == ["trip"]
+    assert run(data, "tag", "ls", "--", str(pics[2])).stdout.split() == ["trip"]
+    assert run(data, "verify", str(room)).returncode == 0
+
+    # A template numbers the set in operand order, padded to the count, and
+    # the extension keeps its dot. A name the rule leaves alone is left alone.
+    numbered = run(data, "mv", "--pattern", "{stem}-{n}{ext}", "--",
+                   str(pics[2]), str(pics[0]))
+    assert numbered.returncode == 0, numbered.stderr
+    assert (room / "pic-c-1.jpg").exists() and (room / "pic-a-2.jpg").exists()
+    same = run(data, "mv", "--pattern", "{name}", "--", str(pics[1]), str(beside))
+    assert same.returncode == 0 and same.stdout == "", same.stdout
+    assert pics[1].exists() and beside.exists()
+    padded = run(data, "--dry-run", "mv", "--pattern", "{n}{ext}", "--",
+                 *[str(room / f"n{i}.x") for i in range(10)])
+    assert padded.returncode == 2, padded.stderr        # they are not there
+    tens = [room / f"t{i}.x" for i in range(10)]
+    for one in tens:
+        one.write_text("t")
+    padded = run(data, "--dry-run", "mv", "--pattern", "{n}{ext}", "--", *map(str, tens))
+    assert padded.stdout.splitlines()[0].endswith("\t" + str(room.resolve() / "01.x")), padded.stdout
+    assert padded.stdout.splitlines()[-1].endswith("\t" + str(room.resolve() / "10.x")), padded.stdout
+    # A hidden file has no extension, and `--with ''` deletes the text.
+    hidden = room / ".secret-notes"
+    hidden.write_text("h")
+    dropped = run(data, "--dry-run", "mv", "--replace", "-notes", "--with", "",
+                  "--pattern", "{stem}{ext}", "--", str(hidden))
+    assert dropped.stdout.strip().endswith("\t" + str(room.resolve() / ".secret")), dropped.stdout
+
+    # A name that is taken refuses the whole set before anything moves, and
+    # so do two operands landing on one name -- including a name an operand
+    # about to move still holds.
+    taken = run(data, "mv", "--replace", "pic-b", "--with", "notes", "--pattern",
+                "{stem}.txt", "--", str(pics[1]), str(room / "pic-c-1.jpg"))
+    assert taken.returncode == 1 and "already exists" in taken.stderr, taken.stderr
+    assert pics[1].exists() and (room / "pic-c-1.jpg").exists()
+    clash = run(data, "mv", "--pattern", "same{ext}", "--", str(pics[1]), str(room / "pic-c-1.jpg"))
+    assert clash.returncode == 1 and "would both become" in clash.stderr, clash.stderr
+    shift = run(data, "mv", "--replace", "t0", "--with", "t1", "--", str(tens[0]), str(tens[1]))
+    assert shift.returncode == 1 and "already exists" in shift.stderr, shift.stderr
+
+    # And the plain form still takes exactly two, in the same words as before.
+    assert "takes exactly two paths" in run(data, "mv", str(pics[1])).stderr
+    assert run(data, "verify", str(room)).returncode == 0
+
 
 if __name__ == "__main__":
     main()

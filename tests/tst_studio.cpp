@@ -4893,6 +4893,27 @@ void TestStudio::renamesAndMakesAFolderFromThePromptBar()
     key('r');
     QCOMPARE(root->property("prompt").toString(), QString());
 
+    // A marked set is renamed by a template, through the verb that settles
+    // every name before it moves any; the template is what the box asks for.
+    focusRow(QStringLiteral("one.txt"));
+    key(Qt::Key_Space);
+    focusRow(QStringLiteral("two.md"));
+    key(Qt::Key_Space);
+    verbRuns().clear();
+    key('r');
+    QCOMPARE(root->property("prompt").toString(), QStringLiteral("set"));
+    QCOMPARE(entry->property("text").toString(), QStringLiteral("{stem}{ext}"));
+    answer("finishRenameSet", QStringLiteral("{stem}-{n}{ext}"));
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(),
+             (QStringList{"mv", "--pattern", "{stem}-{n}{ext}", "--", one,
+                          tree.filePath(QStringLiteral("two.md"))}));
+    // Left as it was offered is no rename.
+    key('r');
+    answer("finishRenameSet", QStringLiteral("{name}"));
+    QCOMPARE(verbRuns().size(), 1);
+    key('A');
+
     // A folder is made where the list stands, listed at once, and under the
     // cursor; made twice, it is refused with the system's reason.
     key('n');

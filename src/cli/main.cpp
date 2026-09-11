@@ -122,7 +122,8 @@ bool takesValue(const QString &arg)
         || arg == QLatin1String("--any") || arg == QLatin1String("--ext")
         || arg == QLatin1String("--since") || arg == QLatin1String("--from")
         || arg == QLatin1String("--id") || arg == QLatin1String("--check")
-        || arg == QLatin1String("--name");
+        || arg == QLatin1String("--name") || arg == QLatin1String("--replace")
+        || arg == QLatin1String("--with") || arg == QLatin1String("--pattern");
 }
 
 void applyGlobal(Globals *g, const QString &arg)
@@ -242,6 +243,10 @@ Moving:
   mv       <old> <new>              file and its tags; a folder cannot
                                     cross a filesystem, and neither verb
                                     writes over what is already there
+                                    --replace <text> --with <text> and
+                                    --pattern <template> instead rename a
+                                    set by rule, each in its own folder:
+                                    {name} {stem} {ext} {n} -- <path>...
   cp       <old> <new>              file and its tags; will not write over
                                     what is already there
   trash    <path>...                gio trash, then drop the rows
@@ -404,6 +409,8 @@ struct Takes {
     bool root = false;
     bool view = false;
     bool status = false;
+    /// `--replace`, `--with` and `--pattern`: `mv` over a set, by rule.
+    bool rename = false;
 };
 
 // The six `tag` subcommands, each with its own flags. `dispatch` gates the
@@ -1815,6 +1822,9 @@ QStringList completionFor(const QStringList &words)
         }
         if (verb == QLatin1String("reindex"))
             flags << QStringLiteral("--from-xattr");
+        if (verb == QLatin1String("mv"))
+            flags << QStringLiteral("--replace") << QStringLiteral("--with")
+                  << QStringLiteral("--pattern");
         if (verb == QLatin1String("sweep"))
             flags << QStringLiteral("--status");
         if (verb == QLatin1String("prune"))
@@ -4114,6 +4124,14 @@ struct Parsed {
     QString id;
     QString check;
     QString name;
+    QString replace;
+    QString with;
+    QString pattern;
+    // Typed, as with `since`: `--with ""` is how the replaced text is deleted,
+    // and `--replace ""` has to reach its own refusal.
+    bool replaceGiven = false;
+    bool withGiven = false;
+    bool patternGiven = false;
     bool mount = false;
     bool untagged = false;
     bool cached = false;
@@ -4241,6 +4259,29 @@ int parseFlags(QStringList args, Parsed *parsed, const Takes &takes)
                 return kUsage;
             }
             parsed->fromXattr = true;
+            continue;
+        }
+        if (arg == QLatin1String("--replace") || arg == QLatin1String("--with")
+            || arg == QLatin1String("--pattern")) {
+            if (!takes.rename) {
+                fail(QStringLiteral("unexpected %1").arg(arg));
+                return kUsage;
+            }
+            QString value;
+            if (!consumeValue(args, &i, &value)) {
+                fail(QStringLiteral("%1 needs a value").arg(arg));
+                return kUsage;
+            }
+            if (arg == QLatin1String("--replace")) {
+                parsed->replace = value;
+                parsed->replaceGiven = true;
+            } else if (arg == QLatin1String("--with")) {
+                parsed->with = value;
+                parsed->withGiven = true;
+            } else {
+                parsed->pattern = value;
+                parsed->patternGiven = true;
+            }
             continue;
         }
         if (arg == QLatin1String("--status")) {
@@ -4480,6 +4521,176 @@ int cmdBatch(const Globals &g, Session &s, const QStringList &positionals)
 
 // One place that turns an argv tail into a verb, so a batch line runs the same
 // code path the shell would have run and the two cannot drift apart.
+// A set renamed by rule, each in its own folder.
+//
+// `--replace` and `--with` rewrite the name; `--pattern` then builds one out of
+// what is left: `{name}` the whole of it, `{stem}` and `{ext}` its two halves
+// -- the extension with its dot, and nothing where there is none -- and `{n}`
+// the operand's place in the set, counted from one and padded to the width of
+// the count. Every destination is settled before any rename is made, the way
+// `rm` settles its list: a name already taken, or two operands landing on one
+// name, refuses the whole set. A name held by an operand that is itself about
+// to move is no exception -- do that in two passes -- because the alternative
+// is a rename whose result depends on the order the shell handed the paths in.
+// An operand whose name the rule leaves alone is left alone and not reported.
+//
+// What a rename inside one folder cannot do is cross a filesystem or land
+// inside itself, so the refusals `cmdMove` makes for those are not made here.
+int cmdRenameSet(const Globals &g, Session &s, const Parsed &parsed)
+{
+    if (parsed.replaceGiven != parsed.withGiven) {
+        fail(QStringLiteral("mv: --replace and --with go together; --with '' deletes "
+                            "the text"));
+        return kUsage;
+    }
+    if (parsed.replaceGiven && parsed.replace.isEmpty()) {
+        fail(QStringLiteral("mv: --replace needs some text to find"));
+        return kUsage;
+    }
+    static const QRegularExpression token(QStringLiteral("\\{([^{}]*)\\}"));
+    if (parsed.patternGiven) {
+        if (parsed.pattern.isEmpty()) {
+            fail(QStringLiteral("mv: --pattern needs a template"));
+            return kUsage;
+        }
+        auto found = token.globalMatch(parsed.pattern);
+        while (found.hasNext()) {
+            const QString name = found.next().captured(1);
+            if (name != QLatin1String("name") && name != QLatin1String("stem")
+                && name != QLatin1String("ext") && name != QLatin1String("n")) {
+                fail(QStringLiteral("mv: --pattern: unknown token {%1}; the tokens are "
+                                    "{name}, {stem}, {ext} and {n}")
+                         .arg(name));
+                return kUsage;
+            }
+        }
+    }
+    if (parsed.positionals.isEmpty()) {
+        fail(QStringLiteral("mv: path required"));
+        return kUsage;
+    }
+
+    int status = kOk;
+    // As named, link and all, the way `mv <old> <new>` takes its source.
+    const QStringList sources = resolveNamed(parsed.positionals, &status);
+    if (status != kOk)
+        return status;
+
+    struct Plan {
+        QString from;
+        QString to;
+    };
+    QVector<Plan> plans;
+    QSet<QString> claimed;
+    const int width = QString::number(sources.size()).size();
+    for (int i = 0; i < sources.size(); ++i) {
+        const QString &from = sources.at(i);
+        const QFileInfo info(from);
+        const QString was = info.fileName();
+        QString name = was;
+        if (parsed.replaceGiven)
+            name.replace(parsed.replace, parsed.with);
+        if (parsed.patternGiven) {
+            // A leading dot is a hidden file and not an extension, the way
+            // every shell reads `.bashrc`.
+            const int dot = name.lastIndexOf(QLatin1Char('.'));
+            const QString stem = dot > 0 ? name.left(dot) : name;
+            const QString ext = dot > 0 ? name.mid(dot) : QString();
+            // One pass, so a stem holding `{n}` is put in as the text it is.
+            QString built;
+            int at = 0;
+            auto found = token.globalMatch(parsed.pattern);
+            while (found.hasNext()) {
+                const QRegularExpressionMatch hit = found.next();
+                built += parsed.pattern.mid(at, hit.capturedStart() - at);
+                const QString which = hit.captured(1);
+                built += which == QLatin1String("name") ? name
+                       : which == QLatin1String("stem") ? stem
+                       : which == QLatin1String("ext")  ? ext
+                       : QString::number(i + 1).rightJustified(width, QLatin1Char('0'));
+                at = hit.capturedEnd();
+            }
+            built += parsed.pattern.mid(at);
+            name = built;
+        }
+        if (name.isEmpty() || name == QLatin1String(".") || name == QLatin1String("..")
+            || name.contains(QLatin1Char('/'))) {
+            fail(QStringLiteral("mv: %1 would become `%2`, which is not a name")
+                     .arg(from, name));
+            return kUsage;
+        }
+        if (name == was)
+            continue;
+        const QString to = info.absolutePath() + QLatin1Char('/') + name;
+        if (occupied(to)) {
+            fail(QStringLiteral("mv: %1 already exists").arg(to));
+            return kUsage;
+        }
+        if (claimed.contains(to)) {
+            fail(QStringLiteral("mv: two of them would both become %1").arg(to));
+            return kUsage;
+        }
+        claimed.insert(to);
+        plans.append({from, to});
+    }
+
+    if ((status = openSession(&s)) != kOk)
+        return status;
+
+    // A dry run prints the plan in the shape the run prints its result: the
+    // old name and the new one, tab apart, one rename to a line -- the run
+    // is about a set, and a destination on its own does not say which of
+    // them it came from. Under --json one `from`, `to`, `rows` object per
+    // rename, the object `mv <old> <new>` already answers in, in an array.
+    QJsonArray moved;
+    QVector<Record> written;
+    bool refused = false;
+    for (const Plan &plan : std::as_const(plans)) {
+        if (g.dryRun) {
+            QVector<Record> rows;
+            for (const QString &row : rowsUnder(s.store, plan.from)) {
+                Record record = s.store.get(row);
+                record.path = movedPath(row, plan.from, plan.to);
+                rows.append(record);
+            }
+            if (g.json)
+                moved.append(movedJson(plan.from, plan.to, rows));
+            else
+                out() << plan.from << '\t' << plan.to << '\n';
+            continue;
+        }
+        QString why;
+        bool copied = false;
+        if (!moveNamed(plan.from, plan.to, &why, &copied)) {
+            // The rest of the set is still tried, and every row of what did
+            // move is still rewritten below: a rename that failed halfway has
+            // still renamed things, and an index left behind the disk is the
+            // state `verify` exists to shout about.
+            fail(QStringLiteral("mv: cannot move %1 to %2: %3").arg(plan.from, plan.to, why));
+            refused = true;
+            continue;
+        }
+        QVector<Record> rows;
+        followMove(g, s, plan.from, plan.to, &rows, copied);
+        written += rows;
+        if (g.json)
+            moved.append(movedJson(plan.from, plan.to, rows));
+        else
+            out() << plan.from << '\t' << plan.to << '\n';
+    }
+    if (g.dryRun) {
+        if (g.json)
+            printJson(moved);
+        return kOk;
+    }
+    const int done = finish(g, s, written, false);
+    if (done != kOk)
+        return done;
+    if (g.json)
+        printJson(moved);
+    return refused ? kUsage : kOk;
+}
+
 int dispatch(const Globals &g, Session &s, QStringList rest)
 {
     const QString cmd = rest.takeFirst();
@@ -4661,9 +4872,11 @@ int dispatch(const Globals &g, Session &s, QStringList rest)
     }
     if (cmd == QLatin1String("mv")) {
         Parsed parsed;
-        const int parsedStatus = parseFlags(rest, &parsed, {});
+        const int parsedStatus = parseFlags(rest, &parsed, {.rename = true});
         if (parsedStatus != kOk)
             return parsedStatus;
+        if (parsed.replaceGiven || parsed.withGiven || parsed.patternGiven)
+            return cmdRenameSet(g, s, parsed);
         return cmdMove(g, s, parsed.positionals);
     }
     if (cmd == QLatin1String("cp")) {

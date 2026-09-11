@@ -487,6 +487,15 @@ void IndexModel::rename(const QString &path, const QString &to)
                                                    target.fileName()));
 }
 
+void IndexModel::renameSet(const QStringList &paths, const QString &pattern)
+{
+    if (paths.isEmpty() || pattern.isEmpty())
+        return;
+    report(QStringList{QStringLiteral("mv"), QStringLiteral("--pattern"), pattern,
+                       QStringLiteral("--")} + paths,
+           QStringLiteral("renamed %1").arg(countOf(paths.size(), QStringLiteral("file"))));
+}
+
 // `mkdir(2)` and not `QDir::mkdir`, for the reason: the system says why it
 // refused, and a folder that cannot be made in a place nobody may write to
 // should say so rather than say nothing.

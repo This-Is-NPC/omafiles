@@ -269,7 +269,7 @@ A failure the checks cannot foresee is a different matter -- a permission denied
 
 ## `omafiles mv`
 
-- **Usage:** `omafiles mv <old> <new>`
+- **Usage:** `omafiles mv [FLAGS] <old> <new>`
 - **Effect:** modifies state
 
 mv + rewrite the index path.
@@ -291,6 +291,17 @@ A dry run prints what the real run prints -- the destination, and under --json t
 ### Arguments
 - **`<old>`**
 - **`<new>`**
+
+### Flags
+- **`--replace <text>`** — Rename a set by rule: the text to find in each name.
+
+  With any of `--replace`, `--with` or `--pattern` on the line, `mv` takes any number of paths and renames each in the folder it is in, rather than moving one path to another. `--replace` and `--with` go together and rewrite the name -- every occurrence, case as typed, and `--with ''` deletes the text. `--pattern` then builds a name out of what is left, from four tokens: `{name}` the whole of it, `{stem}` and `{ext}` its two halves -- the extension with its dot, and nothing where there is none; a leading dot is a hidden file and not an extension -- and `{n}` the operand's place in the set, counted from one and padded to the width of the count. So `mv --pattern '{stem}-{n}{ext}' -- *.jpg` numbers the pictures in the order the shell handed them over.
+
+  Every destination is settled before any rename is made: a name already taken, or two operands landing on one name, refuses the whole set, in the words `mv <old> <new>` uses. A name held by an operand that is itself about to move is no exception -- do that in two passes -- because a rename whose result depended on the order of the operands would be a rename you could not read. An operand whose name the rule leaves alone is left alone and not reported.
+
+  It prints one rename to a line, the old path, a tab, and the new one; under `--json` an array of the `from`, `to`, `rows` object `mv <old> <new>` answers in, one per rename. A dry run prints the same plan. A rename the filesystem refuses part way is named on stderr, the rest of the set is still tried, and every row of what did move is rewritten -- exit 1 for the refusal, with the index still agreeing with the disk.
+- **`--with <text>`** — What to put in its place; '' deletes it
+- **`--pattern <template>`** — Build each name from {name}, {stem}, {ext} and {n}
 
 ## `omafiles cp`
 

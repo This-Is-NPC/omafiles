@@ -41,12 +41,14 @@ Window {
     property string prompt: ""
     readonly property bool naming: prompt === "view"
     readonly property bool renaming: prompt === "rename"
+    readonly property bool renamingSet: prompt === "set"
     readonly property bool makingFolder: prompt === "folder"
     readonly property bool matching: prompt === "match"
-    /// The row the rename prompt is about. Held here and not read off the
-    /// cursor when the answer comes, because the list can rebuild under an
-    /// open prompt and the cursor is not promised to stay.
+    /// The row the rename prompt is about, or the set. Held here and not read
+    /// off the cursor when the answer comes, because the list can rebuild
+    /// under an open prompt and the cursor is not promised to stay.
     property string promptPath: ""
+    property var promptPaths: []
     property string focusRegion: "list"
     property bool pendingG: false
     property var paneItems: ({})
@@ -186,7 +188,7 @@ Window {
             return [{ key: "Esc", label: "clear" }, { key: "Enter", label: "keep" }]
         if (prompt !== "")
             return [{ key: "Esc", label: "cancel" },
-                    { key: "Enter", label: renaming ? "rename"
+                    { key: "Enter", label: renaming || renamingSet ? "rename"
                                          : makingFolder ? "make"
                                          : matching ? "mark" : "save" }]
         if (onGraph)
@@ -286,6 +288,13 @@ Window {
         const path = target || cursorPath()
         if (!path || !onFiles)
             return
+        // The rule the menu keeps: a marked row stands for the set, and a set
+        // has no one name to offer -- it takes a template instead.
+        const set = activeFolder ? activeFolder.targetPaths(path) : [path]
+        if (set.length > 1) {
+            startRenameSet(set)
+            return
+        }
         promptPath = path
         prompt = "rename"
         focusRegion = "filter"
@@ -369,6 +378,29 @@ Window {
         takeFocus()
         if (accept && activeFolder && text.trim() !== "")
             activeFolder.markMatching(text)
+    }
+
+    // A set renamed by `mv --pattern`: the template is the one thing typed,
+    // and the verb settles every name before it moves any.
+    function startRenameSet(paths) {
+        if (!onFiles || paths.length === 0)
+            return
+        promptPaths = paths
+        prompt = "set"
+        focusRegion = "filter"
+        filterField.text = "{stem}{ext}"
+        filterField.focusEntry()
+    }
+
+    function finishRenameSet(accept, text) {
+        const paths = promptPaths
+        prompt = ""
+        promptPaths = []
+        takeFocus()
+        const pattern = text.trim()
+        if (!accept || pattern === "" || pattern === "{name}")
+            return
+        IndexModel.renameSet(paths, pattern)
     }
 
     // Only where the list is a folder: a tag listing spans the index and has
@@ -1336,6 +1368,8 @@ Window {
                     lead: win.prompt !== "" ? "" : "/"
                     placeholder: win.naming ? "name this view"
                                : win.renaming ? "rename " + win.nameOf(win.promptPath)
+                               : win.renamingSet ? "rename " + win.promptPaths.length
+                                                   + " files: {name} {stem} {ext} {n}"
                                : win.makingFolder ? "new folder"
                                : win.matching ? "mark names matching, like *.pdf"
                                : "filter this folder"
@@ -1345,6 +1379,8 @@ Window {
                             win.finishNaming(true, value)
                         else if (win.renaming)
                             win.finishRename(true, value)
+                        else if (win.renamingSet)
+                            win.finishRenameSet(true, value)
                         else if (win.makingFolder)
                             win.finishMakingFolder(true, value)
                         else if (win.matching)
@@ -1357,6 +1393,8 @@ Window {
                             win.finishNaming(false, "")
                         else if (win.renaming)
                             win.finishRename(false, "")
+                        else if (win.renamingSet)
+                            win.finishRenameSet(false, "")
                         else if (win.makingFolder)
                             win.finishMakingFolder(false, "")
                         else if (win.matching)
@@ -1661,9 +1699,10 @@ Window {
                   when: fileMenu.isRow && fileMenu.otherDir !== "" },
                 { id: "duplicate", label: "Duplicate",
                   when: fileMenu.isFile && fileMenu.targets.length === 1 },
-                // One row, whatever is marked: a rename is a name, and a set
-                // of files has none to offer.
-                { id: "rename", label: "Rename", key: "r", when: fileMenu.isRow },
+                // A set is renamed by a template rather than a name.
+                { id: "rename",
+                  label: fileMenu.counted("Rename", "Rename %1 files by a pattern"),
+                  key: "r", when: fileMenu.isRow },
                 { id: "new-folder", label: "New folder", key: "n",
                   when: win.onDirectory && win.activeTab.selectedTag === "" },
                 { id: "trash", label: fileMenu.counted("Move to trash", "Move %1 files to trash"),

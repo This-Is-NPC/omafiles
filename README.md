@@ -38,7 +38,9 @@ at `pkgbuilds/omafiles`.
 - `/` — filter the folder
 - `Space` — mark the row; `J` / `K` mark it and step; `*` marks by a pattern
   like `*.pdf`; Shift and a click marks a range
-- `r` / `F2` — rename, which is `mv` with the tags kept
+- `r` / `F2` — rename, which is `mv` with the tags kept; over a marked set it
+  asks for a template instead, `{stem}-{n}{ext}` and the like, and runs
+  `mv --pattern`
 - `n` — new folder
 - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` — copy, cut and paste files, through the
   same clipboard Nautilus and Dolphin use, so it works between them and here

@@ -129,6 +129,10 @@ public:
     /// `mv` to a new name beside the old one. Refuses a destination that is
     /// there, in `mv`'s words, before `mv` gets to answer differently.
     Q_INVOKABLE void rename(const QString &path, const QString &to);
+    /// `mv --pattern` over a set: each renamed in its own folder by the
+    /// template, and the refusals -- a name taken, two landing on one --
+    /// are the verb's.
+    Q_INVOKABLE void renameSet(const QStringList &paths, const QString &pattern);
     /// `mkdir`. Not a verb of the command line, because the command line has
     /// none: a folder with nothing in it has no row, and the system call is the
     /// whole of the job. Reported here all the same, since the receipt goes
