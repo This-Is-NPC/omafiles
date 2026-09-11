@@ -15,6 +15,7 @@
 #include <memory>
 
 #include <sys/stat.h>
+#include <unistd.h>
 
 namespace omafiles {
 
@@ -541,6 +542,30 @@ bool IndexModel::makeFolder(const QString &directory, const QString &name)
         return false;
     }
     setNotice(QStringLiteral("made %1").arg(name));
+    return true;
+}
+
+// Refused where something is already there, in the words `mv` refuses with,
+// and asked of the name and not what it points at, so a dangling link counts.
+// The target is written as the absolute path it was handed: a link that
+// still points at the same file after it is moved is worth more than a
+// shorter one.
+bool IndexModel::makeLink(const QString &target, const QString &link)
+{
+    if (target.isEmpty() || link.isEmpty())
+        return false;
+    const QFileInfo at(link);
+    if (at.exists() || at.isSymLink()) {
+        setNotice(QStringLiteral("ln: %1 already exists").arg(link));
+        return false;
+    }
+    if (::symlink(QFile::encodeName(target).constData(),
+                  QFile::encodeName(link).constData()) != 0) {
+        setNotice(QStringLiteral("ln: cannot link %1 to %2: %3")
+                      .arg(link, target, QString::fromLocal8Bit(strerror(errno))));
+        return false;
+    }
+    setNotice(QStringLiteral("linked %1 to %2").arg(at.fileName(), target));
     return true;
 }
 

@@ -151,6 +151,10 @@ public:
     /// whole of the job. Reported here all the same, since the receipt goes
     /// where every other receipt goes. True when the folder is there now.
     Q_INVOKABLE bool makeFolder(const QString &directory, const QString &name);
+    /// `symlink(2)`, for the reason `makeFolder` gives: a link has no row of
+    /// its own -- `setxattr` follows it, so its tags are the target's -- and
+    /// there is nothing for a verb to do. True when the link is there now.
+    Q_INVOKABLE bool makeLink(const QString &target, const QString &link);
     Q_INVOKABLE void reindexTree(const QString &directory);
     Q_INVOKABLE void pruneTree(const QString &directory);
     Q_INVOKABLE void verifyTree(const QString &directory);

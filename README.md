@@ -44,7 +44,8 @@ at `pkgbuilds/omafiles`.
 - `r` / `F2` — rename, which is `mv` with the tags kept; over a marked set it
   asks for a template instead, `{stem}-{n}{ext}` and the like, and runs
   `mv --pattern`
-- `n` — new folder
+- `n` — new folder; the row menu also makes a link beside a file, or links
+  what is on the clipboard into the folder on screen
 - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` — copy, cut and paste files, through the
   same clipboard Nautilus and Dolphin use, so it works between them and here
 - `:` — commands

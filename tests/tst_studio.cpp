@@ -255,6 +255,7 @@ private slots:
     void marksARunARangeAndAPattern();
     void findsByNameAcrossTheRoots();
     void runsAScriptOverTheMarkedSet();
+    void makesLinksBesideAndHere();
 
 private:
     QQuickWindow *window() const;
@@ -5254,6 +5255,62 @@ void TestStudio::runsAScriptOverTheMarkedSet()
 
     QVERIFY(QFile::remove(script));
     m_index->reload();
+    settle();
+}
+
+// A link beside the row, in the desktop's spelling, and the clipboard's files
+// as links in the folder on screen. Both refuse a name that is taken.
+void TestStudio::makesLinksBesideAndHere()
+{
+    const QDir tree(m_tree.path());
+    const QString one = tree.filePath(QStringLiteral("one.txt"));
+    const QString beside = tree.filePath(QStringLiteral("Link to one.txt"));
+
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Make a link beside")));
+    QVERIFY(QFileInfo(beside).isSymLink());
+    QCOMPARE(QFileInfo(beside).symLinkTarget(), one);
+    QVERIFY2(m_index->notice().startsWith(QStringLiteral("linked ")), qPrintable(m_index->notice()));
+    // Listed under its own name. A row is filed by what it resolves to, so
+    // the link and its target share a path and the name is what tells them
+    // apart.
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    QStringList names;
+    for (int i = 0; i < folder->property("count").toInt(); ++i) {
+        QVariantMap entry;
+        QMetaObject::invokeMethod(folder, "entryAt", Q_RETURN_ARG(QVariantMap, entry),
+                                  Q_ARG(int, i));
+        names.append(entry.value(QStringLiteral("name")).toString());
+    }
+    QVERIFY2(names.contains(QStringLiteral("Link to one.txt")),
+             qPrintable(names.join(QLatin1String(" | "))));
+    // A second link beside the same file is a name already taken, refused in
+    // `mv`'s words.
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Make a link beside")));
+    QVERIFY2(m_index->notice().contains(QStringLiteral("already exists")),
+             qPrintable(m_index->notice()));
+
+    // The clipboard's files, linked into another folder under their names.
+    focusRow(QStringLiteral("one.txt"));
+    key('c', Qt::ControlModifier);
+    const QString alpha = tree.filePath(QStringLiteral("alpha"));
+    tab()->setCwd(alpha);
+    settle();
+    key('m');
+    QVERIFY2(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Link it here")),
+             qPrintable(menuLabels(QStringLiteral("fileMenu")).join(QLatin1String(" | "))));
+    const QString here = QDir(alpha).filePath(QStringLiteral("one.txt"));
+    QVERIFY(QFileInfo(here).isSymLink());
+    QCOMPARE(QFileInfo(here).symLinkTarget(), one);
+    QVERIFY2(m_clipboard->holdsFiles(), "linking emptied the clipboard");
+
+    m_clipboard->clear();
+    QVERIFY(QFile::remove(here));
+    QVERIFY(QFile::remove(beside));
+    tab()->setCwd(m_tree.path());
     settle();
 }
 

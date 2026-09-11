@@ -429,6 +429,44 @@ Window {
         IndexModel.renameSet(paths, pattern)
     }
 
+    // ----------------------------------------------------------------- links
+    function joined(dir, name) {
+        return (dir === "/" ? "" : dir) + "/" + name
+    }
+
+    // `Link to <name>`, beside the target: the desktop's spelling, so a link
+    // made here and one made in Nautilus read the same on disk.
+    function linkBeside(path) {
+        const folder = activeFolder
+        if (!path || !folder)
+            return
+        const link = joined(parentOf(path), "Link to " + nameOf(path))
+        if (!IndexModel.makeLink(path, link))
+            return
+        folder.pointCursorAt(link)
+        folder.reload()
+    }
+
+    // The clipboard's files, as links in the folder on screen, under their own
+    // names. The clipboard is left as it was: a link is not a paste.
+    function linkHere() {
+        const folder = activeFolder
+        if (!canPaste || !folder)
+            return
+        const paths = Clipboard.files()
+        const dir = folder.directory
+        let made = 0
+        for (let i = 0; i < paths.length; i++) {
+            if (IndexModel.makeLink(paths[i], joined(dir, nameOf(paths[i]))))
+                ++made
+        }
+        if (made > 0) {
+            if (paths.length === 1)
+                folder.pointCursorAt(joined(dir, nameOf(paths[0])))
+            folder.reload()
+        }
+    }
+
     // Only where the list is a folder: a tag listing spans the index and has
     // nowhere to put one.
     function startMakingFolder() {
@@ -1764,6 +1802,16 @@ Window {
                   when: fileMenu.isRow && fileMenu.otherDir !== "" },
                 { id: "duplicate", label: "Duplicate",
                   when: fileMenu.isFile && fileMenu.targets.length === 1 },
+                // Beside the target, named the way the desktop names one; and
+                // here, for what is on the clipboard, which is what a paste
+                // would put here as copies.
+                { id: "link-beside", label: "Make a link beside",
+                  when: fileMenu.isRow && fileMenu.targets.length === 1 },
+                { id: "link-here",
+                  label: Clipboard.holdsFiles && Clipboard.files().length > 1
+                         ? "Link %1 files here".replace("%1", Clipboard.files().length)
+                         : "Link it here",
+                  when: win.canPaste },
                 // A set is renamed by a template rather than a name.
                 { id: "rename",
                   label: fileMenu.counted("Rename", "Rename %1 files by a pattern"),
@@ -1859,6 +1907,8 @@ Window {
                 case "copy-other": IndexModel.copyInto(paths, fileMenu.otherDir); break
                 case "move-other": IndexModel.moveInto(paths, fileMenu.otherDir); break
                 case "duplicate": IndexModel.duplicate(path); break
+                case "link-beside": win.linkBeside(path); break
+                case "link-here": win.linkHere(); break
                 // On the next tick, like `open-with`: the menu is still closing
                 // and its close would take the focus off the prompt opened here.
                 case "rename": Qt.callLater(win.startRename, path); break
