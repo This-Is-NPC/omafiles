@@ -142,6 +142,12 @@ public:
     /// are a scan of rows already in memory rather than anything to type.
     Q_INVOKABLE void markSameTag(const QString &path);
     Q_INVOKABLE void markSameType(const QString &path);
+    /// Marks every file row from one row to another, either way round, on top
+    /// of what is marked. Shift and a click, the way every list does it.
+    Q_INVOKABLE void markRange(int from, int to);
+    /// Marks every row whose name matches a shell pattern -- `*.pdf`,
+    /// `draft-?.md` -- on top of what is marked, and says how many that was.
+    Q_INVOKABLE int markMatching(const QString &pattern);
 
     /// The marked rows, in the order the listing shows them.
     ///

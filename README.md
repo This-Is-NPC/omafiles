@@ -36,6 +36,8 @@ at `pkgbuilds/omafiles`.
 - `t` — tag panel
 - `v` — saved views
 - `/` — filter the folder
+- `Space` — mark the row; `J` / `K` mark it and step; `*` marks by a pattern
+  like `*.pdf`; Shift and a click marks a range
 - `r` / `F2` — rename, which is `mv` with the tags kept
 - `n` — new folder
 - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` — copy, cut and paste files, through the

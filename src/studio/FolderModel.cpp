@@ -14,6 +14,7 @@
 #include <QMap>
 #include <QMimeDatabase>
 #include <QMimeType>
+#include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
 
@@ -515,6 +516,49 @@ void FolderModel::markSameType(const QString &path)
             marks.insert(entry.path);
     }
     m_tab->setMarked(marks);
+}
+
+// Both keep what is marked: a range and a pattern are ways of adding to the
+// set, and `A` is the way of emptying it. The set is rebuilt from the rows
+// rather than read back out of the tab because the tab has no list to give --
+// it answers `isMarked` -- and every row is asked anyway.
+void FolderModel::markRange(int from, int to)
+{
+    if (!m_tab || !validRow(from) || !validRow(to))
+        return;
+    const int first = std::min(from, to);
+    const int last = std::max(from, to);
+    QSet<QString> marks;
+    for (int i = 0; i < m_rows.size(); ++i) {
+        const Entry &entry = m_rows.at(i);
+        if (entry.path.isEmpty() || entry.kind == QLatin1String("parent"))
+            continue;
+        if (m_tab->isMarked(entry.path) || (i >= first && i <= last))
+            marks.insert(entry.path);
+    }
+    m_tab->setMarked(marks);
+}
+
+int FolderModel::markMatching(const QString &pattern)
+{
+    if (!m_tab || pattern.trimmed().isEmpty())
+        return 0;
+    const QRegularExpression glob(
+        QRegularExpression::wildcardToRegularExpression(pattern.trimmed()),
+        QRegularExpression::CaseInsensitiveOption);
+    int matched = 0;
+    QSet<QString> marks;
+    for (const Entry &entry : std::as_const(m_rows)) {
+        if (entry.path.isEmpty() || entry.kind == QLatin1String("parent"))
+            continue;
+        const bool hit = glob.match(entry.name).hasMatch();
+        if (hit)
+            ++matched;
+        if (hit || m_tab->isMarked(entry.path))
+            marks.insert(entry.path);
+    }
+    m_tab->setMarked(marks);
+    return matched;
 }
 
 QStringList FolderModel::markedPaths() const

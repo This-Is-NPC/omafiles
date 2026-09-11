@@ -42,6 +42,7 @@ Window {
     readonly property bool naming: prompt === "view"
     readonly property bool renaming: prompt === "rename"
     readonly property bool makingFolder: prompt === "folder"
+    readonly property bool matching: prompt === "match"
     /// The row the rename prompt is about. Held here and not read off the
     /// cursor when the answer comes, because the list can rebuild under an
     /// open prompt and the cursor is not promised to stay.
@@ -107,8 +108,10 @@ Window {
             { key: "Ctrl r", label: "reload index" } ] },
         { title: "mark", keys: [
             { key: "Space", label: "mark row" },
+            { key: "J K", label: "mark row, then down, up" },
             { key: "a", label: "mark all" },
             { key: "A", label: "clear marks" },
+            { key: "*", label: "mark by pattern" },
             { key: "m", label: "menu for a row, a tab or a view" },
             { key: "Menu", label: "menu for row or tab" },
             { key: "Shift F10", label: "menu for row or tab" } ] },
@@ -184,7 +187,8 @@ Window {
         if (prompt !== "")
             return [{ key: "Esc", label: "cancel" },
                     { key: "Enter", label: renaming ? "rename"
-                                         : makingFolder ? "make" : "save" }]
+                                         : makingFolder ? "make"
+                                         : matching ? "mark" : "save" }]
         if (onGraph)
             return [{ key: "?", label: "keys" },
                     { key: ":", label: "cmd" },
@@ -347,6 +351,24 @@ Window {
             IndexModel.copyInto(paths, dir)
         }
         return true
+    }
+
+    // A shell pattern over the names on screen, added to the marks. The count
+    // it made is on the status bar already, so the prompt has no receipt.
+    function startMarking() {
+        if (!onFiles || !activeFolder)
+            return
+        prompt = "match"
+        focusRegion = "filter"
+        filterField.text = ""
+        filterField.focusEntry()
+    }
+
+    function finishMarking(accept, text) {
+        prompt = ""
+        takeFocus()
+        if (accept && activeFolder && text.trim() !== "")
+            activeFolder.markMatching(text)
     }
 
     // Only where the list is a folder: a tag listing spans the index and has
@@ -940,6 +962,11 @@ Window {
         case "A": folder.clearMarks(); return true
         case "r": startRename(); return true
         case "n": startMakingFolder(); return true
+        case "*": startMarking(); return true
+        // Space and a step, in one key: the way a run of rows is marked
+        // without the thumb going back and forth.
+        case "J": folder.toggleMarkAt(listing.currentIndex); moveCursor(1); return true
+        case "K": folder.toggleMarkAt(listing.currentIndex); moveCursor(-1); return true
         case "s": if (activeTab) activeTab.cycleSortRole(); return true
         case "S": if (activeTab) activeTab.toggleSortDirection(); return true
         case "1": if (activeTab) activeTab.viewMode = "list"; return true
@@ -1310,6 +1337,7 @@ Window {
                     placeholder: win.naming ? "name this view"
                                : win.renaming ? "rename " + win.nameOf(win.promptPath)
                                : win.makingFolder ? "new folder"
+                               : win.matching ? "mark names matching, like *.pdf"
                                : "filter this folder"
                     onTextChanged: if (win.filtering && win.activeTab) win.activeTab.filter = text
                     onAccepted: function (value) {
@@ -1319,6 +1347,8 @@ Window {
                             win.finishRename(true, value)
                         else if (win.makingFolder)
                             win.finishMakingFolder(true, value)
+                        else if (win.matching)
+                            win.finishMarking(true, value)
                         else
                             win.finishFilter(false)
                     }
@@ -1329,6 +1359,8 @@ Window {
                             win.finishRename(false, "")
                         else if (win.makingFolder)
                             win.finishMakingFolder(false, "")
+                        else if (win.matching)
+                            win.finishMarking(false, "")
                         else
                             win.finishFilter(true)
                     }
@@ -1399,6 +1431,7 @@ Window {
                 { id: "paste", label: "Paste", key: "Ctrl+V" },
                 { id: "mark-all", label: "Mark all", key: "a" },
                 { id: "clear-marks", label: "Clear marks", key: "A" },
+                { id: "mark-pattern", label: "Mark by pattern", key: "*" },
                 { id: "clear-tag", label: "Leave the tag listing", key: "" },
                 { id: "view-list", label: "View as list", key: "1" },
                 { id: "view-details", label: "View as details", key: "2" },
@@ -1434,6 +1467,7 @@ Window {
                 case "paste": win.paste(); break
                 case "mark-all": if (win.activeFolder) win.activeFolder.markAll(); break
                 case "clear-marks": if (win.activeFolder) win.activeFolder.clearMarks(); break
+                case "mark-pattern": Qt.callLater(win.startMarking); break
                 case "clear-tag": if (win.activeTab) win.activeTab.selectedTag = ""; break
                 case "view-list": if (win.activeTab) win.activeTab.viewMode = "list"; break
                 case "view-details": if (win.activeTab) win.activeTab.viewMode = "details"; break
@@ -1577,6 +1611,7 @@ Window {
                 { id: "mark-same-tag", label: "Mark same tag",
                   when: fileMenu.onRow && fileMenu.targetTags.length > 0 },
                 { id: "mark-same-type", label: "Mark same type", when: fileMenu.onRow },
+                { id: "mark-pattern", label: "Mark by pattern", key: "*", when: win.onFiles },
 
                 { id: "filter-tag", label: "Filter by " + fileMenu.firstTag,
                   when: win.onFiles && fileMenu.firstTag !== "" },
@@ -1694,6 +1729,7 @@ Window {
                 case "invert-marks": if (folder) folder.invertMarks(); break
                 case "mark-same-tag": if (folder) folder.markSameTag(path); break
                 case "mark-same-type": if (folder) folder.markSameType(path); break
+                case "mark-pattern": Qt.callLater(win.startMarking); break
 
                 case "filter-tag":
                     if (win.activeTab) win.activeTab.selectedTag = fileMenu.firstTag
@@ -2535,9 +2571,15 @@ Window {
                             HoverHandler { id: rowHover }
 
                             TapHandler {
+                                id: rowTap
                                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 onTapped: function (point, button) {
                                     Workspace.focusedPane = filesRoot.paneIndex
+                                    // Shift marks from the cursor to here
+                                    // before the cursor moves here.
+                                    if (button === Qt.LeftButton
+                                            && (rowTap.point.modifiers & Qt.ShiftModifier))
+                                        folder.markRange(listing.currentIndex, row.index)
                                     filesRoot.setCursor(row.index)
                                     win.takeFocus()
                                     if (button === Qt.RightButton) {
@@ -2623,9 +2665,13 @@ Window {
                                 HoverHandler { id: cellHover }
 
                                 TapHandler {
+                                    id: cellTap
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                                     onTapped: function (point, button) {
                                         Workspace.focusedPane = filesRoot.paneIndex
+                                        if (button === Qt.LeftButton
+                                                && (cellTap.point.modifiers & Qt.ShiftModifier))
+                                            folder.markRange(grid.currentIndex, cell.index)
                                         filesRoot.setCursor(cell.index)
                                         win.takeFocus()
                                         if (button === Qt.RightButton) {

@@ -250,6 +250,7 @@ private slots:
     void walksIntoWhatCarriesNoTag();
     void renamesAndMakesAFolderFromThePromptBar();
     void copiesCutsAndPastesThroughTheDesktopClipboard();
+    void marksARunARangeAndAPattern();
 
 private:
     QQuickWindow *window() const;
@@ -3146,6 +3147,8 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         {"]", "tabs"},    {"[", "tabs"},
         {"/", ""},                         // opens the filter bar
         {"r", ""},        {"n", ""},       // open a prompt in it
+        {"*", ""},
+        {"J", ""},        {"K", ""},
     };
 
     // The other half of the sheet: the rows spelled as words. The sweep below
@@ -4999,6 +5002,91 @@ void TestStudio::copiesCutsAndPastesThroughTheDesktopClipboard()
     m_clipboard->clear();
     tab()->setCwd(m_tree.path());
     settle();
+}
+
+// Three ways of marking more than one row at a time, each on top of the last.
+void TestStudio::marksARunARangeAndAPattern()
+{
+    QObject *root = m_engine->rootObjects().first();
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    const auto marked = [this](const QString &name) {
+        focusRow(name);
+        return filesRoot()->property("entry").toMap()
+            .value(QStringLiteral("marked")).toBool();
+    };
+    QMetaObject::invokeMethod(folder, "clearMarks");
+
+    // `J` marks and steps down; `K` marks and steps up.
+    focusRow(QStringLiteral("one.txt"));
+    const int start = cursor();
+    key('J');
+    QCOMPARE(cursor(), start + 1);
+    QCOMPARE(folder->property("markedCount").toInt(), 1);
+    key('K');
+    QCOMPARE(cursor(), start);
+    QCOMPARE(folder->property("markedCount").toInt(), 2);
+    QVERIFY(marked(QStringLiteral("one.txt")));
+    key('A');
+    QCOMPARE(folder->property("markedCount").toInt(), 0);
+
+    // `*` asks for a pattern, and Enter marks what it names, case aside.
+    // Counted off the rows rather than off the fixture, because cases before
+    // this one leave files of their own in the tree.
+    const auto rowsEndingIn = [&](const QString &suffix) {
+        int n = 0;
+        for (int i = 0; i < folder->property("count").toInt(); ++i) {
+            QString path;
+            QMetaObject::invokeMethod(folder, "pathAt", Q_RETURN_ARG(QString, path),
+                                      Q_ARG(int, i));
+            if (path.endsWith(suffix, Qt::CaseInsensitive))
+                ++n;
+        }
+        return n;
+    };
+    const int texts = rowsEndingIn(QStringLiteral(".txt"));
+    const int marks = rowsEndingIn(QStringLiteral(".md"));
+    QVERIFY(texts >= 3 && marks >= 2);
+    key('*');
+    QCOMPARE(root->property("prompt").toString(), QStringLiteral("match"));
+    QMetaObject::invokeMethod(root, "finishMarking", Q_ARG(QVariant, QVariant(true)),
+                              Q_ARG(QVariant, QVariant(QStringLiteral("*.TXT"))));
+    settle();
+    QCOMPARE(root->property("prompt").toString(), QString());
+    QCOMPARE(folder->property("markedCount").toInt(), texts);
+    QVERIFY(marked(QStringLiteral("one.txt")));
+    QVERIFY(marked(QStringLiteral("seven.txt")));
+    QVERIFY(marked(QStringLiteral("plain.txt")));
+    QVERIFY(!marked(QStringLiteral("two.md")));
+
+    // On top of what was marked, not instead of it.
+    key('*');
+    QMetaObject::invokeMethod(root, "finishMarking", Q_ARG(QVariant, QVariant(true)),
+                              Q_ARG(QVariant, QVariant(QStringLiteral("*.md"))));
+    settle();
+    QCOMPARE(folder->property("markedCount").toInt(), texts + marks);
+    key('A');
+
+    // Shift and a click marks from the cursor to the row clicked, both ends
+    // in, whichever is above.
+    const int from = rowOf(QStringLiteral("alpha"));
+    const int to = rowOf(QStringLiteral("one.txt"));
+    QVERIFY(from >= 0 && to > from);
+    QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(to)));
+    settle();
+    window()->grabWindow();
+    QQuickItem *target = viewItemAt(filesRoot()->property("view").value<QObject *>(), from);
+    QVERIFY2(target, "the row to click is not on screen");
+    const QPointF at = target->mapToScene(QPointF(target->width() * 0.3,
+                                                  target->height() * 0.5));
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::ShiftModifier, at.toPoint());
+    settle();
+    QCOMPARE(cursor(), from);
+    QCOMPARE(folder->property("markedCount").toInt(), to - from + 1);
+    QVERIFY(marked(QStringLiteral("alpha")));
+    QVERIFY(marked(QStringLiteral("one.txt")));
+
+    key('A');
+    QCOMPARE(folder->property("markedCount").toInt(), 0);
 }
 
 QTEST_MAIN(TestStudio)
