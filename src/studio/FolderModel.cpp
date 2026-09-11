@@ -204,6 +204,15 @@ void FolderModel::setUntagged(bool untagged)
     rebuild();
 }
 
+void FolderModel::setPattern(const QString &pattern)
+{
+    if (m_pattern == pattern)
+        return;
+    m_pattern = pattern;
+    emit patternChanged();
+    rebuild();
+}
+
 bool FolderModel::browsingFacets() const
 {
     return m_tab && m_tab->kind() == QLatin1String("tags");
@@ -351,6 +360,11 @@ void FolderModel::goUp()
     // Up out of a tag is the tag itself coming off, not a folder above it.
     if (browsingFacets()) {
         m_tab->leaveFacet();
+        return;
+    }
+    // And up out of a search is the folder the tab was standing in before it.
+    if (!m_pattern.isEmpty()) {
+        setPattern(QString());
         return;
     }
     // Walking out of a folder should land the cursor on that folder, not on the
@@ -939,25 +953,33 @@ void FolderModel::listFacets()
 // nobody scrolls to. So it draws a screenful and a half of them, says how many
 // there are, and names the filter as the way to narrow it -- the same bargain
 // the graph tab makes with a large index.
-constexpr int kUntaggedShown = 2000;
+constexpr int kNamesShown = 2000;
 
-// What carries no tag at all, out of the lists of names `sweep` writes.
+// What carries no tag at all, or what fits a pattern, out of the lists of
+// names `sweep` writes.
 //
-// The index cannot answer this: it holds rows that carry a tag, so what has no
-// tag has no row, and the exact answer is a walk of the tree every time it is
-// asked. `omafiles ls --untagged` is that walk and stays exact; this is the
-// same answer out of a list that is as old as the last sweep, which is what
-// makes it affordable from a panel somebody is typing into.
+// The index cannot answer either: it holds rows that carry a tag, so what has
+// no tag has no row and a name has nothing to do with tags, and the exact
+// answer is a walk of the tree every time it is asked. `omafiles ls --untagged`
+// and `ls --name` are that walk and stay exact; this is the same answer out of
+// a list that is as old as the last sweep, which is what makes it affordable
+// from a panel somebody is typing into.
 //
 // The age is said on the status line for that reason. A listing that is quietly
 // out of date is worse than one that is openly out of date, because only the
 // second can be judged.
-void FolderModel::listUntagged()
+void FolderModel::listNames()
 {
     Entry parent;
     parent.name = QStringLiteral("..");
     parent.kind = QStringLiteral("parent");
     m_rows.append(parent);
+
+    const bool onlyUntagged = browsingFacets() && m_untagged;
+    const QRegularExpression glob(
+        m_pattern.isEmpty() ? QString()
+                            : QRegularExpression::wildcardToRegularExpression(m_pattern),
+        QRegularExpression::CaseInsensitiveOption);
 
     if (roots().isEmpty()) {
         m_error = QStringLiteral("no root is declared, so there is no scope for the "
@@ -991,17 +1013,19 @@ void FolderModel::listUntagged()
         }
         oldest = qMax(oldest, age);
         for (const QString &path : std::as_const(names)) {
-            if (m_index && !m_index->tagsForPath(path).isEmpty())
+            if (onlyUntagged && m_index && !m_index->tagsForPath(path).isEmpty())
                 continue;
             // Matched on the string before anything stats it: the filter is
             // what makes a large answer usable, so it has to be the cheap step.
             const QString name = path.mid(path.lastIndexOf(QLatin1Char('/')) + 1);
+            if (!m_pattern.isEmpty() && !glob.match(name).hasMatch())
+                continue;
             if (!needle.isEmpty() && !name.toLower().contains(needle))
                 continue;
             if (!m_showHidden && name.startsWith(QLatin1Char('.')))
                 continue;
             ++found;
-            if (files.size() >= kUntaggedShown)
+            if (files.size() >= kNamesShown)
                 continue;
             files.append(describe(QFileInfo(path), name));
         }
@@ -1077,9 +1101,11 @@ void FolderModel::rebuild()
     m_rows.clear();
     m_error.clear();
     if (browsingFacets() && m_untagged)
-        listUntagged();
+        listNames();
     else if (browsingFacets())
         listFacets();
+    else if (!m_pattern.isEmpty())
+        listNames();
     else if (m_selectedTag.isEmpty())
         listDirectory();
     else

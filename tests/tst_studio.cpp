@@ -253,6 +253,7 @@ private slots:
     void renamesAndMakesAFolderFromThePromptBar();
     void copiesCutsAndPastesThroughTheDesktopClipboard();
     void marksARunARangeAndAPattern();
+    void findsByNameAcrossTheRoots();
 
 private:
     QQuickWindow *window() const;
@@ -3164,7 +3165,7 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         {"]", "tabs"},    {"[", "tabs"},
         {"/", ""},                         // opens the filter bar
         {"r", ""},        {"n", ""},       // open a prompt in it
-        {"*", ""},
+        {"*", ""},        {"f", ""},
         {"J", ""},        {"K", ""},
     };
 
@@ -5125,6 +5126,78 @@ void TestStudio::marksARunARangeAndAPattern()
 
     key('A');
     QCOMPARE(folder->property("markedCount").toInt(), 0);
+}
+
+// `f` is `ls --name <glob> --cached` as a listing: every name under the roots
+// that fits, out of the lists `sweep` wrote, with their age said out loud.
+void TestStudio::findsByNameAcrossTheRoots()
+{
+    QObject *root = m_engine->rootObjects().first();
+    QTemporaryDir cache;
+    QTemporaryDir shelf;
+    QVERIFY(cache.isValid() && shelf.isValid());
+    const QDir room(shelf.path());
+    for (const char *name : {"paper.pdf", "SLIDES.PDF", "notes.txt"}) {
+        QFile file(room.filePath(QString::fromLatin1(name)));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("x");
+    }
+    const QByteArray previousCache = qgetenv("XDG_CACHE_HOME");
+    qputenv("XDG_CACHE_HOME", cache.path().toUtf8());
+    const QVector<Root> previousRoots =
+        setRoots({Root{QStringLiteral("shelf"), room.absolutePath(), false, QString()}});
+    const auto restore = qScopeGuard([&previousCache, &previousRoots] {
+        qputenv("XDG_CACHE_HOME", previousCache);
+        setRoots(previousRoots);
+    });
+    const QDir names(QDir(cache.path()).filePath(QStringLiteral("omafiles/names")));
+    QVERIFY(QDir().mkpath(names.absolutePath()));
+    QFile list(names.filePath(QStringLiteral("shelf")));
+    QVERIFY(list.open(QIODevice::WriteOnly | QIODevice::Text));
+    list.write("SLIDES.PDF\nnotes.txt\npaper.pdf\n");
+    list.close();
+
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    const auto files = [folder] {
+        QStringList out;
+        for (int i = 0; i < folder->property("count").toInt(); ++i) {
+            QVariantMap entry;
+            QMetaObject::invokeMethod(folder, "entryAt", Q_RETURN_ARG(QVariantMap, entry),
+                                      Q_ARG(int, i));
+            if (entry.value(QStringLiteral("kind")).toString() == QLatin1String("file"))
+                out.append(entry.value(QStringLiteral("name")).toString());
+        }
+        return out;
+    };
+
+    // Asked from the prompt bar, folded, and titled with the pattern.
+    key('f');
+    QCOMPARE(root->property("prompt").toString(), QStringLiteral("find"));
+    QMetaObject::invokeMethod(root, "finishFinding", Q_ARG(QVariant, QVariant(true)),
+                              Q_ARG(QVariant, QVariant(QStringLiteral("*.pdf"))));
+    settle();
+    QCOMPARE(tab()->pattern(), QStringLiteral("*.pdf"));
+    QCOMPARE(tab()->title(), QStringLiteral("*.pdf"));
+    QCOMPARE(files(), (QStringList{QStringLiteral("paper.pdf"), QStringLiteral("SLIDES.PDF")}));
+    QVERIFY2(folder->property("error").toString().contains(QStringLiteral("as of ")),
+             qPrintable(folder->property("error").toString()));
+    QObject *crumbs = root->findChild<QObject *>(QStringLiteral("pathCrumbs"));
+    QVERIFY(crumbs);
+    QCOMPARE(crumbs->property("full").toString(), QStringLiteral("*.pdf"));
+
+    // A search is nowhere in particular, so nothing is made or pasted in it,
+    // and the menu says how to leave it.
+    key('n');
+    QCOMPARE(root->property("prompt").toString(), QString());
+    key('m');
+    QVERIFY(menuLabels(QStringLiteral("fileMenu")).contains(QStringLiteral("Leave the search")));
+    key(Qt::Key_Escape);
+
+    // `h` is the way back to the folder the tab was standing in.
+    key('h');
+    QCOMPARE(tab()->pattern(), QString());
+    QCOMPARE(cwd(), m_tree.path());
+    QVERIFY(files().contains(QStringLiteral("one.txt")));
 }
 
 QTEST_MAIN(TestStudio)

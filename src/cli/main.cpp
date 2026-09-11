@@ -223,11 +223,14 @@ Tags:
   tag merge  <from> <to>            (alias: tag rename)
 
 Asking:
-  ls       [--tag <tag>]... [--any <tag>]... [--untagged]
+  ls       [--tag <tag>]... [--any <tag>]... [--untagged] [--name <glob>]
            [--cached] [--ext <ext>]... [--since <duration>] [dir]
                                     --since counts from when it was tagged
-                                    --cached answers --untagged out of the
-                                    list sweep built, and says its age
+                                    --name alone asks the disk, like
+                                    --untagged; with a tag it narrows the rows
+                                    --cached answers --untagged and --name
+                                    out of the list sweep built, and says
+                                    its age
   tags     [dir]
   has      --tag <tag> -- <path>    exit 0 if tagged, 1 if not
   json     -- <path>
@@ -1098,10 +1101,30 @@ const Exclusion kUntaggedExcludes[] = {
     {QLatin1String("--since"), QLatin1String("an untagged file was never tagged")},
 };
 
-int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringList &anys,
-           bool untagged, bool cached, const QStringList &exts, qint64 sinceSeconds,
-           const QStringList &positionals)
+// Whether the name at the end of `path` fits a shell pattern. Folded, because
+// `*.PDF` and `*.pdf` are the same question to anyone who types it, and on
+// the name alone -- the directories above it are what `[dir]` is for.
+bool matchesName(const QString &path, const QRegularExpression &glob)
 {
+    if (glob.pattern().isEmpty())
+        return true;
+    return glob.match(QFileInfo(path).fileName()).hasMatch();
+}
+
+int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringList &anys,
+           bool untagged, bool cached, const QString &namePattern, const QStringList &exts,
+           qint64 sinceSeconds, const QStringList &positionals)
+{
+    // `--name` alone is a question about the disk, the way `--untagged` is:
+    // with no tag in the question there is no reason to answer out of the
+    // index, which only knows the files that carry one. Beside a tag, or
+    // `--since`, it narrows the rows those already chose.
+    const bool askingDisk = untagged
+        || (!namePattern.isEmpty() && ands.isEmpty() && anys.isEmpty() && sinceSeconds < 0);
+    const QRegularExpression glob(
+        namePattern.isEmpty() ? QString()
+                              : QRegularExpression::wildcardToRegularExpression(namePattern),
+        QRegularExpression::CaseInsensitiveOption);
     // The contradictions before anything else is resolved: a flag that cannot
     // be combined is wrong whatever the paths turn out to be, so `ls --untagged
     // --any x /nope` names the flag rather than sending somebody after the
@@ -1130,10 +1153,10 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
     // Every other listing already comes out of the index, which is one file and
     // is read whole; there is nothing a cache could make faster about it, so a
     // flag accepted there would be a flag that did nothing.
-    if (cached && !untagged) {
-        fail(QStringLiteral("ls: --cached answers --untagged without walking the disk; "
-                            "every other listing is the index, which is already read "
-                            "whole"));
+    if (cached && !askingDisk) {
+        fail(QStringLiteral("ls: --cached answers --untagged and --name without walking "
+                            "the disk; every other listing is the index, which is "
+                            "already read whole"));
         return kUsage;
     }
 
@@ -1154,7 +1177,7 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
     // because these are sentences about a root and that one is suffixed with
     // `it was not listed`, which is about a path.
     QStringList uncovered;
-    if (untagged && cached) {
+    if (askingDisk && cached) {
         // The whole point is that nothing here touches the disk: no walk, and
         // no `stat` on the way out either. What comes back is what the tree
         // held when the list was built, which is why the age is said out loud
@@ -1173,7 +1196,8 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
         }
         if (scope.isEmpty()) {
             fail(QStringLiteral("ls: %1 is under no declared root, so there is no list "
-                                "of names covering it; plain `--untagged` walks it")
+                                "of names covering it; the same question without "
+                                "--cached walks it")
                      .arg(dir));
             return kUsage;
         }
@@ -1209,12 +1233,16 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
                 // ~/docs.
                 if (!dir.isEmpty() && (path == dir || !isUnderDirectory(path, dir)))
                     continue;
-                if (!s.store.get(path).tags.isEmpty())
+                // The row it has, so a `--name` answer carries the tags the
+                // file wears, the way the walk below carries them.
+                const Record record = s.store.get(path);
+                if (untagged && !record.tags.isEmpty())
                     continue;
-                if (!matchesExt(path, exts))
+                if (!matchesName(path, glob) || !matchesExt(path, exts))
                     continue;
-                Record row;
-                row.path = path;
+                Record row = record;
+                if (row.path.isEmpty())
+                    row.path = path;
                 hits.append(row);
             }
         }
@@ -1223,11 +1251,11 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
         // note beside a run that succeeded, so `--quiet` takes it away.
         if (oldest >= 0) {
             warn(g, QStringLiteral("ls: from a list of names built %1 ago; "
-                                   "`omafiles sweep` rebuilds it, and plain --untagged "
-                                   "walks the disk and is exact")
+                                   "`omafiles sweep` rebuilds it, and the same question "
+                                   "without --cached walks the disk and is exact")
                         .arg(spelledDuration(oldest)));
         }
-    } else if (untagged) {
+    } else if (askingDisk) {
         // `[dir]` is optional, and `verify`, `reindex` and `prune` all read an
         // absent one as the current directory.
         const QString root = dir.isEmpty() ? QDir::currentPath() : dir;
@@ -1237,9 +1265,9 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
         for (const QString &canonical : tagWalk(root, false, &unreadable, &unnamed)) {
             QString error;
             const Record record = s.store.get(canonical);
-            if (!record.tags.isEmpty())
+            if (untagged && !record.tags.isEmpty())
                 continue;
-            if (!matchesExt(canonical, exts))
+            if (!matchesName(canonical, glob) || !matchesExt(canonical, exts))
                 continue;
             Record stampedRecord = record;
             if (stampedRecord.path.isEmpty()) {
@@ -1266,7 +1294,7 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
                 continue;
             if (!matchesTags(record, ands, anys))
                 continue;
-            if (!matchesExt(record.path, exts))
+            if (!matchesName(record.path, glob) || !matchesExt(record.path, exts))
                 continue;
             // Asked after the other filters for the same reason the count
             // below is: a row this query was never going to return is not a
@@ -1802,7 +1830,8 @@ QStringList completionFor(const QStringList &words)
             flags << QStringLiteral("--tag");
         if (verb == QLatin1String("ls")) {
             flags << QStringLiteral("--any") << QStringLiteral("--untagged")
-                  << QStringLiteral("--ext") << QStringLiteral("--since");
+                  << QStringLiteral("--ext") << QStringLiteral("--since")
+                  << QStringLiteral("--name");
             // Not the ones already contradicted by what is on the line: a flag
             // the verb will refuse is completion for an error message. Asked of
             // the same table the refusal reads.
@@ -4201,7 +4230,9 @@ int parseFlags(QStringList args, Parsed *parsed, const Takes &takes)
             continue;
         }
         if (arg == QLatin1String("--name")) {
-            if (!takes.view) {
+            // A view's name, or the name `ls` asks after: one word, one slot,
+            // and which it means is the verb's to know.
+            if (!takes.view && !takes.lsFlags) {
                 fail(QStringLiteral("unexpected %1").arg(arg));
                 return kUsage;
             }
@@ -4801,7 +4832,12 @@ int dispatch(const Globals &g, Session &s, QStringList rest)
                 return kUsage;
             }
         }
-        return cmdLs(g, s, ands, anys, parsed.untagged, parsed.cached, parsed.exts,
+        if (parsed.name.trimmed().isEmpty() && !parsed.name.isNull()) {
+            fail(QStringLiteral("ls: --name needs a pattern, like '*.pdf'"));
+            return kUsage;
+        }
+        return cmdLs(g, s, ands, anys, parsed.untagged, parsed.cached, parsed.name,
+                     parsed.exts,
                      sinceSeconds, parsed.positionals);
     }
     if (cmd == QLatin1String("tags")) {

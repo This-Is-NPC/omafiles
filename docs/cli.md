@@ -84,6 +84,11 @@ A row whose file is gone is left out rather than listed as a path that is not th
 
   Refused without `--untagged`: every other listing is the index, which is one file read whole, and there is nothing a cache could make faster about it.
 - **`--ext <ext>`** — Filter by extension
+- **`--name <glob>`** — Only names fitting a shell pattern, like `*.pdf` or `invoice-??.*`.
+
+  Folded, so `*.PDF` and `*.pdf` are one question, and matched against the name alone -- the folders above it are what `[dir]` is for.
+
+  Alone, it is a question about the disk, the way `--untagged` is: a name has nothing to do with whether a file was filed, and the index only knows the files that were, so `ls --name '*.pdf' ~/docs` walks the tree and lists every file that fits, tags and all, exactly as `--untagged` walks it -- and says what it could not walk in the same words. `--cached` answers it out of the list `sweep` built instead, instantly and as old as that sweep, under the declared roots and nowhere else; the note it prints and the refusals it makes are `--cached`'s own. Beside `--tag`, `--any` or `--since` it narrows the rows those chose, and no walk is made.
 - **`--since <duration>`** — Tagged in the last duration, e.g. 7d
 
 ## `omafiles tags`

@@ -36,6 +36,9 @@ at `pkgbuilds/omafiles`.
 - `t` — tag panel
 - `v` — saved views
 - `/` — filter the folder
+- `f` — find by name across the declared roots, `*.pdf` and the like, out of
+  the list `sweep` wrote; the status line says how old that list is, and `h`
+  comes back out
 - `Space` — mark the row; `J` / `K` mark it and step; `*` marks by a pattern
   like `*.pdf`; Shift and a click marks a range
 - `r` / `F2` — rename, which is `mv` with the tags kept; over a marked set it

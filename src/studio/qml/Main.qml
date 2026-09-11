@@ -44,6 +44,7 @@ Window {
     readonly property bool renamingSet: prompt === "set"
     readonly property bool makingFolder: prompt === "folder"
     readonly property bool matching: prompt === "match"
+    readonly property bool finding: prompt === "find"
     /// The row the rename prompt is about, or the set. Held here and not read
     /// off the cursor when the answer comes, because the list can rebuild
     /// under an open prompt and the cursor is not promised to stay.
@@ -135,6 +136,7 @@ Window {
             { key: "Ctrl v", label: "paste into this folder" } ] },
         { title: "find", keys: [
             { key: "/", label: "filter this folder" },
+            { key: "f", label: "find by name across the roots" },
             { key: "Enter", label: "keep filter" },
             { key: "Esc", label: "clear filter" },
             { key: "t", label: "tag panel" },
@@ -190,7 +192,8 @@ Window {
             return [{ key: "Esc", label: "cancel" },
                     { key: "Enter", label: renaming || renamingSet ? "rename"
                                          : makingFolder ? "make"
-                                         : matching ? "mark" : "save" }]
+                                         : matching ? "mark"
+                                         : finding ? "find" : "save" }]
         if (onGraph)
             return [{ key: "?", label: "keys" },
                     { key: ":", label: "cmd" },
@@ -342,7 +345,7 @@ Window {
     // Whether a paste has somewhere to land: a folder, and not a tag listing,
     // which spans the index and is nowhere in particular.
     readonly property bool canPaste: onDirectory && activeTab.selectedTag === ""
-                                     && Clipboard.holdsFiles
+                                     && activeTab.pattern === "" && Clipboard.holdsFiles
 
     function paste() {
         const folder = activeFolder
@@ -360,6 +363,28 @@ Window {
             IndexModel.copyInto(paths, dir)
         }
         return true
+    }
+
+    // A shell pattern over every name under the declared roots, answered out
+    // of the lists `sweep` writes: `ls --name <glob> --cached`, as a listing.
+    // The tab stays where it was, and `h` brings it back there.
+    function startFinding() {
+        if (!onDirectory || !activeFolder)
+            return
+        prompt = "find"
+        focusRegion = "filter"
+        filterField.text = activeTab.pattern
+        filterField.focusEntry()
+    }
+
+    function finishFinding(accept, text) {
+        prompt = ""
+        takeFocus()
+        const pattern = text.trim()
+        if (!accept || pattern === "" || !activeTab)
+            return
+        activeTab.selectedTag = ""
+        activeTab.pattern = pattern
     }
 
     // A shell pattern over the names on screen, added to the marks. The count
@@ -406,7 +431,8 @@ Window {
     // Only where the list is a folder: a tag listing spans the index and has
     // nowhere to put one.
     function startMakingFolder() {
-        if (!onDirectory || !activeFolder || activeTab.selectedTag !== "")
+        if (!onDirectory || !activeFolder || activeTab.selectedTag !== ""
+                || activeTab.pattern !== "")
             return
         prompt = "folder"
         focusRegion = "filter"
@@ -454,9 +480,11 @@ Window {
                 }
             } else {
                 // Typing a path asks for that folder, which is a different
-                // question from the tag that may be on screen.
-                if (activeTab)
+                // question from the tag or the search that may be on screen.
+                if (activeTab) {
                     activeTab.selectedTag = ""
+                    activeTab.pattern = ""
+                }
                 activeFolder.directory = text
             }
         }
@@ -995,6 +1023,7 @@ Window {
         case "r": startRename(); return true
         case "n": startMakingFolder(); return true
         case "*": startMarking(); return true
+        case "f": startFinding(); return true
         // Space and a step, in one key: the way a run of rows is marked
         // without the thumb going back and forth.
         case "J": folder.toggleMarkAt(listing.currentIndex); moveCursor(1); return true
@@ -1251,6 +1280,11 @@ Window {
                                                      win.activeTab.untagged)
                             if (win.activeTab.kind !== "files")
                                 return ""
+                            // A search spans the roots the way a tag spans
+                            // the index, so it is spelled as the pattern
+                            // and not as a folder the window is not in.
+                            if (win.activeTab.pattern !== "")
+                                return win.activeTab.pattern
                             return win.activeTab.selectedTag !== ""
                                    ? "#" + win.activeTab.selectedTag : win.activeTab.cwd
                         }
@@ -1372,6 +1406,7 @@ Window {
                                                    + " files: {name} {stem} {ext} {n}"
                                : win.makingFolder ? "new folder"
                                : win.matching ? "mark names matching, like *.pdf"
+                               : win.finding ? "find names across the roots, like *.pdf"
                                : "filter this folder"
                     onTextChanged: if (win.filtering && win.activeTab) win.activeTab.filter = text
                     onAccepted: function (value) {
@@ -1385,6 +1420,8 @@ Window {
                             win.finishMakingFolder(true, value)
                         else if (win.matching)
                             win.finishMarking(true, value)
+                        else if (win.finding)
+                            win.finishFinding(true, value)
                         else
                             win.finishFilter(false)
                     }
@@ -1399,6 +1436,8 @@ Window {
                             win.finishMakingFolder(false, "")
                         else if (win.matching)
                             win.finishMarking(false, "")
+                        else if (win.finding)
+                            win.finishFinding(false, "")
                         else
                             win.finishFilter(true)
                     }
@@ -1462,6 +1501,8 @@ Window {
                 { id: "up", label: "Go to parent folder", key: "h" },
                 { id: "path", label: "Type a path", key: "Ctrl+L" },
                 { id: "filter", label: "Filter this folder", key: "/" },
+                { id: "find", label: "Find by name across the roots", key: "f" },
+                { id: "leave-search", label: "Leave the search", key: "h" },
                 { id: "rename", label: "Rename", key: "r" },
                 { id: "new-folder", label: "New folder", key: "n" },
                 { id: "copy-files", label: "Copy", key: "Ctrl+C" },
@@ -1498,6 +1539,8 @@ Window {
                 case "up": if (win.activeFolder) win.activeFolder.goUp(); break
                 case "path": Qt.callLater(win.startPathEdit); break
                 case "filter": Qt.callLater(win.startFilter); break
+                case "find": Qt.callLater(win.startFinding); break
+                case "leave-search": if (win.activeTab) win.activeTab.pattern = ""; break
                 case "rename": Qt.callLater(win.startRename); break
                 case "new-folder": Qt.callLater(win.startMakingFolder); break
                 case "copy-files": win.copyToClipboard(false); break
@@ -1665,6 +1708,10 @@ Window {
                   when: win.onFiles },
                 { id: "leave-tag", label: "Leave tag listing",
                   when: win.activeTab !== null && win.activeTab.selectedTag !== "" },
+                { id: "find", label: "Find by name across the roots", key: "f",
+                  when: win.onDirectory },
+                { id: "leave-search", label: "Leave the search", key: "h",
+                  when: win.onDirectory && win.activeTab.pattern !== "" },
                 // Not offered where the row already carries it: applying a
                 // tag a file has is a write that changes nothing, and an entry
                 // that does nothing reads as one that failed.
@@ -1704,7 +1751,8 @@ Window {
                   label: fileMenu.counted("Rename", "Rename %1 files by a pattern"),
                   key: "r", when: fileMenu.isRow },
                 { id: "new-folder", label: "New folder", key: "n",
-                  when: win.onDirectory && win.activeTab.selectedTag === "" },
+                  when: win.onDirectory && win.activeTab.selectedTag === ""
+                        && win.activeTab.pattern === "" },
                 { id: "trash", label: fileMenu.counted("Move to trash", "Move %1 files to trash"),
                   when: fileMenu.isRow },
 
@@ -1776,6 +1824,8 @@ Window {
                 case "browse-tag": win.openTagsTab([fileMenu.firstTag]); break
                 case "save-view": Qt.callLater(win.startNaming); break
                 case "leave-tag": if (win.activeTab) win.activeTab.selectedTag = ""; break
+                case "find": Qt.callLater(win.startFinding); break
+                case "leave-search": if (win.activeTab) win.activeTab.pattern = ""; break
                 case "tag-add": IndexModel.tagAdd(paths, fileMenu.focusedTag); break
                 case "tag-rm": IndexModel.tagRemove(paths, fileMenu.focusedTag); break
                 case "tag-clear": IndexModel.tagClear(paths); break
@@ -2342,6 +2392,7 @@ Window {
                 selectedTag: filesRoot.tab ? filesRoot.tab.selectedTag : ""
                 facets: filesRoot.tab ? filesRoot.tab.facets : []
                 untagged: filesRoot.tab ? filesRoot.tab.untagged : false
+                pattern: filesRoot.tab ? filesRoot.tab.pattern : ""
                 showHidden: filesRoot.tab ? filesRoot.tab.showHidden : false
                 sortRole: filesRoot.tab ? filesRoot.tab.sortRole : "name"
                 sortAscending: filesRoot.tab ? filesRoot.tab.sortAscending : true
@@ -2350,6 +2401,9 @@ Window {
                 // listing, so the tag travels back to the tab the way the
                 // directory does.
                 onSelectedTagChanged: if (filesRoot.tab) filesRoot.tab.selectedTag = selectedTag
+                // `h` out of a search ends it in the model, and the tab has
+                // to hear so its title and path bar follow.
+                onPatternChanged: if (filesRoot.tab) filesRoot.tab.pattern = pattern
                 onChanged: Qt.callLater(filesRoot.restoreCursor)
                 // The panel reads one row, and marking does not move the
                 // cursor: without this the `marked` line only catches up when

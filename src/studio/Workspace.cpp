@@ -43,10 +43,22 @@ QString TabState::title() const
         sorted.sort();
         return QStringLiteral("#") + sorted.join(QStringLiteral("/#"));
     }
+    if (!m_pattern.isEmpty())
+        return m_pattern;
     if (!m_selectedTag.isEmpty())
         return QStringLiteral("#") + m_selectedTag;
     const QString name = QFileInfo(m_cwd).fileName();
     return name.isEmpty() ? m_cwd : name;
+}
+
+void TabState::setPattern(const QString &pattern)
+{
+    if (m_pattern == pattern)
+        return;
+    m_pattern = pattern;
+    setMarked({});                           // the listing changed under them
+    emit patternChanged();
+    emit titleChanged();
 }
 
 // Marks end with the listing they were made in, for the reason `setCwd` gives:

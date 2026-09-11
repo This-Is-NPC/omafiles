@@ -36,6 +36,11 @@ class TabState : public QObject
     Q_PROPERTY(QStringList facets READ facets WRITE setFacets NOTIFY facetsChanged)
     Q_PROPERTY(bool untagged READ untagged WRITE setUntagged NOTIFY facetsChanged)
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY filterChanged)
+    /// A shell pattern a files tab is answering across the roots -- `*.pdf` --
+    /// out of the lists of names `sweep` writes. Empty when the tab is a
+    /// folder. It is not the filter: the filter narrows what is on screen,
+    /// and this decides what is on screen.
+    Q_PROPERTY(QString pattern READ pattern WRITE setPattern NOTIFY patternChanged)
     Q_PROPERTY(QString viewMode READ viewMode WRITE setViewMode NOTIFY viewModeChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
     Q_PROPERTY(QString sortRole READ sortRole WRITE setSortRole NOTIFY sortChanged)
@@ -70,6 +75,8 @@ public:
     Q_INVOKABLE void enterFacet(const QString &tag);
     Q_INVOKABLE void leaveFacet();
     QString filter() const { return m_filter; }
+    QString pattern() const { return m_pattern; }
+    void setPattern(const QString &pattern);
     QString viewMode() const { return m_viewMode; }
     bool showHidden() const { return m_showHidden; }
     QString sortRole() const { return m_sortRole; }
@@ -114,6 +121,7 @@ signals:
     void cwdChanged();
     void facetsChanged();
     void filterChanged();
+    void patternChanged();
     void viewModeChanged();
     void showHiddenChanged();
     void sortChanged();
@@ -127,6 +135,7 @@ private:
     QStringList m_facets;
     bool m_untagged = false;
     QString m_filter;
+    QString m_pattern;
     QString m_viewMode = QStringLiteral("list");
     bool m_showHidden = false;
     QString m_sortRole = QStringLiteral("name");

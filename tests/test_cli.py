@@ -251,6 +251,7 @@ def main():
         check_a_sweep_only_ever_adds(data, workspace)
         check_a_list_of_names_is_not_the_index(data, workspace)
         check_mv_renames_a_set_by_rule(data, workspace)
+        check_ls_name_asks_the_disk_or_the_list(data, workspace)
 
     print("ok")
 
@@ -5653,6 +5654,64 @@ def check_mv_renames_a_set_by_rule(data, workspace):
     # And the plain form still takes exactly two, in the same words as before.
     assert "takes exactly two paths" in run(data, "mv", str(pics[1])).stderr
     assert run(data, "verify", str(room)).returncode == 0
+
+
+def check_ls_name_asks_the_disk_or_the_list(data, workspace):
+    """--name: a shell pattern over names, on the disk, the list, or the rows.
+
+    Alone it walks like --untagged does, --cached answers it out of the list
+    sweep built, and beside a tag it narrows the rows the tag chose."""
+    home = workspace / "byname"
+    config = home / "config"
+    cache = home / "cache"
+    tree = home / "tree"
+    for path in (config, cache, tree / "sub"):
+        path.mkdir(parents=True)
+    env = {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(home / "state"),
+           "XDG_CACHE_HOME": str(cache)}
+    papers = [tree / "a.pdf", tree / "b.PDF", tree / "sub" / "c.pdf"]
+    other = tree / "d.txt"
+    for path in papers + [other]:
+        path.write_text("x")
+    run(data, "tag", "add", "--tag", "paper", "--", str(papers[0]), extra_env=env)
+
+    # The walk: every name that fits, folded, tags and all, sorted by path.
+    walked = run(data, "ls", "--name", "*.pdf", str(tree), extra_env=env)
+    assert walked.returncode == 0, walked.stderr
+    assert walked.stdout.splitlines() == sorted(str(p.resolve()) for p in papers), walked.stdout
+    rows = json.loads(run(data, "--json", "ls", "--name", "*.pdf", str(tree),
+                          extra_env=env).stdout)
+    assert {row["path"]: row["tags"] for row in rows}[str(papers[0].resolve())] == ["paper"], rows
+    assert run(data, "ls", "--name", "", str(tree), extra_env=env).returncode == 1
+    assert run(data, "ls", "--name", "invoice-??.*", str(tree), extra_env=env).stdout == ""
+
+    # Beside a tag it narrows the rows and walks nothing.
+    narrowed = run(data, "ls", "--tag", "paper", "--name", "*.pdf", extra_env=env)
+    assert narrowed.stdout.splitlines() == [str(papers[0].resolve())], narrowed.stdout
+    assert run(data, "ls", "--tag", "paper", "--name", "*.txt", extra_env=env).stdout == ""
+
+    # --cached answers it out of the list, with the list's own note and
+    # refusals, and refuses beside a tag the way it refuses alone.
+    assert run(data, "roots", "add", "--id", "byname", "--", str(tree),
+               extra_env=env).returncode == 0
+    assert run(data, "sweep", extra_env=env).returncode == 0
+    listed = run(data, "ls", "--name", "*.pdf", "--cached", extra_env=env)
+    assert listed.returncode == 0, listed.stderr
+    assert listed.stdout == walked.stdout, (listed.stdout, walked.stdout)
+    assert "from a list of names built" in listed.stderr, listed.stderr
+    refused = run(data, "ls", "--tag", "paper", "--name", "*.pdf", "--cached", extra_env=env)
+    assert refused.returncode == 1 and "answers --untagged and --name" in refused.stderr
+
+    # And the walk says what it could not walk, in --untagged's words.
+    shut = tree / "shut"
+    shut.mkdir()
+    shut.chmod(0o000)
+    try:
+        short = run(data, "ls", "--name", "*.pdf", str(tree), extra_env=env)
+        assert short.returncode == 1 and "unreadable" in short.stderr, short.stderr
+    finally:
+        shut.chmod(0o755)
+    assert "--name" in run(data, "__complete", "--", "ls", "-").stdout.split()
 
 
 if __name__ == "__main__":

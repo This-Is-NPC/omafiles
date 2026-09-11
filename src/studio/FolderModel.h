@@ -26,6 +26,9 @@ class FolderModel : public QAbstractListModel
     Q_PROPERTY(QString selectedTag READ selectedTag WRITE setSelectedTag NOTIFY selectedTagChanged)
     Q_PROPERTY(QStringList facets READ facets WRITE setFacets NOTIFY facetsChanged)
     Q_PROPERTY(bool untagged READ untagged WRITE setUntagged NOTIFY facetsChanged)
+    /// A shell pattern answered across the roots, out of the lists of names;
+    /// see `TabState::pattern`.
+    Q_PROPERTY(QString pattern READ pattern WRITE setPattern NOTIFY patternChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY queryChanged)
     Q_PROPERTY(bool atRoot READ atRoot NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
@@ -88,6 +91,8 @@ public:
     /// tag go comes back to the folder you picked it from.
     QString selectedTag() const { return m_selectedTag; }
     void setSelectedTag(const QString &tag);
+    QString pattern() const { return m_pattern; }
+    void setPattern(const QString &pattern);
 
     bool showHidden() const { return m_showHidden; }
     void setShowHidden(bool show);
@@ -201,6 +206,7 @@ signals:
     void directoryChanged();
     void selectedTagChanged();
     void facetsChanged();
+    void patternChanged();
     void queryChanged();
     void changed();
     void markedChanged();
@@ -228,9 +234,10 @@ private:
     void listTag();
     /// The tags that still divide the files under `m_facets`, and those files.
     void listFacets();
-    /// The complement of the vocabulary: what carries no tag at all, read out
-    /// of the lists of names `sweep` writes rather than by walking the disk.
-    void listUntagged();
+    /// Out of the lists of names `sweep` writes rather than by walking the
+    /// disk: the complement of the vocabulary -- what carries no tag at all --
+    /// or every name fitting `m_pattern`, whichever the tab is asking.
+    void listNames();
     /// Whether this listing answers a tag question rather than a folder one.
     /// Read off the tab and not stored, so the two cannot drift apart.
     bool browsingFacets() const;
@@ -247,6 +254,7 @@ private:
     QString m_directory;
     QString m_filter;
     QString m_selectedTag;
+    QString m_pattern;
     QStringList m_facets;
     bool m_untagged = false;
     bool m_showHidden = false;
