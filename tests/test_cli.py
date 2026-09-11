@@ -252,6 +252,7 @@ def main():
         check_a_list_of_names_is_not_the_index(data, workspace)
         check_mv_renames_a_set_by_rule(data, workspace)
         check_ls_name_asks_the_disk_or_the_list(data, workspace)
+        check_recent_reads_the_desktops_list(data, workspace)
 
     print("ok")
 
@@ -3766,7 +3767,7 @@ def check_a_usage_line_carries_the_usage(data, workspace):
         "prune": "Usage: omafiles prune [dir] [--all]",
         "verify": "Usage: omafiles verify [dir]",
         "mv": "Usage: omafiles mv <old> <new>",
-        "recent": "Usage: omafiles recent [n]",
+        "recent": "Usage: omafiles recent [--desktop] [n]",
         "has": "Usage: omafiles has --tag <tag> -- <path>",
         "reindex": "Usage: omafiles reindex [--from-xattr] [dir]",
         "completions": "Usage: omafiles completions <bash|zsh|fish>",
@@ -5712,6 +5713,56 @@ def check_ls_name_asks_the_disk_or_the_list(data, workspace):
     finally:
         shut.chmod(0o755)
     assert "--name" in run(data, "__complete", "--", "ls", "-").stdout.split()
+    # The root goes with the case, and its rows come back as absolute paths:
+    # a row naming a root nobody declares is one no later case can read.
+    assert run(data, "roots", "rm", "--id", "byname", extra_env=env).returncode == 0
+
+
+def check_recent_reads_the_desktops_list(data, workspace):
+    """recent --desktop: what the desktop opened lately, from its own file.
+
+    Newest first, local files that are still there, each with the row it has;
+    a list that is not there is an empty answer and not an error."""
+    room = workspace / "opened"
+    room.mkdir()
+    older = room / "older.md"
+    newer = room / "newer.pdf"
+    gone = room / "gone.txt"
+    for path in (older, newer):
+        path.write_text("x")
+    run(data, "tag", "add", "--tag", "opened", "--", str(newer))
+
+    empty = run(data, "recent", "--desktop")
+    assert empty.returncode == 0 and empty.stdout == "", (empty.returncode, empty.stderr)
+
+    xbel = data / "recently-used.xbel"
+    xbel.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<xbel version="1.0"
+      xmlns:bookmark="http://www.freedesktop.org/standards/desktop-bookmarks"
+      xmlns:mime="http://www.freedesktop.org/standards/shared-mime-info">
+  <bookmark href="file://{older}" added="2026-09-01T10:00:00.500000Z" modified="2026-09-01T10:00:00Z" visited="2026-09-01T10:00:00Z">
+    <info><metadata owner="http://freedesktop.org"><mime:mime-type type="text/markdown"/></metadata></info>
+  </bookmark>
+  <bookmark href="file://{gone}" added="2026-09-03T10:00:00Z" modified="2026-09-03T10:00:00Z" visited="2026-09-03T10:00:00Z"/>
+  <bookmark href="https://example.org/paper.pdf" added="2026-09-04T10:00:00Z" modified="2026-09-04T10:00:00Z" visited="2026-09-04T10:00:00Z"/>
+  <bookmark href="file://{newer}" added="2026-09-02T10:00:00Z" modified="2026-09-02T10:00:00Z" visited="2026-09-02T12:30:00Z"/>
+</xbel>
+""")
+    listed = run(data, "recent", "--desktop")
+    assert listed.returncode == 0, listed.stderr
+    assert listed.stdout.splitlines() == [str(newer.resolve()), str(older.resolve())], listed.stdout
+    assert run(data, "recent", "--desktop", "1").stdout.splitlines() == [str(newer.resolve())]
+    rows = json.loads(run(data, "--json", "recent", "--desktop").stdout)
+    assert [(row["path"], row["tags"]) for row in rows] == \
+        [(str(newer.resolve()), ["opened"]), (str(older.resolve()), [])], rows
+
+    # A list that will not read is said, and the flag is the verb's alone.
+    xbel.write_text("<xbel><bookmark href='file:///x'")
+    broken = run(data, "recent", "--desktop")
+    assert broken.returncode == 1 and "recently-used.xbel" in broken.stderr, broken.stderr
+    xbel.unlink()
+    assert "unexpected --desktop" in run(data, "ls", "--desktop").stderr
+    assert "--desktop" in run(data, "__complete", "--", "recent", "-").stdout.split()
 
 
 if __name__ == "__main__":

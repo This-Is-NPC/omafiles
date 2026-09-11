@@ -210,13 +210,18 @@ Exit 0 if the path has the tag, 1 if it does not.
 
 ## `omafiles recent`
 
-- **Usage:** `omafiles recent [n]`
+- **Usage:** `omafiles recent [--desktop] [n]`
 - **Effect:** read-only
 
 List recently tagged paths, newest first
 
 ### Arguments
 - **`[n]`** — How many paths; 20 by default
+
+### Flags
+- **`--desktop`** — What the desktop opened lately instead, newest first.
+
+  Read from `$XDG_DATA_HOME/recently-used.xbel`, the bookmark file every GTK file chooser and most editors write to, so it is the same list the desktop's own `Recent` shows -- and it is the desktop's, not this program's: nothing here writes to it, and a machine nothing has opened anything on answers with nothing. Local files that are still there, and no others: the list also names what a browser fetched, and a path this program cannot stand in is not a row. Each is printed with the index row it has, tags and all, the way `ls --name` carries tags across an answer the index did not choose. Under `--json` the same array of rows every listing prints.
 
 ## `omafiles json`
 

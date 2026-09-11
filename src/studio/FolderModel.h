@@ -29,6 +29,9 @@ class FolderModel : public QAbstractListModel
     /// A shell pattern answered across the roots, out of the lists of names;
     /// see `TabState::pattern`.
     Q_PROPERTY(QString pattern READ pattern WRITE setPattern NOTIFY patternChanged)
+    /// What the desktop opened lately, instead of a folder; see
+    /// `TabState::recent`.
+    Q_PROPERTY(bool recent READ recent WRITE setRecent NOTIFY recentChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY queryChanged)
     Q_PROPERTY(bool atRoot READ atRoot NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
@@ -93,6 +96,8 @@ public:
     void setSelectedTag(const QString &tag);
     QString pattern() const { return m_pattern; }
     void setPattern(const QString &pattern);
+    bool recent() const { return m_recent; }
+    void setRecent(bool recent);
 
     bool showHidden() const { return m_showHidden; }
     void setShowHidden(bool show);
@@ -207,6 +212,7 @@ signals:
     void selectedTagChanged();
     void facetsChanged();
     void patternChanged();
+    void recentChanged();
     void queryChanged();
     void changed();
     void markedChanged();
@@ -238,6 +244,8 @@ private:
     /// disk: the complement of the vocabulary -- what carries no tag at all --
     /// or every name fitting `m_pattern`, whichever the tab is asking.
     void listNames();
+    /// What the desktop opened lately, in its order, out of its own list.
+    void listRecent();
     /// Whether this listing answers a tag question rather than a folder one.
     /// Read off the tab and not stored, so the two cannot drift apart.
     bool browsingFacets() const;
@@ -255,6 +263,7 @@ private:
     QString m_filter;
     QString m_selectedTag;
     QString m_pattern;
+    bool m_recent = false;
     QStringList m_facets;
     bool m_untagged = false;
     bool m_showHidden = false;

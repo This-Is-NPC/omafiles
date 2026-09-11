@@ -19,7 +19,8 @@ HEADERS += \
     Roots.h \
     Names.h \
     View.h \
-    Open.h
+    Open.h \
+    Recent.h
 
 SOURCES += \
     Tag.cpp \
@@ -30,4 +31,5 @@ SOURCES += \
     Roots.cpp \
     Names.cpp \
     View.cpp \
-    Open.cpp
+    Open.cpp \
+    Recent.cpp

@@ -1,6 +1,7 @@
 #include "Names.h"
 #include "Open.h"
 #include "Paths.h"
+#include "Recent.h"
 #include "Roots.h"
 #include "View.h"
 #include "Store.h"
@@ -234,7 +235,8 @@ Asking:
   tags     [dir]
   has      --tag <tag> -- <path>    exit 0 if tagged, 1 if not
   json     -- <path>
-  recent   [n]                      last tagged first
+  recent   [--desktop] [n]          last tagged first; --desktop lists what
+                                    the desktop opened lately instead
   export                            one index row per line, as jsonl: many
                                     documents, which a JSON parser refuses
                                     --json instead dumps them as one array
@@ -414,6 +416,8 @@ struct Takes {
     bool status = false;
     /// `--replace`, `--with` and `--pattern`: `mv` over a set, by rule.
     bool rename = false;
+    /// `--desktop`: `recent` answered from the desktop's list, not the index.
+    bool desktop = false;
 };
 
 // The six `tag` subcommands, each with its own flags. `dispatch` gates the
@@ -1649,7 +1653,7 @@ int cmdOpen(const Globals &g, const QStringList &paths)
 }
 
 
-int cmdRecent(const Globals &g, Session &s, const QStringList &positionals)
+int cmdRecent(const Globals &g, Session &s, bool desktop, const QStringList &positionals)
 {
     int limit = 20;
     if (positionals.size() > 1) {
@@ -1672,6 +1676,35 @@ int cmdRecent(const Globals &g, Session &s, const QStringList &positionals)
     QVector<Record> rows;
     QStringList skipped;
     int unknown = 0;
+    // The desktop's list, in the desktop's order, with the row each file has
+    // -- the way `ls --name` carries tags across an answer the index did not
+    // choose. The reader already dropped what is not there.
+    if (desktop) {
+        QVector<RecentEntry> opened;
+        QString error;
+        if (!recentlyUsed(&opened, &error)) {
+            fail(QStringLiteral("recent: %1").arg(error));
+            return kUsage;
+        }
+        for (const RecentEntry &entry : std::as_const(opened)) {
+            if (rows.size() >= limit)
+                break;
+            Record record = s.store.get(entry.path);
+            if (record.path.isEmpty())
+                record.path = entry.path;
+            rows.append(record);
+        }
+        if (g.json) {
+            QJsonArray array;
+            for (const Record &record : std::as_const(rows))
+                array.append(record.toJson());
+            printJson(array);
+        } else {
+            for (const Record &record : std::as_const(rows))
+                out() << record.path << '\n';
+        }
+        return kOk;
+    }
     for (const Record &record : s.store.records()) {
         // Counted after the row is known to be one this would have listed, as
         // in `ls`: index-wide, the count would report rows the query never had
@@ -1858,6 +1891,8 @@ QStringList completionFor(const QStringList &words)
             flags << QStringLiteral("--status");
         if (verb == QLatin1String("prune"))
             flags << QStringLiteral("--all");
+        if (verb == QLatin1String("recent"))
+            flags << QStringLiteral("--desktop");
         return uniqueSorted(flags);
     }
 
@@ -4161,6 +4196,7 @@ struct Parsed {
     bool replaceGiven = false;
     bool withGiven = false;
     bool patternGiven = false;
+    bool desktop = false;
     bool mount = false;
     bool untagged = false;
     bool cached = false;
@@ -4290,6 +4326,14 @@ int parseFlags(QStringList args, Parsed *parsed, const Takes &takes)
                 return kUsage;
             }
             parsed->fromXattr = true;
+            continue;
+        }
+        if (arg == QLatin1String("--desktop")) {
+            if (!takes.desktop) {
+                fail(QStringLiteral("unexpected %1").arg(arg));
+                return kUsage;
+            }
+            parsed->desktop = true;
             continue;
         }
         if (arg == QLatin1String("--replace") || arg == QLatin1String("--with")
@@ -4994,10 +5038,10 @@ int dispatch(const Globals &g, Session &s, QStringList rest)
 
     if (cmd == QLatin1String("recent")) {
         Parsed parsed;
-        const int parsedStatus = parseFlags(rest, &parsed, {});
+        const int parsedStatus = parseFlags(rest, &parsed, {.desktop = true});
         if (parsedStatus != kOk)
             return parsedStatus;
-        return cmdRecent(g, s, parsed.positionals);
+        return cmdRecent(g, s, parsed.desktop, parsed.positionals);
     }
     if (cmd == QLatin1String("completions")) {
         Parsed parsed;

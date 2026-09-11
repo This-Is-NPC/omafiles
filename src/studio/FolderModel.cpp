@@ -1,6 +1,7 @@
 #include "FolderModel.h"
 
 #include "Names.h"
+#include "Recent.h"
 #include "Roots.h"
 
 #include "IndexModel.h"
@@ -213,6 +214,15 @@ void FolderModel::setPattern(const QString &pattern)
     rebuild();
 }
 
+void FolderModel::setRecent(bool recent)
+{
+    if (m_recent == recent)
+        return;
+    m_recent = recent;
+    emit recentChanged();
+    rebuild();
+}
+
 bool FolderModel::browsingFacets() const
 {
     return m_tab && m_tab->kind() == QLatin1String("tags");
@@ -362,9 +372,14 @@ void FolderModel::goUp()
         m_tab->leaveFacet();
         return;
     }
-    // And up out of a search is the folder the tab was standing in before it.
+    // And up out of a search, or out of the desktop's list, is the folder the
+    // tab was standing in before it.
     if (!m_pattern.isEmpty()) {
         setPattern(QString());
+        return;
+    }
+    if (m_recent) {
+        setRecent(false);
         return;
     }
     // Walking out of a folder should land the cursor on that folder, not on the
@@ -955,6 +970,40 @@ void FolderModel::listFacets()
 // the graph tab makes with a large index.
 constexpr int kNamesShown = 2000;
 
+// What the desktop opened lately, in the desktop's order and not the sort's:
+// a list of recent things is read by what is at the top of it, and a sort by
+// name would put the newest thing wherever its name fell. `omafiles recent
+// --desktop` is the same answer at a prompt.
+void FolderModel::listRecent()
+{
+    Entry parent;
+    parent.name = QStringLiteral("..");
+    parent.kind = QStringLiteral("parent");
+    m_rows.append(parent);
+
+    QVector<RecentEntry> opened;
+    QString error;
+    if (!recentlyUsed(&opened, &error)) {
+        m_error = error;
+        return;
+    }
+    if (opened.isEmpty()) {
+        m_error = QStringLiteral("the desktop has opened nothing lately, or keeps no "
+                                 "list of it");
+        return;
+    }
+    const QString needle = m_filter.trimmed().toLower();
+    for (const RecentEntry &entry : std::as_const(opened)) {
+        const QFileInfo info(entry.path);
+        const QString name = info.fileName();
+        if (!needle.isEmpty() && !name.toLower().contains(needle))
+            continue;
+        if (!m_showHidden && name.startsWith(QLatin1Char('.')))
+            continue;
+        m_rows.append(describe(info, name));
+    }
+}
+
 // What carries no tag at all, or what fits a pattern, out of the lists of
 // names `sweep` writes.
 //
@@ -1104,6 +1153,8 @@ void FolderModel::rebuild()
         listNames();
     else if (browsingFacets())
         listFacets();
+    else if (m_recent)
+        listRecent();
     else if (!m_pattern.isEmpty())
         listNames();
     else if (m_selectedTag.isEmpty())

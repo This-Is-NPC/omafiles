@@ -256,6 +256,7 @@ private slots:
     void findsByNameAcrossTheRoots();
     void runsAScriptOverTheMarkedSet();
     void makesLinksBesideAndHere();
+    void listsWhatTheDesktopOpenedLately();
 
 private:
     QQuickWindow *window() const;
@@ -5312,6 +5313,62 @@ void TestStudio::makesLinksBesideAndHere()
     QVERIFY(QFile::remove(beside));
     tab()->setCwd(m_tree.path());
     settle();
+}
+
+// The desktop's recent list as a listing, in the desktop's order, with `h`
+// the way back to the folder the tab was standing in.
+void TestStudio::listsWhatTheDesktopOpenedLately()
+{
+    QObject *root = m_engine->rootObjects().first();
+    const QDir tree(m_tree.path());
+    QFile xbel(QDir(m_home.path()).filePath(QStringLiteral("recently-used.xbel")));
+    QVERIFY(xbel.open(QIODevice::WriteOnly | QIODevice::Text));
+    xbel.write(QStringLiteral(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<xbel version=\"1.0\">\n"
+        "  <bookmark href=\"file://%1\" visited=\"2026-09-01T10:00:00Z\"/>\n"
+        "  <bookmark href=\"file://%2\" visited=\"2026-09-02T10:00:00Z\"/>\n"
+        "  <bookmark href=\"file://%3\" visited=\"2026-09-03T10:00:00Z\"/>\n"
+        "</xbel>\n")
+        .arg(tree.filePath(QStringLiteral("one.txt")),
+             tree.filePath(QStringLiteral("alpha/inner/absent.txt")),
+             tree.filePath(QStringLiteral("two.md")))
+        .toUtf8());
+    xbel.close();
+
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    const auto names = [folder] {
+        QStringList out;
+        for (int i = 0; i < folder->property("count").toInt(); ++i) {
+            QVariantMap entry;
+            QMetaObject::invokeMethod(folder, "entryAt", Q_RETURN_ARG(QVariantMap, entry),
+                                      Q_ARG(int, i));
+            if (entry.value(QStringLiteral("kind")).toString() == QLatin1String("file"))
+                out.append(entry.value(QStringLiteral("name")).toString());
+        }
+        return out;
+    };
+
+    QMetaObject::invokeMethod(root, "openRecent");
+    settle();
+    QVERIFY(tab()->recent());
+    QCOMPARE(tab()->title(), QStringLiteral("(recent)"));
+    // Newest first, and only what is there.
+    QCOMPARE(names(), (QStringList{QStringLiteral("two.md"), QStringLiteral("one.txt")}));
+    QObject *crumbs = root->findChild<QObject *>(QStringLiteral("pathCrumbs"));
+    QVERIFY(crumbs);
+    QCOMPARE(crumbs->property("full").toString(), QStringLiteral("(recent)"));
+
+    // Nowhere in particular, so nothing is made in it; the menu says how out.
+    key('n');
+    QCOMPARE(root->property("prompt").toString(), QString());
+    key('m');
+    QVERIFY(menuLabels(QStringLiteral("fileMenu")).contains(QStringLiteral("Leave the recent list")));
+    key(Qt::Key_Escape);
+    key('h');
+    QVERIFY(!tab()->recent());
+    QCOMPARE(cwd(), m_tree.path());
+
+    QVERIFY(xbel.remove());
 }
 
 QTEST_MAIN(TestStudio)

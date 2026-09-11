@@ -48,7 +48,8 @@ at `pkgbuilds/omafiles`.
   what is on the clipboard into the folder on screen
 - `Ctrl+C` / `Ctrl+X` / `Ctrl+V` — copy, cut and paste files, through the
   same clipboard Nautilus and Dolphin use, so it works between them and here
-- `:` — commands
+- `:` — commands; among them `Recently opened on the desktop`, which lists
+  what the GNOME recent list holds, the way `omafiles recent --desktop` does
 - `Esc` — back to the list
 - `1` / `2` / `3` — list, details, and icons
 - `m` — menu

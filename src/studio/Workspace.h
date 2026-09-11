@@ -41,6 +41,10 @@ class TabState : public QObject
     /// folder. It is not the filter: the filter narrows what is on screen,
     /// and this decides what is on screen.
     Q_PROPERTY(QString pattern READ pattern WRITE setPattern NOTIFY patternChanged)
+    /// Whether a files tab is listing what the desktop opened lately, out of
+    /// its recently-used list, instead of a folder. Exclusive with a pattern
+    /// and a tag the way those are with each other: one question per tab.
+    Q_PROPERTY(bool recent READ recent WRITE setRecent NOTIFY recentChanged)
     Q_PROPERTY(QString viewMode READ viewMode WRITE setViewMode NOTIFY viewModeChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
     Q_PROPERTY(QString sortRole READ sortRole WRITE setSortRole NOTIFY sortChanged)
@@ -77,6 +81,8 @@ public:
     QString filter() const { return m_filter; }
     QString pattern() const { return m_pattern; }
     void setPattern(const QString &pattern);
+    bool recent() const { return m_recent; }
+    void setRecent(bool recent);
     QString viewMode() const { return m_viewMode; }
     bool showHidden() const { return m_showHidden; }
     QString sortRole() const { return m_sortRole; }
@@ -122,6 +128,7 @@ signals:
     void facetsChanged();
     void filterChanged();
     void patternChanged();
+    void recentChanged();
     void viewModeChanged();
     void showHiddenChanged();
     void sortChanged();
@@ -136,6 +143,7 @@ private:
     bool m_untagged = false;
     QString m_filter;
     QString m_pattern;
+    bool m_recent = false;
     QString m_viewMode = QStringLiteral("list");
     bool m_showHidden = false;
     QString m_sortRole = QStringLiteral("name");

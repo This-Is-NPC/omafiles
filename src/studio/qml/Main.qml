@@ -72,6 +72,11 @@ Window {
     /// The narrower question, for the handful of things that are about a place
     /// in the tree: the home key, and a path that names a folder.
     readonly property bool onDirectory: onFiles && activeTab.kind === "files"
+    /// Narrower still: a files tab showing a folder, and not a tag, a search
+    /// or the desktop's list -- the only listing something can be made or
+    /// pasted into, because it is the only one that is somewhere.
+    readonly property bool standingInFolder: onDirectory && activeTab.selectedTag === ""
+                                             && activeTab.pattern === "" && !activeTab.recent
     readonly property bool onTags: onFiles && activeTab.kind === "tags"
     readonly property bool onGraph: activeTab !== null && activeTab !== undefined
                                     && activeTab.kind === "graph" && activeGraph !== null
@@ -345,8 +350,7 @@ Window {
 
     // Whether a paste has somewhere to land: a folder, and not a tag listing,
     // which spans the index and is nowhere in particular.
-    readonly property bool canPaste: onDirectory && activeTab.selectedTag === ""
-                                     && activeTab.pattern === "" && Clipboard.holdsFiles
+    readonly property bool canPaste: standingInFolder && Clipboard.holdsFiles
 
     function paste() {
         const folder = activeFolder
@@ -385,7 +389,22 @@ Window {
         if (!accept || pattern === "" || !activeTab)
             return
         activeTab.selectedTag = ""
+        activeTab.recent = false
         activeTab.pattern = pattern
+    }
+
+    // What the desktop opened lately, as a listing in the tab: `omafiles
+    // recent --desktop`, walked. From anywhere but a files tab it opens one.
+    function openRecent() {
+        if (!onDirectory)
+            Workspace.openTabIn(Workspace.focusedPane, "files",
+                                activeFolder ? activeFolder.directory : "")
+        const tab = Workspace.currentTab
+        if (!tab || tab.kind !== "files")
+            return
+        tab.selectedTag = ""
+        tab.pattern = ""
+        tab.recent = true
     }
 
     // A shell pattern over the names on screen, added to the marks. The count
@@ -470,8 +489,7 @@ Window {
     // Only where the list is a folder: a tag listing spans the index and has
     // nowhere to put one.
     function startMakingFolder() {
-        if (!onDirectory || !activeFolder || activeTab.selectedTag !== ""
-                || activeTab.pattern !== "")
+        if (!standingInFolder || !activeFolder)
             return
         prompt = "folder"
         focusRegion = "filter"
@@ -523,6 +541,7 @@ Window {
                 if (activeTab) {
                     activeTab.selectedTag = ""
                     activeTab.pattern = ""
+                    activeTab.recent = false
                 }
                 activeFolder.directory = text
             }
@@ -1335,6 +1354,8 @@ Window {
                             // A search spans the roots the way a tag spans
                             // the index, so it is spelled as the pattern
                             // and not as a folder the window is not in.
+                            if (win.activeTab.recent)
+                                return "(recent)"
                             if (win.activeTab.pattern !== "")
                                 return win.activeTab.pattern
                             return win.activeTab.selectedTag !== ""
@@ -1555,6 +1576,7 @@ Window {
                 { id: "filter", label: "Filter this folder", key: "/" },
                 { id: "find", label: "Find by name across the roots", key: "f" },
                 { id: "leave-search", label: "Leave the search", key: "h" },
+                { id: "recent", label: "Recently opened on the desktop", key: "" },
                 { id: "rename", label: "Rename", key: "r" },
                 { id: "new-folder", label: "New folder", key: "n" },
                 { id: "copy-files", label: "Copy", key: "Ctrl+C" },
@@ -1593,6 +1615,7 @@ Window {
                 case "filter": Qt.callLater(win.startFilter); break
                 case "find": Qt.callLater(win.startFinding); break
                 case "leave-search": if (win.activeTab) win.activeTab.pattern = ""; break
+                case "recent": win.openRecent(); break
                 case "rename": Qt.callLater(win.startRename); break
                 case "new-folder": Qt.callLater(win.startMakingFolder); break
                 case "copy-files": win.copyToClipboard(false); break
@@ -1768,6 +1791,10 @@ Window {
                   when: win.onDirectory },
                 { id: "leave-search", label: "Leave the search", key: "h",
                   when: win.onDirectory && win.activeTab.pattern !== "" },
+                { id: "recent", label: "Recently opened on the desktop",
+                  when: win.onFiles && !(win.onDirectory && win.activeTab.recent) },
+                { id: "leave-recent", label: "Leave the recent list", key: "h",
+                  when: win.onDirectory && win.activeTab.recent },
                 // Not offered where the row already carries it: applying a
                 // tag a file has is a write that changes nothing, and an entry
                 // that does nothing reads as one that failed.
@@ -1817,8 +1844,7 @@ Window {
                   label: fileMenu.counted("Rename", "Rename %1 files by a pattern"),
                   key: "r", when: fileMenu.isRow },
                 { id: "new-folder", label: "New folder", key: "n",
-                  when: win.onDirectory && win.activeTab.selectedTag === ""
-                        && win.activeTab.pattern === "" },
+                  when: win.standingInFolder },
                 { id: "trash", label: fileMenu.counted("Move to trash", "Move %1 files to trash"),
                   when: fileMenu.isRow },
 
@@ -1893,6 +1919,8 @@ Window {
                 case "leave-tag": if (win.activeTab) win.activeTab.selectedTag = ""; break
                 case "find": Qt.callLater(win.startFinding); break
                 case "leave-search": if (win.activeTab) win.activeTab.pattern = ""; break
+                case "recent": win.openRecent(); break
+                case "leave-recent": if (win.activeTab) win.activeTab.recent = false; break
                 case "tag-add": IndexModel.tagAdd(paths, fileMenu.focusedTag); break
                 case "tag-rm": IndexModel.tagRemove(paths, fileMenu.focusedTag); break
                 case "tag-clear": IndexModel.tagClear(paths); break
@@ -2481,6 +2509,7 @@ Window {
                 facets: filesRoot.tab ? filesRoot.tab.facets : []
                 untagged: filesRoot.tab ? filesRoot.tab.untagged : false
                 pattern: filesRoot.tab ? filesRoot.tab.pattern : ""
+                recent: filesRoot.tab ? filesRoot.tab.recent : false
                 showHidden: filesRoot.tab ? filesRoot.tab.showHidden : false
                 sortRole: filesRoot.tab ? filesRoot.tab.sortRole : "name"
                 sortAscending: filesRoot.tab ? filesRoot.tab.sortAscending : true
@@ -2492,6 +2521,7 @@ Window {
                 // `h` out of a search ends it in the model, and the tab has
                 // to hear so its title and path bar follow.
                 onPatternChanged: if (filesRoot.tab) filesRoot.tab.pattern = pattern
+                onRecentChanged: if (filesRoot.tab) filesRoot.tab.recent = recent
                 onChanged: Qt.callLater(filesRoot.restoreCursor)
                 // The panel reads one row, and marking does not move the
                 // cursor: without this the `marked` line only catches up when

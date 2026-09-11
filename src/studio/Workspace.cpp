@@ -43,6 +43,8 @@ QString TabState::title() const
         sorted.sort();
         return QStringLiteral("#") + sorted.join(QStringLiteral("/#"));
     }
+    if (m_recent)
+        return QStringLiteral("(recent)");
     if (!m_pattern.isEmpty())
         return m_pattern;
     if (!m_selectedTag.isEmpty())
@@ -58,6 +60,16 @@ void TabState::setPattern(const QString &pattern)
     m_pattern = pattern;
     setMarked({});                           // the listing changed under them
     emit patternChanged();
+    emit titleChanged();
+}
+
+void TabState::setRecent(bool recent)
+{
+    if (m_recent == recent)
+        return;
+    m_recent = recent;
+    setMarked({});
+    emit recentChanged();
     emit titleChanged();
 }
 
