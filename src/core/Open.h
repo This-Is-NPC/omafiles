@@ -40,15 +40,36 @@ struct OpenApp {
 
 /// One request to hand a path to somebody else's program.
 ///
-/// `path` is the file for every kind but `Terminal`, where it is the directory
-/// the shell is to start in. `application` is the `.desktop` entry `OpenWith`
-/// picked, and empty for every other kind.
+/// `path` is the file for every kind but `Terminal` and `Script`, where it is
+/// the directory the program is to start in. `application` is the `.desktop`
+/// entry `OpenWith` picked, or the script `Script` runs, and empty for every
+/// other kind. `arguments` is what a script is handed: the paths it is about.
 struct OpenRequest {
-    enum Kind { Open, Share, Terminal, Editor, OpenWith };
+    enum Kind { Open, Share, Terminal, Editor, OpenWith, Script };
     Kind kind = Open;
     QString path;
     QString application;
+    QStringList arguments;
 };
+
+/// One program of the person's own, kept where the views are kept.
+///
+/// `$XDG_CONFIG_HOME/omafiles/scripts/` holds them, one executable each, and
+/// the name is the file name: what the menu says and what they are found by.
+/// A script is run with the paths it was chosen over as its arguments and the
+/// folder they are in as its working directory -- the two facts a shell
+/// script wants and nothing it has to parse.
+struct UserScript {
+    QString name;
+    QString path;
+};
+
+QString scriptsDirectory();
+/// Every executable in the scripts directory, by name. Read on every call:
+/// a script dropped into the folder is there the next time the menu opens.
+QVector<UserScript> userScripts();
+bool runUserScript(const QString &script, const QStringList &paths, const QString &directory,
+                   QString *error);
 
 /// The one door out of omafiles.
 ///

@@ -254,6 +254,7 @@ private slots:
     void copiesCutsAndPastesThroughTheDesktopClipboard();
     void marksARunARangeAndAPattern();
     void findsByNameAcrossTheRoots();
+    void runsAScriptOverTheMarkedSet();
 
 private:
     QQuickWindow *window() const;
@@ -5198,6 +5199,62 @@ void TestStudio::findsByNameAcrossTheRoots()
     QCOMPARE(tab()->pattern(), QString());
     QCOMPARE(cwd(), m_tree.path());
     QVERIFY(files().contains(QStringLiteral("one.txt")));
+}
+
+// A script in the config folder is a menu entry, run over the marked set with
+// the paths as its arguments and their folder as its working directory --
+// through the launcher seam, so nothing here runs it.
+void TestStudio::runsAScriptOverTheMarkedSet()
+{
+    const QDir tree(m_tree.path());
+    const QDir scripts(QDir(m_desktop.path()).filePath(QStringLiteral("config/omafiles/scripts")));
+    QVERIFY(QDir().mkpath(scripts.absolutePath()));
+    const QString script = scripts.filePath(QStringLiteral("count"));
+    QFile file(script);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("#!/bin/sh\necho $#\n");
+    file.close();
+    // Not executable yet, so not a script yet: a text nobody chmod'd is one
+    // that would only ever fail.
+    QVERIFY(file.setPermissions(QFile::ReadOwner | QFile::WriteOwner));
+    m_index->reload();
+    settle();
+    QVERIFY(!m_index->hasScripts());
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    QVERIFY(!menuLabels(QStringLiteral("fileMenu")).contains(QStringLiteral("Run a script over it…")));
+    key(Qt::Key_Escape);
+
+    QVERIFY(file.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+    m_index->reload();
+    settle();
+    QVERIFY(m_index->hasScripts());
+
+    focusRow(QStringLiteral("one.txt"));
+    key(Qt::Key_Space);
+    focusRow(QStringLiteral("two.md"));
+    key(Qt::Key_Space);
+    openRequests().clear();
+    key('m');
+    QVERIFY2(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Run a script over 2 files…")),
+             qPrintable(menuLabels(QStringLiteral("fileMenu")).join(QLatin1String(" | "))));
+    settle();
+    QVERIFY2(chooseInMenu(QStringLiteral("scriptsMenu"), QStringLiteral("count")),
+             qPrintable(menuLabels(QStringLiteral("scriptsMenu")).join(QLatin1String(" | "))));
+    QCOMPARE(openRequests().size(), 1);
+    const OpenRequest &ran = openRequests().first();
+    QCOMPARE(ran.kind, OpenRequest::Script);
+    QCOMPARE(ran.application, script);
+    QCOMPARE(ran.arguments, (QStringList{tree.filePath(QStringLiteral("one.txt")),
+                                         tree.filePath(QStringLiteral("two.md"))}));
+    QCOMPARE(ran.path, m_tree.path());
+    QVERIFY2(m_index->notice().contains(QStringLiteral("ran count over 2 files")),
+             qPrintable(m_index->notice()));
+    key('A');
+
+    QVERIFY(QFile::remove(script));
+    m_index->reload();
+    settle();
 }
 
 QTEST_MAIN(TestStudio)

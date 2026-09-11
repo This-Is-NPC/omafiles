@@ -77,7 +77,8 @@ Window {
                                     && activeTab.kind === "graph" && activeGraph !== null
     readonly property bool blocked: commandPalette.visible || helpSheet.visible
                                     || fileMenu.visible || tabMenu.visible
-                                    || openWithMenu.visible || viewMenu.visible
+                                    || openWithMenu.visible || scriptsMenu.visible
+                                    || viewMenu.visible
                                     || newTabMenu.visible || editingPath || filtering
                                     || prompt !== ""
 
@@ -664,6 +665,19 @@ Window {
         openWithMenu.targetPath = path
         openWithMenu.returnFocus = takeFocus
         openWithMenu.openAt(menuX, menuY)
+    }
+
+    // The person's own scripts, over where the entry that asked for them was.
+    // The same second menu `Open with…` is, for the same reasons.
+    function openScriptsMenu(paths, directory) {
+        const scripts = IndexModel.scripts()
+        if (scripts.length === 0)
+            return
+        scriptsMenu.scripts = scripts
+        scriptsMenu.targetPaths = paths
+        scriptsMenu.targetDir = directory
+        scriptsMenu.returnFocus = takeFocus
+        scriptsMenu.openAt(menuX, menuY)
     }
 
     function openFileMenuForPath(path, kind, x, y) {
@@ -1673,6 +1687,10 @@ Window {
                   when: IndexModel.canEdit && fileMenu.isFile },
                 { id: "share", label: "Send with LocalSend",
                   when: IndexModel.canShare && fileMenu.hasTarget },
+                { id: "script",
+                  label: fileMenu.counted("Run a script over it…",
+                                          "Run a script over %1 files…"),
+                  when: IndexModel.hasScripts && fileMenu.isRow },
 
                 { id: "copy-path", label: fileMenu.counted("Copy path", "Copy %1 paths"),
                   when: fileMenu.hasTarget },
@@ -1794,6 +1812,7 @@ Window {
                 case "terminal": IndexModel.openTerminalIn(fileMenu.hereDir); break
                 case "editor": IndexModel.editPath(path); break
                 case "share": IndexModel.sharePath(path); break
+                case "script": Qt.callLater(win.openScriptsMenu, paths, fileMenu.hereDir); break
 
                 // One path per line, which is what a list of paths is
                 // everywhere else in this program and what every editor and
@@ -1921,6 +1940,25 @@ Window {
             // thing, and the file they are launched from cannot.
             onChosen: function (id) {
                 IndexModel.openWith(openWithMenu.targetPath, id)
+            }
+        }
+
+        ContextMenu {
+            id: scriptsMenu
+            objectName: "scriptsMenu"
+            anchors.fill: parent
+            property var targetPaths: []
+            property string targetDir: ""
+            property var scripts: []
+            actions: {
+                const out = []
+                for (let i = 0; i < scriptsMenu.scripts.length; i++)
+                    out.push({ id: scriptsMenu.scripts[i].path,
+                               label: scriptsMenu.scripts[i].name })
+                return out
+            }
+            onChosen: function (id) {
+                IndexModel.runScript(id, scriptsMenu.targetPaths, scriptsMenu.targetDir)
             }
         }
 

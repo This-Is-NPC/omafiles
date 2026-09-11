@@ -559,6 +559,18 @@ bool desktopOpenWith(const QString &path, const QString &desktopFile, QString *e
     return true;
 }
 
+// Detached, the way every other door here is: a script that opens an editor
+// and waits for it is not a script the window should wait for.
+bool desktopScript(const OpenRequest &request, QString *error)
+{
+    if (!QProcess::startDetached(request.application, request.arguments, request.path)) {
+        if (error)
+            *error = QStringLiteral("script failed to start: %1").arg(request.application);
+        return false;
+    }
+    return true;
+}
+
 bool desktopLauncher(const OpenRequest &request, QString *error)
 {
     switch (request.kind) {
@@ -570,6 +582,8 @@ bool desktopLauncher(const OpenRequest &request, QString *error)
         return desktopEdit(request.path, error);
     case OpenRequest::OpenWith:
         return desktopOpenWith(request.path, request.application, error);
+    case OpenRequest::Script:
+        return desktopScript(request, error);
     case OpenRequest::Open:
         break;
     }
@@ -597,12 +611,12 @@ Launcher setLauncher(Launcher launcher)
 
 bool openLocalPath(const QString &path, QString *error)
 {
-    return installedLauncher()(OpenRequest{OpenRequest::Open, path, QString()}, error);
+    return installedLauncher()(OpenRequest{OpenRequest::Open, path, QString(), {}}, error);
 }
 
 bool shareLocalPath(const QString &path, QString *error)
 {
-    return installedLauncher()(OpenRequest{OpenRequest::Share, path, QString()}, error);
+    return installedLauncher()(OpenRequest{OpenRequest::Share, path, QString(), {}}, error);
 }
 
 bool canOpenTerminal()
@@ -618,12 +632,47 @@ bool canOpenInEditor()
 
 bool openTerminalIn(const QString &directory, QString *error)
 {
-    return installedLauncher()(OpenRequest{OpenRequest::Terminal, directory, QString()}, error);
+    return installedLauncher()(OpenRequest{OpenRequest::Terminal, directory, QString(), {}}, error);
 }
 
 bool openInEditor(const QString &path, QString *error)
 {
-    return installedLauncher()(OpenRequest{OpenRequest::Editor, path, QString()}, error);
+    return installedLauncher()(OpenRequest{OpenRequest::Editor, path, QString(), {}}, error);
+}
+
+// Beside the views, and resolved the same way, so the two things a person
+// writes for this program live in one place.
+QString scriptsDirectory()
+{
+    QString configHome = QString::fromLocal8Bit(qgetenv("XDG_CONFIG_HOME"));
+    if (configHome.isEmpty())
+        configHome = QDir::homePath() + QStringLiteral("/.config");
+    return QDir(configHome).filePath(QStringLiteral("omafiles/scripts"));
+}
+
+QVector<UserScript> userScripts()
+{
+    QVector<UserScript> scripts;
+    const QDir dir(scriptsDirectory());
+    // Executable and a file: a folder is not a script, and a text somebody
+    // forgot to chmod is a script that would only ever fail.
+    const QFileInfoList entries = dir.entryInfoList(QDir::Files | QDir::Executable,
+                                                    QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo &entry : entries)
+        scripts.append({entry.fileName(), entry.absoluteFilePath()});
+    return scripts;
+}
+
+bool runUserScript(const QString &script, const QStringList &paths, const QString &directory,
+                   QString *error)
+{
+    if (!QFileInfo(script).isExecutable()) {
+        if (error)
+            *error = QStringLiteral("%1 is not executable").arg(script);
+        return false;
+    }
+    return installedLauncher()(OpenRequest{OpenRequest::Script, directory, script, paths},
+                               error);
 }
 
 bool canOpenWithApp()
@@ -633,7 +682,7 @@ bool canOpenWithApp()
 
 bool openWithApp(const QString &path, const QString &desktopFile, QString *error)
 {
-    return installedLauncher()(OpenRequest{OpenRequest::OpenWith, path, desktopFile}, error);
+    return installedLauncher()(OpenRequest{OpenRequest::OpenWith, path, desktopFile, {}}, error);
 }
 
 } // namespace omafiles

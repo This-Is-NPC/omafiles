@@ -33,6 +33,10 @@ class IndexModel : public QObject
     Q_PROPERTY(bool canOpenTerminal READ canOpenTerminal NOTIFY changed)
     Q_PROPERTY(bool canEdit READ canEdit NOTIFY changed)
     Q_PROPERTY(bool canOpenWith READ canOpenWith NOTIFY changed)
+    /// Whether the scripts folder holds anything to run. Read off the disk
+    /// each time it is asked, and asked again on every reload, so F5 is how a
+    /// script written while the window is open reaches the menu.
+    Q_PROPERTY(bool hasScripts READ hasScripts NOTIFY changed)
     /// What the last command the window ran said about itself.
     ///
     /// Separate from `error`, which describes a condition -- rows that will
@@ -71,7 +75,16 @@ public:
     bool canOpenTerminal() const;
     bool canEdit() const;
     bool canOpenWith() const;
+    bool hasScripts() const;
     QString notice() const { return m_notice; }
+
+    /// The person's own scripts, as `name` and `path`, the list the `Run a
+    /// script` menu is built from. See `userScripts`.
+    Q_INVOKABLE QVariantList scripts() const;
+    /// Runs one over `paths`, standing in `directory`. What it does with them
+    /// is its own business; the receipt here is only that it started.
+    Q_INVOKABLE void runScript(const QString &script, const QStringList &paths,
+                               const QString &directory);
 
     Q_INVOKABLE void reload();
     Q_INVOKABLE void openPath(const QString &path);

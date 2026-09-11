@@ -271,6 +271,22 @@ bool IndexModel::canEdit() const
     return canOpenInEditor();
 }
 
+bool IndexModel::hasScripts() const
+{
+    return !userScripts().isEmpty();
+}
+
+QVariantList IndexModel::scripts() const
+{
+    QVariantList out;
+    for (const UserScript &script : userScripts()) {
+        out.append(QVariantMap{{QStringLiteral("name"), script.name},
+                               {QStringLiteral("path"), script.path}});
+    }
+    return out;
+}
+
+
 void IndexModel::setNotice(const QString &message)
 {
     if (m_notice == message)
@@ -494,6 +510,21 @@ void IndexModel::renameSet(const QStringList &paths, const QString &pattern)
     report(QStringList{QStringLiteral("mv"), QStringLiteral("--pattern"), pattern,
                        QStringLiteral("--")} + paths,
            QStringLiteral("renamed %1").arg(countOf(paths.size(), QStringLiteral("file"))));
+}
+
+void IndexModel::runScript(const QString &script, const QStringList &paths,
+                           const QString &directory)
+{
+    if (script.isEmpty() || paths.isEmpty())
+        return;
+    QString error;
+    if (!runUserScript(script, paths, directory, &error)) {
+        setNotice(error);
+        return;
+    }
+    setNotice(QStringLiteral("ran %1 over %2").arg(QFileInfo(script).fileName(),
+                                                     countOf(paths.size(),
+                                                             QStringLiteral("file"))));
 }
 
 // `mkdir(2)` and not `QDir::mkdir`, for the reason: the system says why it

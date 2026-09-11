@@ -128,6 +128,19 @@ on the disk, lives in `$XDG_CACHE_HOME/omafiles/names`, and deleting it costs on
 sweep and nothing else. Both answers are offered rather than one pretending to be
 the other.
 
+A script of your own goes in `~/.config/omafiles/scripts/`, beside the views,
+executable and named for what it does. The row menu lists it under `Run a
+script`, over the row or the marked set, and runs it with those paths as its
+arguments and their folder as its working directory:
+
+```bash
+cat > ~/.config/omafiles/scripts/shrink <<'EOF'
+#!/bin/sh
+for f; do magick "$f" -resize 50% "${f%.*}-small.${f##*.}"; done
+EOF
+chmod +x ~/.config/omafiles/scripts/shrink
+```
+
 Every verb is in [the command line](docs/cli.md).
 
 The list is the folder — a folder shut, one that is missing, and one that is
