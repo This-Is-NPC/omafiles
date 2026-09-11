@@ -38,6 +38,8 @@ at `pkgbuilds/omafiles`.
 - `/` — filter the folder
 - `r` / `F2` — rename, which is `mv` with the tags kept
 - `n` — new folder
+- `Ctrl+C` / `Ctrl+X` / `Ctrl+V` — copy, cut and paste files, through the
+  same clipboard Nautilus and Dolphin use, so it works between them and here
 - `:` — commands
 - `Esc` — back to the list
 - `1` / `2` / `3` — list, details, and icons

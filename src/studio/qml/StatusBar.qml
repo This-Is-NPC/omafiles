@@ -15,6 +15,11 @@ Rectangle {
     property int total: 0
     property int marked: 0
     property int tagged: 0
+    /// Files on the clipboard waiting for a paste, and whether it will move
+    /// them. Said here because a cut that nothing shows is a cut you forget
+    /// you made, and the next Ctrl+V moves files you had stopped thinking of.
+    property int pastable: 0
+    property bool cutting: false
     property string tag: ""
     property string filter: ""
     /// What a view with no folder under it says about itself instead of the
@@ -35,6 +40,8 @@ Rectangle {
         parts.push(bar.note !== "" ? bar.note : bar.tagged + " tagged here")
         if (bar.marked > 0)
             parts.push(bar.marked + " marked")
+        if (bar.pastable > 0)
+            parts.push(bar.pastable + (bar.cutting ? " to move" : " to paste"))
         if (bar.tag !== "")
             parts.push("tag " + bar.tag)
         if (bar.filter !== "")
@@ -82,6 +89,12 @@ Rectangle {
             color: Theme.accent
             font.pixelSize: 11
             text: bar.marked + " marked"
+        }
+        Label {
+            visible: bar.pastable > 0
+            color: Theme.accent
+            font.pixelSize: 11
+            text: bar.pastable + (bar.cutting ? " to move" : " to paste")
         }
         Label {
             visible: bar.tag !== ""

@@ -24,9 +24,12 @@
 #include "Workspace.h"
 
 #include <QAccessible>
+#include <QClipboard>
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QMimeData>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
@@ -246,6 +249,7 @@ private slots:
     void opensAndSavesAView();
     void walksIntoWhatCarriesNoTag();
     void renamesAndMakesAFolderFromThePromptBar();
+    void copiesCutsAndPastesThroughTheDesktopClipboard();
 
 private:
     QQuickWindow *window() const;
@@ -3165,6 +3169,8 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         "Ctrl ,", "Ctrl .",
         "Ctrl p", "Tab",
         "F2", "Ctrl Shift n",
+        // copiesCutsAndPastesThroughTheDesktopClipboard
+        "Ctrl c", "Ctrl x", "Ctrl v",
     };
 
     // The keymap drives the list, so a key added to the sheet without a case
@@ -4897,6 +4903,101 @@ void TestStudio::renamesAndMakesAFolderFromThePromptBar()
     settle();
 
     QVERIFY(tree.rmdir(QStringLiteral("fresh")));
+    settle();
+}
+
+// Through the real clipboard, in the formats Nautilus and Dolphin read, and
+// pasted as the `cp` and `mv` the shell would have been handed.
+void TestStudio::copiesCutsAndPastesThroughTheDesktopClipboard()
+{
+    QObject *root = m_engine->rootObjects().first();
+    const QDir tree(m_tree.path());
+    const QString one = tree.filePath(QStringLiteral("one.txt"));
+    const QString two = tree.filePath(QStringLiteral("two.md"));
+    const QString alpha = tree.filePath(QStringLiteral("alpha"));
+
+    // Copy takes the row; the desktop sees files, and text for anything that
+    // only takes text.
+    m_clipboard->clear();
+    settle();
+    QVERIFY(!m_clipboard->holdsFiles());
+    focusRow(QStringLiteral("one.txt"));
+    key('c', Qt::ControlModifier);
+    QVERIFY(m_clipboard->holdsFiles());
+    QCOMPARE(m_clipboard->files(), QStringList{one});
+    QVERIFY(!m_clipboard->cutting());
+    QCOMPARE(m_clipboard->lastCopied(), one);
+    const QMimeData *data = QGuiApplication::clipboard()->mimeData();
+    QVERIFY(data && data->hasUrls());
+    QCOMPARE(data->data(QStringLiteral("x-special/gnome-copied-files")),
+             QByteArray("copy\n") + QUrl::fromLocalFile(one).toString(QUrl::FullyEncoded).toUtf8());
+
+    // Pasted into a folder, it is `cp` into that folder, and the cursor is
+    // pointed at the copy.
+    verbRuns().clear();
+    tab()->setCwd(alpha);
+    settle();
+    key('v', Qt::ControlModifier);
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(), (QStringList{"cp", "--", one, alpha}));
+    QCOMPARE(tab()->cursorPath(), QDir(alpha).filePath(QStringLiteral("one.txt")));
+    // A copy stays on the clipboard for the next paste.
+    QVERIFY(m_clipboard->holdsFiles());
+
+    // Cut takes the marked set when the row is in it, in listing order; the
+    // status bar says what is waiting, and a paste is `mv`, after which the
+    // clipboard is empty: those files are no longer where it said.
+    tab()->setCwd(m_tree.path());
+    settle();
+    focusRow(QStringLiteral("one.txt"));
+    key(Qt::Key_Space);
+    focusRow(QStringLiteral("two.md"));
+    key(Qt::Key_Space);
+    key('x', Qt::ControlModifier);
+    QCOMPARE(m_clipboard->files(), (QStringList{one, two}));
+    QVERIFY(m_clipboard->cutting());
+    data = QGuiApplication::clipboard()->mimeData();
+    QVERIFY(data && data->hasFormat(QStringLiteral("application/x-kde-cutselection")));
+    QObject *status = root->findChild<QObject *>(QStringLiteral("statusBar"));
+    QVERIFY(status);
+    QVERIFY2(status->property("spoken").toString().contains(QStringLiteral("2 to move")),
+             qPrintable(status->property("spoken").toString()));
+    key('A');
+
+    verbRuns().clear();
+    tab()->setCwd(alpha);
+    settle();
+    key('m');
+    QVERIFY2(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Move 2 files here")),
+             qPrintable(menuLabels(QStringLiteral("fileMenu")).join(QLatin1String(" | "))));
+    QCOMPARE(verbRuns().size(), 2);
+    QCOMPARE(verbRuns().at(0), (QStringList{"mv", "--", one, alpha}));
+    QCOMPARE(verbRuns().at(1), (QStringList{"mv", "--", two, alpha}));
+    QVERIFY(!m_clipboard->holdsFiles());
+    key('m');
+    QVERIFY(!menuLabels(QStringLiteral("fileMenu")).contains(QStringLiteral("Paste")));
+    key(Qt::Key_Escape);
+
+    // What another file manager put there pastes here too, and a tags tab has
+    // nowhere to paste it.
+    auto *foreign = new QMimeData;
+    foreign->setUrls({QUrl::fromLocalFile(two)});
+    QGuiApplication::clipboard()->setMimeData(foreign);
+    settle();
+    QVERIFY(m_clipboard->holdsFiles());
+    m_workspace->addTab(QStringLiteral("tags"));
+    settle();
+    verbRuns().clear();
+    key('v', Qt::ControlModifier);
+    QVERIFY(verbRuns().isEmpty());
+    m_workspace->closeCurrentTab();
+    settle();
+    key('v', Qt::ControlModifier);
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(), (QStringList{"cp", "--", two, alpha}));
+
+    m_clipboard->clear();
+    tab()->setCwd(m_tree.path());
     settle();
 }
 

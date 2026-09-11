@@ -124,7 +124,10 @@ Window {
             { key: "r", label: "rename" },
             { key: "F2", label: "rename" },
             { key: "n", label: "new folder" },
-            { key: "Ctrl Shift n", label: "new folder" } ] },
+            { key: "Ctrl Shift n", label: "new folder" },
+            { key: "Ctrl c", label: "copy the row or the marked" },
+            { key: "Ctrl x", label: "cut the row or the marked" },
+            { key: "Ctrl v", label: "paste into this folder" } ] },
         { title: "find", keys: [
             { key: "/", label: "filter this folder" },
             { key: "Enter", label: "keep filter" },
@@ -301,6 +304,49 @@ Window {
         if (activeFolder)
             activeFolder.pointCursorAt(to)
         IndexModel.rename(path, to)
+    }
+
+    // ------------------------------------------------------------- clipboard
+    //
+    // The desktop's clipboard, in the formats its file managers use, so what is
+    // copied here pastes in Nautilus and what is copied there pastes here. The
+    // paste is `cp` or `mv` into the folder on screen, which is where the
+    // refusals live: nothing here decides what happens to a name already taken.
+    function copyToClipboard(cut) {
+        const folder = activeFolder
+        const path = cursorPath()
+        if (!folder)
+            return false
+        // The row, or the marked set it stands for; with the cursor off every
+        // file, the marked set alone.
+        const paths = path !== "" ? folder.targetPaths(path) : folder.markedPaths()
+        if (paths.length === 0)
+            return false
+        Clipboard.copyFiles(paths, cut)
+        return true
+    }
+
+    // Whether a paste has somewhere to land: a folder, and not a tag listing,
+    // which spans the index and is nowhere in particular.
+    readonly property bool canPaste: onDirectory && activeTab.selectedTag === ""
+                                     && Clipboard.holdsFiles
+
+    function paste() {
+        const folder = activeFolder
+        if (!canPaste || !folder)
+            return false
+        const paths = Clipboard.files()
+        const dir = folder.directory
+        // One file lands under the cursor; a set lands where it lands.
+        if (paths.length === 1)
+            folder.pointCursorAt((dir === "/" ? "" : dir) + "/" + nameOf(paths[0]))
+        if (Clipboard.cutting()) {
+            IndexModel.moveInto(paths, dir)
+            Clipboard.clear()
+        } else {
+            IndexModel.copyInto(paths, dir)
+        }
+        return true
     }
 
     // Only where the list is a folder: a tag listing spans the index and has
@@ -763,6 +809,9 @@ Window {
                 if (shift)
                     startMakingFolder()
                 return shift
+            case Qt.Key_C: return copyToClipboard(false)
+            case Qt.Key_X: return copyToClipboard(true)
+            case Qt.Key_V: return paste()
             case Qt.Key_Comma: return resizeFocusedPane(-40)
             case Qt.Key_Period: return resizeFocusedPane(40)
             }
@@ -1303,6 +1352,8 @@ Window {
                 note: win.onGraph ? win.activeGraph.summary : ""
                 marked: win.activeFolder ? win.activeFolder.markedCount : 0
                 tagged: win.activeFolder ? win.activeFolder.taggedCount : 0
+                pastable: Clipboard.holdsFiles ? Clipboard.files().length : 0
+                cutting: Clipboard.holdsFiles && Clipboard.cutting()
                 tag: win.activeTab ? win.activeTab.selectedTag : ""
                 filter: win.activeTab ? win.activeTab.filter : ""
                 // The folder first: it is about the pane in front of you and
@@ -1343,6 +1394,9 @@ Window {
                 { id: "filter", label: "Filter this folder", key: "/" },
                 { id: "rename", label: "Rename", key: "r" },
                 { id: "new-folder", label: "New folder", key: "n" },
+                { id: "copy-files", label: "Copy", key: "Ctrl+C" },
+                { id: "cut-files", label: "Cut", key: "Ctrl+X" },
+                { id: "paste", label: "Paste", key: "Ctrl+V" },
                 { id: "mark-all", label: "Mark all", key: "a" },
                 { id: "clear-marks", label: "Clear marks", key: "A" },
                 { id: "clear-tag", label: "Leave the tag listing", key: "" },
@@ -1375,6 +1429,9 @@ Window {
                 case "filter": Qt.callLater(win.startFilter); break
                 case "rename": Qt.callLater(win.startRename); break
                 case "new-folder": Qt.callLater(win.startMakingFolder); break
+                case "copy-files": win.copyToClipboard(false); break
+                case "cut-files": win.copyToClipboard(true); break
+                case "paste": win.paste(); break
                 case "mark-all": if (win.activeFolder) win.activeFolder.markAll(); break
                 case "clear-marks": if (win.activeFolder) win.activeFolder.clearMarks(); break
                 case "clear-tag": if (win.activeTab) win.activeTab.selectedTag = ""; break
@@ -1551,6 +1608,16 @@ Window {
                         && fileMenu.markedCount > 0 && fileMenu.targetTags.length > 0 },
                 { id: "adopt", label: "Adopt tags from disk here", when: fileMenu.hasHere },
 
+                { id: "copy-files", label: fileMenu.counted("Copy", "Copy %1 files"),
+                  key: "Ctrl+C", when: fileMenu.isRow },
+                { id: "cut-files", label: fileMenu.counted("Cut", "Cut %1 files"),
+                  key: "Ctrl+X", when: fileMenu.isRow },
+                { id: "paste",
+                  label: Clipboard.holdsFiles && Clipboard.files().length > 1
+                         ? (Clipboard.cutting() ? "Move %1 files here" : "Paste %1 files")
+                               .replace("%1", Clipboard.files().length)
+                         : (Clipboard.cutting() ? "Move here" : "Paste"),
+                  key: "Ctrl+V", when: win.canPaste },
                 { id: "copy-other",
                   label: fileMenu.counted("Copy to other pane", "Copy %1 files to other pane"),
                   when: fileMenu.isRow && fileMenu.otherDir !== "" },
@@ -1642,6 +1709,9 @@ Window {
                     break
                 case "adopt": IndexModel.adoptTagsIn(fileMenu.hereDir); break
 
+                case "copy-files": Clipboard.copyFiles(paths, false); break
+                case "cut-files": Clipboard.copyFiles(paths, true); break
+                case "paste": win.paste(); break
                 case "copy-other": IndexModel.copyInto(paths, fileMenu.otherDir); break
                 case "move-other": IndexModel.moveInto(paths, fileMenu.otherDir); break
                 case "duplicate": IndexModel.duplicate(path); break
