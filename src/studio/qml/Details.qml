@@ -120,6 +120,32 @@ Item {
                 font.pixelSize: 11
             }
 
+            // The two facts a permissions dialog exists for, read here
+            // instead: whose it is, and what they and everyone else may do.
+            // Yours is `you`, and only somebody else's names the user and
+            // the group -- the question the line answers is whether it is
+            // yours, and a name you would have to recognise as your own is
+            // a slower way of saying so.
+            Label { quiet: true; text: "owner"; visible: ownerValue.visible }
+            Label {
+                id: ownerValue
+                width: body.width - 58
+                visible: details.has && details.entry.owner !== ""
+                text: !details.has ? ""
+                    : details.entry.mine ? "you"
+                    : details.entry.owner + " · " + details.entry.group
+                font.pixelSize: 11
+            }
+
+            Label { quiet: true; text: "mode"; visible: modeValue.visible }
+            Label {
+                id: modeValue
+                width: body.width - 58
+                visible: details.has && details.entry.mode !== ""
+                text: details.has ? details.entry.mode : ""
+                font.pixelSize: 11
+            }
+
             Label { quiet: true; text: "marked"; visible: markValue.visible }
             Label {
                 id: markValue

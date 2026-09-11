@@ -35,6 +35,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QLockFile>
+#include <QRegularExpression>
 #include <QPainter>
 #include <QScopeGuard>
 #include <QSignalSpy>
@@ -44,6 +45,7 @@
 
 #include <cstdio>
 #include <fcntl.h>
+#include <pwd.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -882,10 +884,25 @@ void TestStudio::readsOutTheRowUnderTheCursor()
     QCOMPARE(entry.value(QStringLiteral("tags")).toStringList(),
              QStringList{QStringLiteral("notes")});
 
+    // Whose it is and what they may do, the way `ls -l` spells it. The owner
+    // is whoever wrote the fixture, which is whoever is running this.
+    const passwd *me = getpwuid(getuid());
+    QVERIFY(me);
+    QCOMPARE(entry.value(QStringLiteral("owner")).toString(),
+             QString::fromLocal8Bit(me->pw_name));
+    QCOMPARE(entry.value(QStringLiteral("mine")).toBool(), true);
+    QVERIFY(!entry.value(QStringLiteral("group")).toString().isEmpty());
+    const QString mode = entry.value(QStringLiteral("mode")).toString();
+    QVERIFY2(QRegularExpression(QStringLiteral("^-[rwx-]{9}$")).match(mode).hasMatch(),
+             qPrintable(mode));
+    QVERIFY2(mode.startsWith(QStringLiteral("-rw")), qPrintable(mode));
+
     // A folder row reports itself as one rather than as a file of size zero.
     focusRow(QStringLiteral("alpha"));
     QCOMPARE(filesRoot()->property("entry").toMap()
                  .value(QStringLiteral("directory")).toBool(), true);
+    QVERIFY(filesRoot()->property("entry").toMap()
+                .value(QStringLiteral("mode")).toString().startsWith(QLatin1Char('d')));
 
     // Marking the row reads out straight away. Nothing here moves the cursor,
     // so nothing else would re-read the row, and the panel went on saying the

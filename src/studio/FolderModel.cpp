@@ -9,6 +9,7 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QLocale>
 #include <QMap>
@@ -17,6 +18,8 @@
 #include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
+
+#include <unistd.h>
 
 namespace omafiles {
 namespace {
@@ -633,11 +636,31 @@ QVariantMap FolderModel::entryAt(int row) const
                 {QStringLiteral("sizeText"), QString()},
                 {QStringLiteral("mtime"), 0},
                 {QStringLiteral("mtimeText"), QString()},
+                {QStringLiteral("owner"), QString()},
+                {QStringLiteral("group"), QString()},
+                {QStringLiteral("mine"), false},
+                {QStringLiteral("mode"), QString()},
                 {QStringLiteral("marked"), false},
                 {QStringLiteral("tagged"), false},
                 {QStringLiteral("tags"), QStringList()}};
     }
     const bool directory = entry.kind != QLatin1String("file");
+
+    // Who it belongs to and what they may do with it, spelled the way `ls -l`
+    // spells it, which is the spelling everyone who wants this already reads.
+    // One stat, for the focused row only, like the count below.
+    const QFileInfo info(entry.path);
+    const QFile::Permissions may = info.permissions();
+    const auto letter = [&](QFile::Permission bit, char yes) {
+        return QLatin1Char(may.testFlag(bit) ? yes : '-');
+    };
+    const QString mode = QString(info.isSymLink() ? QLatin1Char('l')
+                                 : directory ? QLatin1Char('d') : QLatin1Char('-'))
+        + letter(QFile::ReadOwner, 'r') + letter(QFile::WriteOwner, 'w')
+        + letter(QFile::ExeOwner, 'x') + letter(QFile::ReadGroup, 'r')
+        + letter(QFile::WriteGroup, 'w') + letter(QFile::ExeGroup, 'x')
+        + letter(QFile::ReadOther, 'r') + letter(QFile::WriteOther, 'w')
+        + letter(QFile::ExeOther, 'x');
 
     // MatchDefault, not MatchExtension: this runs for the focused row only, so
     // it can afford to look inside the file when the name does not say. By
@@ -677,6 +700,10 @@ QVariantMap FolderModel::entryAt(int row) const
             {QStringLiteral("sizeText"), entry.sizeText},
             {QStringLiteral("mtime"), entry.mtime},
             {QStringLiteral("mtimeText"), entry.mtimeText},
+            {QStringLiteral("owner"), info.owner()},
+            {QStringLiteral("group"), info.group()},
+            {QStringLiteral("mine"), info.ownerId() == getuid()},
+            {QStringLiteral("mode"), mode},
             {QStringLiteral("marked"), m_tab && m_tab->isMarked(entry.path)},
             {QStringLiteral("tagged"), entry.tagged},
             {QStringLiteral("tags"), entry.tags.isEmpty()
