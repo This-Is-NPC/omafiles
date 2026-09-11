@@ -126,6 +126,14 @@ public:
     Q_INVOKABLE void copyInto(const QStringList &paths, const QString &directory);
     Q_INVOKABLE void moveInto(const QStringList &paths, const QString &directory);
     Q_INVOKABLE void duplicate(const QString &path);
+    /// `mv` to a new name beside the old one. Refuses a destination that is
+    /// there, in `mv`'s words, before `mv` gets to answer differently.
+    Q_INVOKABLE void rename(const QString &path, const QString &to);
+    /// `mkdir`. Not a verb of the command line, because the command line has
+    /// none: a folder with nothing in it has no row, and the system call is the
+    /// whole of the job. Reported here all the same, since the receipt goes
+    /// where every other receipt goes. True when the folder is there now.
+    Q_INVOKABLE bool makeFolder(const QString &directory, const QString &name);
     Q_INVOKABLE void reindexTree(const QString &directory);
     Q_INVOKABLE void pruneTree(const QString &directory);
     Q_INVOKABLE void verifyTree(const QString &directory);

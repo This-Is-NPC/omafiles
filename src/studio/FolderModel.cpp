@@ -665,6 +665,12 @@ int FolderModel::cursorRow() const
     return row >= 0 ? row : 0;
 }
 
+void FolderModel::pointCursorAt(const QString &path)
+{
+    if (m_tab && !path.isEmpty())
+        m_tab->setCursorPath(path);
+}
+
 void FolderModel::reload()
 {
     rebuild();

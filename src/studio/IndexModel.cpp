@@ -5,11 +5,16 @@
 #include "Verb.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QPointer>
 
+#include <cerrno>
+#include <cstring>
 #include <functional>
 #include <memory>
+
+#include <sys/stat.h>
 
 namespace omafiles {
 
@@ -461,6 +466,42 @@ void IndexModel::duplicate(const QString &path)
     }
     report({QStringLiteral("cp"), QStringLiteral("--"), path, destination},
            QStringLiteral("copied to %1").arg(QFileInfo(destination).fileName()));
+}
+
+// A name that is taken is refused here rather than left to `mv`, which would
+// not refuse it: handed a folder as the destination, `mv` moves the file
+// inside, which is the right answer at a prompt and the wrong one for a box
+// that asked for a new name. Asked of the name and not what it points at, so a
+// dangling link counts as taken the way `mv` counts it.
+void IndexModel::rename(const QString &path, const QString &to)
+{
+    if (path.isEmpty() || to.isEmpty() || path == to)
+        return;
+    const QFileInfo target(to);
+    if (target.exists() || target.isSymLink()) {
+        setNotice(QStringLiteral("mv: %1 already exists").arg(to));
+        return;
+    }
+    report({QStringLiteral("mv"), QStringLiteral("--"), path, to},
+           QStringLiteral("renamed %1 to %2").arg(QFileInfo(path).fileName(),
+                                                   target.fileName()));
+}
+
+// `mkdir(2)` and not `QDir::mkdir`, for the reason: the system says why it
+// refused, and a folder that cannot be made in a place nobody may write to
+// should say so rather than say nothing.
+bool IndexModel::makeFolder(const QString &directory, const QString &name)
+{
+    if (directory.isEmpty() || name.isEmpty())
+        return false;
+    const QString path = QDir(directory).filePath(name);
+    if (::mkdir(QFile::encodeName(path).constData(), 0777) != 0) {
+        setNotice(QStringLiteral("mkdir: cannot make %1: %2")
+                      .arg(path, QString::fromLocal8Bit(strerror(errno))));
+        return false;
+    }
+    setNotice(QStringLiteral("made %1").arg(name));
+    return true;
 }
 
 void IndexModel::reindexTree(const QString &directory)

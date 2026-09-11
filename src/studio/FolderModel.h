@@ -183,6 +183,11 @@ public:
     /// the cursor back on the folder you walked out of rather than on `..`.
     Q_INVOKABLE void rememberCursor(int row);
     Q_INVOKABLE int cursorRow() const;
+    /// Where the cursor belongs once the list next shows `path` -- a row that
+    /// is not there yet. A rename and a new folder both know the name before
+    /// the rebuild that lists it, and without this the rebuild would find the
+    /// old name gone and put the cursor at the top.
+    Q_INVOKABLE void pointCursorAt(const QString &path);
 
 signals:
     void sourceChanged();

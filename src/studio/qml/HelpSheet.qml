@@ -56,7 +56,7 @@ Rectangle {
 
         Rectangle {
             anchors.centerIn: parent
-            width: Math.min(940, parent.width - 48)
+            width: Math.min(1140, parent.width - 48)
             height: Math.min(columns.implicitHeight + 66, parent.height - 64)
             radius: Theme.rounding
             color: Theme.panel
@@ -96,7 +96,7 @@ Rectangle {
 
                 Flow {
                     id: columns
-                    readonly property int across: width >= 700 ? 4 : 3
+                    readonly property int across: width >= 1000 ? 5 : width >= 700 ? 4 : 3
                     width: parent.width
                     spacing: 26
 
@@ -107,11 +107,12 @@ Rectangle {
                             id: group
                             required property var modelData
                             readonly property var spec: group.modelData
-                            // Four across when the window is wide enough for
-                            // it. Three columns do not fit the map's eight
-                            // groups, and the third row falls off the bottom --
-                            // a reference that quietly stops at `Tab` is worse
-                            // than no reference, because you stop looking.
+                            // As many across as the window is wide enough for.
+                            // The map's nine groups take five columns to fit
+                            // in two rows, and a third row falls off the
+                            // bottom -- a reference that quietly stops at `Tab`
+                            // is worse than no reference, because you stop
+                            // looking.
                             width: (columns.width - (columns.across - 1) * 26)
                                    / columns.across
                             spacing: 6

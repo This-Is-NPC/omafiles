@@ -36,6 +36,8 @@ at `pkgbuilds/omafiles`.
 - `t` — tag panel
 - `v` — saved views
 - `/` — filter the folder
+- `r` / `F2` — rename, which is `mv` with the tags kept
+- `n` — new folder
 - `:` — commands
 - `Esc` — back to the list
 - `1` / `2` / `3` — list, details, and icons

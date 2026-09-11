@@ -245,6 +245,7 @@ private slots:
     void choosesARowMenuEntryWithTheMouse();
     void opensAndSavesAView();
     void walksIntoWhatCarriesNoTag();
+    void renamesAndMakesAFolderFromThePromptBar();
 
 private:
     QQuickWindow *window() const;
@@ -3095,6 +3096,16 @@ void TestStudio::answersTheNamedAndChordedKeys()
     tab()->setViewMode(QStringLiteral("list"));
     settle();
 
+    // The prompts, by their named spellings; the bare keys are swept.
+    reset(1);
+    key(Qt::Key_F2);
+    QCOMPARE(root->property("prompt").toString(), QStringLiteral("rename"));
+    key(Qt::Key_Escape);
+    reset(1);
+    key(Qt::Key_N, Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(root->property("prompt").toString(), QStringLiteral("folder"));
+    key(Qt::Key_Escape);
+
     // Enter, which the sheet spells as a word.
     reset(1);
     key(Qt::Key_Return);
@@ -3130,6 +3141,7 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         {"1", "icons"},   {"2", "list"},    {"3", "list"},
         {"]", "tabs"},    {"[", "tabs"},
         {"/", ""},                         // opens the filter bar
+        {"r", ""},        {"n", ""},       // open a prompt in it
     };
 
     // The other half of the sheet: the rows spelled as words. The sweep below
@@ -3152,6 +3164,7 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         // resizesTheSplitWithCtrlComma
         "Ctrl ,", "Ctrl .",
         "Ctrl p", "Tab",
+        "F2", "Ctrl Shift n",
     };
 
     // The keymap drives the list, so a key added to the sheet without a case
@@ -4794,6 +4807,96 @@ void TestStudio::walksIntoWhatCarriesNoTag()
     QVERIFY2(!tab()->untagged(), "a facet and the complement were both on at once");
 
     m_workspace->closeCurrentTab();
+    settle();
+}
+
+// A rename is `mv` to the same folder, asked for in the bar the filter uses; a
+// new folder is the one thing the window makes without the command line.
+void TestStudio::renamesAndMakesAFolderFromThePromptBar()
+{
+    QObject *root = m_engine->rootObjects().first();
+    const QDir tree(m_tree.path());
+    const QString one = tree.filePath(QStringLiteral("one.txt"));
+    const auto answer = [&](const char *prompt, const QString &text) {
+        QMetaObject::invokeMethod(root, prompt, Q_ARG(QVariant, QVariant(true)),
+                                  Q_ARG(QVariant, QVariant(text)));
+        settle();
+    };
+
+    // `r` asks, with the name in the box, and Escape is no rename.
+    focusRow(QStringLiteral("one.txt"));
+    key('r');
+    QCOMPARE(root->property("prompt").toString(), QStringLiteral("rename"));
+    QVERIFY(root->property("blocked").toBool());
+    QObject *entry = root->findChild<QObject *>(QStringLiteral("filterEntry"));
+    QVERIFY(entry);
+    QCOMPARE(entry->property("text").toString(), QStringLiteral("one.txt"));
+    verbRuns().clear();
+    key(Qt::Key_Escape);
+    QCOMPARE(root->property("prompt").toString(), QString());
+    QVERIFY(verbRuns().isEmpty());
+
+    // Committed: the command line the shell would have been handed, and the
+    // cursor pointed at the name that is about to exist.
+    key(Qt::Key_F2);
+    QCOMPARE(root->property("prompt").toString(), QStringLiteral("rename"));
+    answer("finishRename", QStringLiteral("uno.txt"));
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(),
+             (QStringList{"mv", "--", one, tree.filePath(QStringLiteral("uno.txt"))}));
+    QCOMPARE(tab()->cursorPath(), tree.filePath(QStringLiteral("uno.txt")));
+    QCOMPARE(root->property("blocked").toBool(), false);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+
+    // The same name is not a rename, and a name that is taken is refused in
+    // `mv`'s words before `mv` could move the file into the folder of that name.
+    verbRuns().clear();
+    focusRow(QStringLiteral("one.txt"));
+    key('r');
+    answer("finishRename", QStringLiteral("one.txt"));
+    QVERIFY(verbRuns().isEmpty());
+    key('r');
+    answer("finishRename", QStringLiteral("alpha"));
+    QVERIFY(verbRuns().isEmpty());
+    QVERIFY2(m_index->notice().contains(QStringLiteral("already exists")),
+             qPrintable(m_index->notice()));
+
+    // The `..` row has no name to change.
+    QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(0)));
+    settle();
+    key('r');
+    QCOMPARE(root->property("prompt").toString(), QString());
+
+    // A folder is made where the list stands, listed at once, and under the
+    // cursor; made twice, it is refused with the system's reason.
+    key('n');
+    QCOMPARE(root->property("prompt").toString(), QStringLiteral("folder"));
+    QCOMPARE(entry->property("text").toString(), QString());
+    answer("finishMakingFolder", QStringLiteral("fresh"));
+    QVERIFY(QFileInfo(tree.filePath(QStringLiteral("fresh"))).isDir());
+    QCOMPARE(m_index->notice(), QStringLiteral("made fresh"));
+    QCOMPARE(cursor(), rowOf(QStringLiteral("fresh")));
+    key('n');
+    answer("finishMakingFolder", QStringLiteral("fresh"));
+    QVERIFY2(m_index->notice().startsWith(QStringLiteral("mkdir: cannot make")),
+             qPrintable(m_index->notice()));
+
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    const QStringList labels = menuLabels(QStringLiteral("fileMenu"));
+    QVERIFY(labels.contains(QStringLiteral("Rename")));
+    QVERIFY(labels.contains(QStringLiteral("New folder")));
+    key(Qt::Key_Escape);
+
+    // A tags tab spans the index, so there is nowhere in it to put a folder.
+    m_workspace->addTab(QStringLiteral("tags"));
+    settle();
+    key('n');
+    QCOMPARE(root->property("prompt").toString(), QString());
+    m_workspace->closeCurrentTab();
+    settle();
+
+    QVERIFY(tree.rmdir(QStringLiteral("fresh")));
     settle();
 }
 

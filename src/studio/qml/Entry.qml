@@ -18,9 +18,14 @@ Rectangle {
     signal accepted(string text)
     signal cancelled
 
-    function focusEntry() {
+    // Everything selected, or the first `upTo` characters: a rename offers the
+    // stem and leaves the extension, which is the part nobody meant to retype.
+    function focusEntry(upTo) {
         entry.forceActiveFocus()
-        entry.selectAll()
+        if (upTo === undefined || upTo < 0 || upTo >= entry.text.length)
+            entry.selectAll()
+        else
+            entry.select(0, upTo)
     }
 
     implicitHeight: 26

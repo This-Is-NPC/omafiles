@@ -34,10 +34,18 @@ Window {
     property var activeDock: null
     property bool filtering: false
     property bool editingPath: false
-    /// Naming a view. The third thing this window has ever asked to be typed,
-    /// and it borrows the filter bar to ask it -- one text box for one prompt
-    /// at a time, where two bars would be two places to look.
-    property bool naming: false
+    /// What the bottom bar is asking for, or nothing: a name for a view, a new
+    /// name for the row, a name for a folder. Every prompt borrows the filter
+    /// bar -- one text box for one prompt at a time, where two bars would be
+    /// two places to look.
+    property string prompt: ""
+    readonly property bool naming: prompt === "view"
+    readonly property bool renaming: prompt === "rename"
+    readonly property bool makingFolder: prompt === "folder"
+    /// The row the rename prompt is about. Held here and not read off the
+    /// cursor when the answer comes, because the list can rebuild under an
+    /// open prompt and the cursor is not promised to stay.
+    property string promptPath: ""
     property string focusRegion: "list"
     property bool pendingG: false
     property var paneItems: ({})
@@ -66,7 +74,8 @@ Window {
     readonly property bool blocked: commandPalette.visible || helpSheet.visible
                                     || fileMenu.visible || tabMenu.visible
                                     || openWithMenu.visible || viewMenu.visible
-                                    || newTabMenu.visible || editingPath || filtering || naming
+                                    || newTabMenu.visible || editingPath || filtering
+                                    || prompt !== ""
 
     // ---------------------------------------------------------------- keymap
     //
@@ -111,6 +120,11 @@ Window {
             { key: "Ctrl h", label: "hidden files" },
             { key: "s", label: "name, tags, type, size, modified, each the way it reads" },
             { key: "S", label: "flip the direction" } ] },
+        { title: "edit", keys: [
+            { key: "r", label: "rename" },
+            { key: "F2", label: "rename" },
+            { key: "n", label: "new folder" },
+            { key: "Ctrl Shift n", label: "new folder" } ] },
         { title: "find", keys: [
             { key: "/", label: "filter this folder" },
             { key: "Enter", label: "keep filter" },
@@ -164,6 +178,10 @@ Window {
             return [{ key: "Esc", label: "cancel" }, { key: "Enter", label: "go" }]
         if (filtering)
             return [{ key: "Esc", label: "clear" }, { key: "Enter", label: "keep" }]
+        if (prompt !== "")
+            return [{ key: "Esc", label: "cancel" },
+                    { key: "Enter", label: renaming ? "rename"
+                                         : makingFolder ? "make" : "save" }]
         if (onGraph)
             return [{ key: "?", label: "keys" },
                     { key: ":", label: "cmd" },
@@ -223,7 +241,7 @@ Window {
     function startNaming() {
         if (!onFiles)
             return
-        naming = true
+        prompt = "view"
         focusRegion = "filter"
         filterField.text = onTags ? win.facetPath(activeTab.facets, activeTab.untagged)
                                   : win.nameOf(activeFolder ? activeFolder.directory : "")
@@ -231,7 +249,7 @@ Window {
     }
 
     function finishNaming(accept, text) {
-        naming = false
+        prompt = ""
         if (accept && activeTab) {
             if (onTags)
                 Views.saveQuery(text, activeTab.facets)
@@ -239,6 +257,77 @@ Window {
                 Views.saveFolder(text, activeFolder.directory)
         }
         takeFocus()
+    }
+
+    // The row under the cursor, or the marked set it stands for, as a list of
+    // paths. Nothing for a facet or the `..` row, which are not files.
+    function cursorPath() {
+        const folder = activeFolder
+        const listing = activeListing
+        if (!onFiles || !folder || !listing || listing.currentIndex < 0)
+            return ""
+        const kind = folder.kindAt(listing.currentIndex)
+        if (kind === "parent" || kind === "tag" || kind === "untagged")
+            return ""
+        return folder.pathAt(listing.currentIndex)
+    }
+
+    // Renaming is `mv` to the same folder, so the prompt offers the name and
+    // the verb keeps the tags. The stem is selected and the extension is not:
+    // the extension is the part nobody opened the prompt to change.
+    function startRename(target) {
+        const path = target || cursorPath()
+        if (!path || !onFiles)
+            return
+        promptPath = path
+        prompt = "rename"
+        focusRegion = "filter"
+        const name = nameOf(path)
+        filterField.text = name
+        const dot = name.lastIndexOf(".")
+        filterField.focusEntry(dot > 0 ? dot : -1)
+    }
+
+    function finishRename(accept, text) {
+        const path = promptPath
+        prompt = ""
+        promptPath = ""
+        takeFocus()
+        const name = text.trim()
+        if (!accept || name === "" || name === nameOf(path))
+            return
+        const dir = parentOf(path)
+        const to = (dir === "/" ? "" : dir) + "/" + name
+        if (activeFolder)
+            activeFolder.pointCursorAt(to)
+        IndexModel.rename(path, to)
+    }
+
+    // Only where the list is a folder: a tag listing spans the index and has
+    // nowhere to put one.
+    function startMakingFolder() {
+        if (!onDirectory || !activeFolder || activeTab.selectedTag !== "")
+            return
+        prompt = "folder"
+        focusRegion = "filter"
+        filterField.text = ""
+        filterField.focusEntry()
+    }
+
+    function finishMakingFolder(accept, text) {
+        prompt = ""
+        takeFocus()
+        const name = text.trim()
+        const folder = activeFolder
+        if (!accept || name === "" || !folder)
+            return
+        const dir = folder.directory
+        if (!IndexModel.makeFolder(dir, name))
+            return
+        // Listed now rather than when the watcher gets round to it, and with
+        // the cursor on it: what was just made is what you want to walk into.
+        folder.pointCursorAt((dir === "/" ? "" : dir) + "/" + name)
+        folder.reload()
     }
 
     function startPathEdit() {
@@ -670,6 +759,10 @@ Window {
                 if (activeTab)
                     activeTab.toggleHidden()
                 return true
+            case Qt.Key_N:
+                if (shift)
+                    startMakingFolder()
+                return shift
             case Qt.Key_Comma: return resizeFocusedPane(-40)
             case Qt.Key_Period: return resizeFocusedPane(40)
             }
@@ -777,6 +870,7 @@ Window {
         case Qt.Key_Return:
         case Qt.Key_Enter: folder.activateRow(listing.currentIndex); return true
         case Qt.Key_Space: folder.toggleMarkAt(listing.currentIndex); return true
+        case Qt.Key_F2: startRename(); return true
         case Qt.Key_Menu: openFileMenuForListing(); return true
         case Qt.Key_F10:
             if (event.modifiers & Qt.ShiftModifier) {
@@ -795,6 +889,8 @@ Window {
         case "m": openFileMenuForListing(); return true
         case "a": folder.markAll(); return true
         case "A": folder.clearMarks(); return true
+        case "r": startRename(); return true
+        case "n": startMakingFolder(); return true
         case "s": if (activeTab) activeTab.cycleSortRole(); return true
         case "S": if (activeTab) activeTab.toggleSortDirection(); return true
         case "1": if (activeTab) activeTab.viewMode = "list"; return true
@@ -1144,7 +1240,7 @@ Window {
             Item {
                 id: filterBar
                 width: parent.width
-                height: win.filtering || win.naming ? 34 : 0
+                height: win.filtering || win.prompt !== "" ? 34 : 0
                 visible: height > 0
                 clip: true
 
@@ -1161,18 +1257,29 @@ Window {
                     anchors.leftMargin: 10
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    lead: win.naming ? "" : "/"
-                    placeholder: win.naming ? "name this view" : "filter this folder"
+                    lead: win.prompt !== "" ? "" : "/"
+                    placeholder: win.naming ? "name this view"
+                               : win.renaming ? "rename " + win.nameOf(win.promptPath)
+                               : win.makingFolder ? "new folder"
+                               : "filter this folder"
                     onTextChanged: if (win.filtering && win.activeTab) win.activeTab.filter = text
                     onAccepted: function (value) {
                         if (win.naming)
                             win.finishNaming(true, value)
+                        else if (win.renaming)
+                            win.finishRename(true, value)
+                        else if (win.makingFolder)
+                            win.finishMakingFolder(true, value)
                         else
                             win.finishFilter(false)
                     }
                     onCancelled: {
                         if (win.naming)
                             win.finishNaming(false, "")
+                        else if (win.renaming)
+                            win.finishRename(false, "")
+                        else if (win.makingFolder)
+                            win.finishMakingFolder(false, "")
                         else
                             win.finishFilter(true)
                     }
@@ -1234,6 +1341,8 @@ Window {
                 { id: "up", label: "Go to parent folder", key: "h" },
                 { id: "path", label: "Type a path", key: "Ctrl+L" },
                 { id: "filter", label: "Filter this folder", key: "/" },
+                { id: "rename", label: "Rename", key: "r" },
+                { id: "new-folder", label: "New folder", key: "n" },
                 { id: "mark-all", label: "Mark all", key: "a" },
                 { id: "clear-marks", label: "Clear marks", key: "A" },
                 { id: "clear-tag", label: "Leave the tag listing", key: "" },
@@ -1264,6 +1373,8 @@ Window {
                 case "up": if (win.activeFolder) win.activeFolder.goUp(); break
                 case "path": Qt.callLater(win.startPathEdit); break
                 case "filter": Qt.callLater(win.startFilter); break
+                case "rename": Qt.callLater(win.startRename); break
+                case "new-folder": Qt.callLater(win.startMakingFolder); break
                 case "mark-all": if (win.activeFolder) win.activeFolder.markAll(); break
                 case "clear-marks": if (win.activeFolder) win.activeFolder.clearMarks(); break
                 case "clear-tag": if (win.activeTab) win.activeTab.selectedTag = ""; break
@@ -1448,6 +1559,11 @@ Window {
                   when: fileMenu.isRow && fileMenu.otherDir !== "" },
                 { id: "duplicate", label: "Duplicate",
                   when: fileMenu.isFile && fileMenu.targets.length === 1 },
+                // One row, whatever is marked: a rename is a name, and a set
+                // of files has none to offer.
+                { id: "rename", label: "Rename", key: "r", when: fileMenu.isRow },
+                { id: "new-folder", label: "New folder", key: "n",
+                  when: win.onDirectory && win.activeTab.selectedTag === "" },
                 { id: "trash", label: fileMenu.counted("Move to trash", "Move %1 files to trash"),
                   when: fileMenu.isRow },
 
@@ -1529,6 +1645,10 @@ Window {
                 case "copy-other": IndexModel.copyInto(paths, fileMenu.otherDir); break
                 case "move-other": IndexModel.moveInto(paths, fileMenu.otherDir); break
                 case "duplicate": IndexModel.duplicate(path); break
+                // On the next tick, like `open-with`: the menu is still closing
+                // and its close would take the focus off the prompt opened here.
+                case "rename": Qt.callLater(win.startRename, path); break
+                case "new-folder": Qt.callLater(win.startMakingFolder); break
                 case "trash": IndexModel.trash(paths); break
 
                 case "reindex": IndexModel.reindexTree(fileMenu.hereDir); break
