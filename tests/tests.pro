@@ -19,7 +19,8 @@ SOURCES += \
     ../src/core/Xattr.cpp \
     ../src/core/Paths.cpp \
     ../src/core/Roots.cpp \
-    ../src/core/View.cpp
+    ../src/core/View.cpp \
+    ../src/core/Recent.cpp
 
 HEADERS += \
     ../src/core/Tag.h \
@@ -28,4 +29,5 @@ HEADERS += \
     ../src/core/Xattr.h \
     ../src/core/Paths.h \
     ../src/core/Roots.h \
-    ../src/core/View.h
+    ../src/core/View.h \
+    ../src/core/Recent.h

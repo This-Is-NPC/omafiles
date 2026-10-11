@@ -61,14 +61,11 @@ public:
     /// through `error`.
     int missingRows() const { return m_missing; }
     int unknownRows() const { return m_unknown; }
-    /// Rows on a declared root that is not plugged in. Not missing and not
-    /// undescribable: they come back when the disk does, and until then nothing
-    /// here drops them.
-    int unreachableRows() const { return m_unreachable; }
     int tagCount() const;
     QAbstractListModel *tagsModel() const;
 
-    QVector<Record> records() const { return m_store.records(); }
+    /// The index as it was last read.
+    const Store &store() const { return m_store; }
     Q_INVOKABLE QStringList tagsForPath(const QString &path) const;
 
     bool canShare() const;
@@ -146,6 +143,9 @@ public:
     /// template, and the refusals -- a name taken, two landing on one --
     /// are the verb's.
     Q_INVOKABLE void renameSet(const QStringList &paths, const QString &pattern);
+    /// `chmod <mode>` over the paths. Who may change a mode is the system's to
+    /// say, so a refusal is the verb's and lands on the status bar.
+    Q_INVOKABLE void changeMode(const QStringList &paths, const QString &mode);
     /// `mkdir`. Not a verb of the command line, because the command line has
     /// none: a folder with nothing in it has no row, and the system call is the
     /// whole of the job. Reported here all the same, since the receipt goes

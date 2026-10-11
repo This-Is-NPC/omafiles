@@ -29,7 +29,7 @@ for fresh in "$tmp"/*.png; do
     fi
 done
 
-# The other direction: a picture in docs/img that nothing generates any more is
+# The other direction: a picture in docs/img that nothing generates is
 # just as stale, and comparing only what was generated would never notice it.
 for committed in "$root"/docs/img/*.png; do
     [ -f "$tmp/$(basename "$committed")" ] || stale+=("$(basename "$committed") (nothing generates it)")

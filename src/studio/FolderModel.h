@@ -21,8 +21,11 @@ class FolderModel : public QAbstractListModel
     QML_ELEMENT
     Q_PROPERTY(omafiles::IndexModel *source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(omafiles::TabState *tab READ tab WRITE setTab NOTIFY tabChanged)
-    Q_PROPERTY(QString directory READ directory WRITE setDirectory NOTIFY directoryChanged)
+    /// The tab's `cwd`, which is the one place a listing's folder is set.
+    Q_PROPERTY(QString directory READ directory NOTIFY directoryChanged)
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY queryChanged)
+    /// See `TabState::criteria`.
+    Q_PROPERTY(QVariantMap criteria READ criteria WRITE setCriteria NOTIFY queryChanged)
     Q_PROPERTY(QString selectedTag READ selectedTag WRITE setSelectedTag NOTIFY selectedTagChanged)
     Q_PROPERTY(QStringList facets READ facets WRITE setFacets NOTIFY facetsChanged)
     Q_PROPERTY(bool untagged READ untagged WRITE setUntagged NOTIFY facetsChanged)
@@ -54,7 +57,10 @@ public:
         /// How many files a `tag` row leads to, and -1 on every other row. A
         /// facet without a count is a folder you have to open to find out
         /// whether it was worth opening.
-        CountRole
+        CountRole,
+        OwnerRole,
+        /// Permissions as `ls -l` spells them, `drwxr-xr-x`.
+        ModeRole
     };
 
     explicit FolderModel(QObject *parent = nullptr);
@@ -69,11 +75,12 @@ public:
     TabState *tab() const { return m_tab; }
     void setTab(TabState *tab);
 
-    QString directory() const { return m_directory; }
-    void setDirectory(const QString &path);
+    QString directory() const;
 
     QString filter() const { return m_filter; }
     void setFilter(const QString &text);
+    QVariantMap criteria() const { return m_criteria; }
+    void setCriteria(const QVariantMap &criteria);
 
     /// The tags this listing has been narrowed by, in a `tags` tab.
     ///
@@ -155,6 +162,10 @@ public:
     /// Marks every file row from one row to another, either way round, on top
     /// of what is marked. Shift and a click, the way every list does it.
     Q_INVOKABLE void markRange(int from, int to);
+    /// Marks `kept` plus `rows`, or `kept` with `rows` toggled against it.
+    /// The rubber band calls it on every move with the marks it started from,
+    /// so a row the band lets go of goes back to what it was.
+    Q_INVOKABLE void markRows(const QList<int> &rows, const QStringList &kept, bool toggle);
     /// Marks every row whose name matches a shell pattern -- `*.pdf`,
     /// `draft-?.md` -- on top of what is marked, and says how many that was.
     Q_INVOKABLE int markMatching(const QString &pattern);
@@ -226,12 +237,16 @@ private:
         QString type;
         QString tags;
         bool tagged = false;
+        /// The name is a symlink; `path` is the link's own.
+        bool link = false;
         /// Files under a facet row; -1 where the row is not one.
         int count = -1;
         qint64 size = 0;
-        qint64 mtime = 0;
+        qint64 mtime = 0;           // milliseconds, so a sort orders within a second
         QString sizeText;
         QString mtimeText;
+        QString owner;
+        QString mode;
     };
 
     bool validRow(int row) const;
@@ -254,13 +269,16 @@ private:
     /// component of the path in a tag listing.
     Entry describe(const QFileInfo &info, const QString &name) const;
     void applySort(QVector<Entry> *rows) const;
+    /// Whether a row passes every criterion. `..` and the tags read as folders
+    /// are ways to move, not files, so they always pass.
+    bool admits(const Entry &row) const;
     void watch();
     void marksChanged();
 
     IndexModel *m_index = nullptr;
     TabState *m_tab = nullptr;
-    QString m_directory;
     QString m_filter;
+    QVariantMap m_criteria;
     QString m_selectedTag;
     QString m_pattern;
     bool m_recent = false;

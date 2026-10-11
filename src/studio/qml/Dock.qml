@@ -7,10 +7,7 @@ import omafiles
 // and the tag vocabulary.
 //
 // It lives beside the pane rather than under the tab strip, so it runs the full
-// height of the window. Under the strip, the view and sort controls at the
-// right end of that strip sat over the top of it -- two unrelated rows of
-// controls in one column, with nothing to say where one ended and the other
-// began.
+// height of the window and no row of the strip's controls sits over it.
 Rectangle {
     id: dock
 
@@ -58,10 +55,8 @@ Rectangle {
         // is only matters at the moment it opens. Above the vocabulary because
         // it is a shorter list somebody chose, where the vocabulary is a long
         // one the index grew.
-        // Always here, empty or not. It used to appear only once something was
-        // in it, which meant a person with nothing saved saw no panel, pressed
-        // no key, and never found out that saving was a thing -- a feature you
-        // have to already be using before it will show you where it lives.
+        // Always here, empty or not: a panel that showed only once something
+        // was saved would hide where saving lives from whoever has not yet.
         Item {
             width: parent.width
             height: 14

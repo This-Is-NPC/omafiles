@@ -1,5 +1,7 @@
 #include "Clipboard.h"
 
+#include "Paths.h"
+
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QMimeData>
@@ -78,8 +80,8 @@ QStringList Clipboard::files() const
     if (!data || !data->hasUrls())
         return paths;
     for (const QUrl &url : data->urls()) {
-        if (url.isLocalFile())
-            paths.append(url.toLocalFile());
+        if (const QString local = localFileOf(url); !local.isEmpty())
+            paths.append(local);
     }
     return paths;
 }

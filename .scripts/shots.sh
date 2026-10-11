@@ -6,11 +6,8 @@
 # nobody notices until somebody reads the page.
 #
 # Regenerated the same way docs/cli.md is, and checked the same way: the gate
-# runs this into a scratch directory and compares. It used to only say so --
-# nothing ran it -- which is how a key sheet that had started cutting `name,
-# tags, type, size, mo...` off at the right sat in docs/img for a whole round of
-# review. Called with an argument, it writes there instead and leaves docs/img
-# alone, which is what the check uses.
+# runs this into a scratch directory and compares. Called with an argument, it
+# writes there instead and leaves docs/img alone, which is what the check uses.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"

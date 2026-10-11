@@ -37,8 +37,18 @@ struct Record {
     /// about the same row.
     qint64 tagged = 0;
 
+    /// The row as a verb prints it: `path` absolute, `tags`, and `tagged`
+    /// where there is one.
     QJsonObject toJson() const;
+    /// The row as the index file and `export` write it: under a declared root,
+    /// `root` and `path` relative to it, so the line survives a remount.
+    QJsonObject toStoredJson() const;
     static Record fromJson(const QJsonObject &object, QString *error);
+
+    /// The same row: one file, its tags and its stamp, in whichever form it is
+    /// stored.
+    bool operator==(const Record &other) const;
+    bool operator!=(const Record &other) const { return !(*this == other); }
 };
 
 } // namespace omafiles

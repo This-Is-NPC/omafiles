@@ -13,3 +13,7 @@ OBJECTS_DIR = $$OUT_PWD/.qmake/obj
 MOC_DIR = $$OUT_PWD/.qmake/moc
 RCC_DIR = $$OUT_PWD/.qmake/rcc
 UI_DIR = $$OUT_PWD/.qmake/ui
+
+# Qt's headers as system headers, which is what CMake makes of an imported
+# target: a warning inside one is Qt's, and the build reports only this code's.
+QMAKE_CXXFLAGS += -isystem $$[QT_INSTALL_HEADERS]

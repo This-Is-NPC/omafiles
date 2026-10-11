@@ -1,12 +1,12 @@
 #include "FolderModel.h"
 
+#include "Glob.h"
 #include "Names.h"
 #include "Recent.h"
 #include "Roots.h"
 
 #include "IndexModel.h"
 #include "Paths.h"
-#include "Roots.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -16,7 +16,6 @@
 #include <QMap>
 #include <QMimeDatabase>
 #include <QMimeType>
-#include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
 
@@ -24,19 +23,6 @@
 
 namespace omafiles {
 namespace {
-
-// A span, in the spelling `omafiles ls --since` takes, so the window and the
-// command line say an age the same way.
-QString spelledAge(qint64 seconds)
-{
-    if (seconds >= 86400)
-        return QStringLiteral("%1d").arg(seconds / 86400);
-    if (seconds >= 3600)
-        return QStringLiteral("%1h").arg(seconds / 3600);
-    if (seconds >= 60)
-        return QStringLiteral("%1m").arg(seconds / 60);
-    return QStringLiteral("%1s").arg(qMax<qint64>(seconds, 0));
-}
 
 QString formatSize(qint64 bytes)
 {
@@ -55,12 +41,24 @@ QString formatSize(qint64 bytes)
         + QString::fromLatin1(units[unit]);
 }
 
-QString formatMtime(qint64 secs)
+QString formatMtime(qint64 msecs)
 {
-    if (secs <= 0)
+    if (msecs <= 0)
         return {};
-    return QLocale::system().toString(QDateTime::fromSecsSinceEpoch(secs),
+    return QLocale::system().toString(QDateTime::fromMSecsSinceEpoch(msecs),
                                        QStringLiteral("yyyy-MM-dd HH:mm"));
+}
+
+// Whether an index row is listed, by the rule `ls` keeps: a row that is gone is
+// left out, and one that cannot be described or is on storage that is away is
+// left out and named in `declined`.
+bool listable(const Record &record, QStringList *declined)
+{
+    QString reason;
+    const PathState state = rowState(record.path, &reason);
+    if (state == PathState::Unknown || state == PathState::Unreachable)
+        declined->append(reason);
+    return state == PathState::Present;
 }
 
 
@@ -93,11 +91,37 @@ QString typeOf(const QFileInfo &info)
     return name.section(QLatin1Char('/'), 0, 0);
 }
 
+// What may be done with a file, spelled the way `ls -l` spells it.
+QString modeOf(const QFileInfo &info)
+{
+    const QFile::Permissions may = info.permissions();
+    const auto letter = [&](QFile::Permission bit, char yes) {
+        return QLatin1Char(may.testFlag(bit) ? yes : '-');
+    };
+    return QString(info.isSymLink() ? QLatin1Char('l')
+                   : info.isDir()   ? QLatin1Char('d') : QLatin1Char('-'))
+        + letter(QFile::ReadOwner, 'r') + letter(QFile::WriteOwner, 'w')
+        + letter(QFile::ExeOwner, 'x') + letter(QFile::ReadGroup, 'r')
+        + letter(QFile::WriteGroup, 'w') + letter(QFile::ExeGroup, 'x')
+        + letter(QFile::ReadOther, 'r') + letter(QFile::WriteOther, 'w')
+        + letter(QFile::ExeOther, 'x');
+}
+
+// One passwd lookup per uid rather than one per row, since every row carries it.
+QString ownerOf(const QFileInfo &info)
+{
+    static QHash<uint, QString> names;
+    const uint uid = info.ownerId();
+    auto it = names.constFind(uid);
+    if (it == names.constEnd())
+        it = names.insert(uid, info.owner());
+    return *it;
+}
+
 } // namespace
 
 FolderModel::FolderModel(QObject *parent)
     : QAbstractListModel(parent)
-    , m_directory(QDir::homePath())
 {
     m_settle.setSingleShot(true);
     m_settle.setInterval(60);
@@ -112,7 +136,7 @@ FolderModel::FolderModel(QObject *parent)
 // watches nothing and `IndexModel::changed` is what reloads it.
 void FolderModel::watch()
 {
-    const QStringList wanted = m_selectedTag.isEmpty() ? QStringList{m_directory}
+    const QStringList wanted = m_selectedTag.isEmpty() ? QStringList{directory()}
                                                        : QStringList{};
     if (m_watcher.directories() == wanted)
         return;
@@ -131,11 +155,16 @@ void FolderModel::setTab(TabState *tab)
     m_tab = tab;
     if (m_tab) {
         connect(m_tab, &TabState::markedChanged, this, &FolderModel::marksChanged);
+        connect(m_tab, &TabState::cwdChanged, this, [this] {
+            emit directoryChanged();
+            rebuild();
+        });
         // A closed tab is deleted while the binding that points here still
         // names it.
         connect(m_tab, &QObject::destroyed, this, [this] { m_tab = nullptr; });
     }
     emit tabChanged();
+    emit directoryChanged();
     // A rebuild rather than a repaint: the cursor and the marks both come off
     // the new tab, and two tabs standing in the same folder change neither the
     // directory nor the query to say so.
@@ -167,15 +196,9 @@ void FolderModel::setSource(IndexModel *index)
     rebuild();
 }
 
-void FolderModel::setDirectory(const QString &path)
+QString FolderModel::directory() const
 {
-    const QFileInfo info(path.isEmpty() ? QDir::homePath() : path);
-    const QString next = info.exists() ? info.canonicalFilePath() : info.absoluteFilePath();
-    if (m_directory == next)
-        return;
-    m_directory = next;
-    emit directoryChanged();
-    rebuild();
+    return m_tab ? m_tab->cwd() : homeDirectory();
 }
 
 void FolderModel::setFilter(const QString &text)
@@ -183,6 +206,15 @@ void FolderModel::setFilter(const QString &text)
     if (m_filter == text)
         return;
     m_filter = text;
+    emit queryChanged();
+    rebuild();
+}
+
+void FolderModel::setCriteria(const QVariantMap &criteria)
+{
+    if (m_criteria == criteria)
+        return;
+    m_criteria = criteria;
     emit queryChanged();
     rebuild();
 }
@@ -267,10 +299,10 @@ void FolderModel::setSortAscending(bool ascending)
 
 QString FolderModel::parentDirectory() const
 {
-    const QDir dir(m_directory);
-    if (dir.isRoot())
-        return m_directory;
-    return QFileInfo(m_directory).absolutePath();
+    const QString here = directory();
+    if (QDir(here).isRoot())
+        return here;
+    return typedDirectory(here, nullptr);
 }
 
 // A tag listing is not a place in the tree, so there is nothing above it: the
@@ -280,7 +312,7 @@ bool FolderModel::atRoot() const
 {
     if (browsingFacets())
         return m_facets.isEmpty() && !m_untagged;
-    return !m_selectedTag.isEmpty() || QDir(m_directory).isRoot();
+    return !m_selectedTag.isEmpty() || QDir(directory()).isRoot();
 }
 
 int FolderModel::taggedCount() const
@@ -330,6 +362,10 @@ QVariant FolderModel::data(const QModelIndex &index, int role) const
         return row.mtimeText;
     case CountRole:
         return row.count;
+    case OwnerRole:
+        return row.owner;
+    case ModeRole:
+        return row.mode;
     default:
         return {};
     }
@@ -345,7 +381,9 @@ QHash<int, QByteArray> FolderModel::roleNames() const
             {MarkedRole, "marked"},
             {SizeTextRole, "sizeText"},
             {MtimeTextRole, "mtimeText"},
-            {CountRole, "count"}};
+            {CountRole, "count"},
+            {OwnerRole, "owner"},
+            {ModeRole, "mode"}};
 }
 
 // Asking for a folder is asking to stop looking at a tag: both of these land on
@@ -360,7 +398,8 @@ void FolderModel::goHome()
         return;
     }
     setSelectedTag(QString());
-    setDirectory(QDir::homePath());
+    if (m_tab)
+        m_tab->setCwd(homeDirectory());
 }
 
 void FolderModel::goUp()
@@ -385,9 +424,10 @@ void FolderModel::goUp()
     // Walking out of a folder should land the cursor on that folder, not on the
     // top of its parent: going up and coming back down has to be symmetric or
     // the keyboard loses its place every time.
-    if (m_tab)
-        m_tab->setCursorPath(m_directory);
-    setDirectory(parentDirectory());
+    if (m_tab) {
+        m_tab->setCursorPath(directory());
+        m_tab->setCwd(parentDirectory());
+    }
 }
 
 // The cursor is written before the directory is, because the rebuild the
@@ -396,13 +436,15 @@ void FolderModel::goTo(const QString &path)
 {
     if (path.isEmpty())
         return;
-    const QString parent = QFileInfo(path).absolutePath();
-    if (parent.isEmpty())
+    const QString anchored = anchoredPath(path);
+    if (anchored.isEmpty())
         return;
+    const QString parent = typedDirectory(anchored, nullptr);
     if (m_tab)
         m_tab->setCursorPath(path);
     setSelectedTag(QString());
-    setDirectory(parent);
+    if (m_tab)
+        m_tab->setCwd(parent);
 }
 
 void FolderModel::enter(const QString &path)
@@ -413,7 +455,8 @@ void FolderModel::enter(const QString &path)
     if (m_tab)
         m_tab->setCursorPath(QString());
     setSelectedTag(QString());
-    setDirectory(path);
+    if (m_tab)
+        m_tab->setCwd(path);
 }
 
 void FolderModel::activate(const QString &path, const QString &kind)
@@ -556,16 +599,26 @@ void FolderModel::markSameType(const QString &path)
 // it answers `isMarked` -- and every row is asked anyway.
 void FolderModel::markRange(int from, int to)
 {
-    if (!m_tab || !validRow(from) || !validRow(to))
+    if (!validRow(from) || !validRow(to))
         return;
-    const int first = std::min(from, to);
-    const int last = std::max(from, to);
-    QSet<QString> marks;
-    for (int i = 0; i < m_rows.size(); ++i) {
-        const Entry &entry = m_rows.at(i);
+    QList<int> rows;
+    for (int i = std::min(from, to); i <= std::max(from, to); ++i)
+        rows.append(i);
+    markRows(rows, markedPaths(), false);
+}
+
+void FolderModel::markRows(const QList<int> &rows, const QStringList &kept, bool toggle)
+{
+    if (!m_tab)
+        return;
+    QSet<QString> marks(kept.cbegin(), kept.cend());
+    for (const int row : rows) {
+        if (!validRow(row))
+            continue;
+        const Entry &entry = m_rows.at(row);
         if (entry.path.isEmpty() || entry.kind == QLatin1String("parent"))
             continue;
-        if (m_tab->isMarked(entry.path) || (i >= first && i <= last))
+        if (!(toggle && marks.remove(entry.path)))
             marks.insert(entry.path);
     }
     m_tab->setMarked(marks);
@@ -575,15 +628,13 @@ int FolderModel::markMatching(const QString &pattern)
 {
     if (!m_tab || pattern.trimmed().isEmpty())
         return 0;
-    const QRegularExpression glob(
-        QRegularExpression::wildcardToRegularExpression(pattern.trimmed()),
-        QRegularExpression::CaseInsensitiveOption);
+    const QString wanted = pattern.trimmed();
     int matched = 0;
     QSet<QString> marks;
     for (const Entry &entry : std::as_const(m_rows)) {
         if (entry.path.isEmpty() || entry.kind == QLatin1String("parent"))
             continue;
-        const bool hit = glob.match(entry.name).hasMatch();
+        const bool hit = nameFits(wanted, entry.name);
         if (hit)
             ++matched;
         if (hit || m_tab->isMarked(entry.path))
@@ -675,21 +726,13 @@ QVariantMap FolderModel::entryAt(int row) const
     }
     const bool directory = entry.kind != QLatin1String("file");
 
-    // Who it belongs to and what they may do with it, spelled the way `ls -l`
-    // spells it, which is the spelling everyone who wants this already reads.
     // One stat, for the focused row only, like the count below.
     const QFileInfo info(entry.path);
-    const QFile::Permissions may = info.permissions();
-    const auto letter = [&](QFile::Permission bit, char yes) {
-        return QLatin1Char(may.testFlag(bit) ? yes : '-');
-    };
-    const QString mode = QString(info.isSymLink() ? QLatin1Char('l')
-                                 : directory ? QLatin1Char('d') : QLatin1Char('-'))
-        + letter(QFile::ReadOwner, 'r') + letter(QFile::WriteOwner, 'w')
-        + letter(QFile::ExeOwner, 'x') + letter(QFile::ReadGroup, 'r')
-        + letter(QFile::WriteGroup, 'w') + letter(QFile::ExeGroup, 'x')
-        + letter(QFile::ReadOther, 'r') + letter(QFile::WriteOther, 'w')
-        + letter(QFile::ExeOther, 'x');
+
+    // The nine rwx bits as a number, 0644 and the like, for the controls that
+    // change them: Qt keeps owner, group and other at 0x7000, 0x70 and 0x7.
+    const int flags = int(info.permissions());
+    const int permissions = (flags >> 12 & 7) << 6 | (flags >> 4 & 7) << 3 | (flags & 7);
 
     // MatchDefault, not MatchExtension: this runs for the focused row only, so
     // it can afford to look inside the file when the name does not say. By
@@ -729,10 +772,12 @@ QVariantMap FolderModel::entryAt(int row) const
             {QStringLiteral("sizeText"), entry.sizeText},
             {QStringLiteral("mtime"), entry.mtime},
             {QStringLiteral("mtimeText"), entry.mtimeText},
-            {QStringLiteral("owner"), info.owner()},
+            {QStringLiteral("owner"), entry.owner},
             {QStringLiteral("group"), info.group()},
             {QStringLiteral("mine"), info.ownerId() == getuid()},
-            {QStringLiteral("mode"), mode},
+            {QStringLiteral("mode"), entry.mode},
+            {QStringLiteral("permissions"), permissions},
+            {QStringLiteral("link"), entry.link},
             {QStringLiteral("marked"), m_tab && m_tab->isMarked(entry.path)},
             {QStringLiteral("tagged"), entry.tagged},
             {QStringLiteral("tags"), entry.tags.isEmpty()
@@ -805,23 +850,55 @@ void FolderModel::applySort(QVector<Entry> *rows) const
     });
 }
 
+bool FolderModel::admits(const Entry &row) const
+{
+    if (m_criteria.isEmpty())
+        return true;
+    if (row.kind != QLatin1String("dir") && row.kind != QLatin1String("file"))
+        return true;
+    const QString kind = m_criteria.value(QStringLiteral("kind")).toString();
+    if (!kind.isEmpty() && row.kind != kind)
+        return false;
+    const QString type = m_criteria.value(QStringLiteral("type")).toString();
+    if (!type.isEmpty() && row.type != type)
+        return false;
+    const QVariant tagged = m_criteria.value(QStringLiteral("tagged"));
+    if (tagged.isValid() && row.tagged != tagged.toBool())
+        return false;
+    const QString tag = m_criteria.value(QStringLiteral("tag")).toString();
+    if (!tag.isEmpty() && !row.tags.split(QLatin1Char(' ')).contains(tag))
+        return false;
+    const qint64 within = m_criteria.value(QStringLiteral("within")).toLongLong();
+    if (within > 0 && row.mtime < QDateTime::currentMSecsSinceEpoch() - within * 1000)
+        return false;
+    return true;
+}
+
 FolderModel::Entry FolderModel::describe(const QFileInfo &info, const QString &name) const
 {
     Entry row;
-    row.path = info.canonicalFilePath().isEmpty() ? info.absoluteFilePath()
-                                                  : info.canonicalFilePath();
+    // A link row is the link: `rm`, `trash`, `mv` and `chmod` act on the name,
+    // and `cp` and the `tag` verbs resolve it themselves.
+    row.path = canonicalLinkPath(info.filePath(), nullptr);
+    if (row.path.isEmpty())
+        row.path = info.filePath();
     row.name = name;
+    row.link = info.isSymLink();
     row.type = typeOf(info);
     row.size = info.isFile() ? info.size() : 0;
-    row.mtime = info.lastModified().toSecsSinceEpoch();
+    row.mtime = info.lastModified().toMSecsSinceEpoch();
     row.sizeText = info.isFile() ? formatSize(row.size) : QString();
     row.mtimeText = formatMtime(row.mtime);
+    row.owner = ownerOf(info);
+    row.mode = modeOf(info);
     // Folders carry tags too -- `omafiles tag add -- some-dir` works -- so the
     // lookup below runs for them as well, or a tagged folder shows no chips here
     // and counts for nothing.
     row.kind = info.isDir() ? QStringLiteral("dir") : QStringLiteral("file");
     if (m_index) {
-        const QStringList tags = m_index->tagsForPath(row.path);
+        // A link's tags are its target's, where `tag ls` reads them.
+        const QStringList tags = m_index->tagsForPath(
+            row.link ? canonicalPath(row.path, nullptr) : row.path);
         row.tags = tags.join(QLatin1Char(' '));
         row.tagged = !tags.isEmpty();
     }
@@ -889,7 +966,7 @@ void FolderModel::listFacets()
     QVector<Entry> files;
     QMap<QString, int> counts;
     int matched = 0;
-    for (const Record &record : m_index->records()) {
+    for (const Record &record : m_index->store().records()) {
         bool carries = true;
         for (const QString &facet : m_facets) {
             if (!record.tags.contains(facet)) {
@@ -900,23 +977,7 @@ void FolderModel::listFacets()
         if (!carries)
             continue;
 
-        // The same three answers a tag listing gives about a row: a file that
-        // is gone is left out, and one the system will not describe is said
-        // out loud rather than passed over.
-        QString reason;
-        const PathState state = pathState(record.path, &reason);
-        if (state == PathState::Unknown) {
-            declined.append(reason);
-            continue;
-        }
-        // Neither is listed: one has no file behind it and the other has one
-        // nobody has plugged in. The second is said out loud, because a
-        // listing that quietly halved is worse than a short one that says so.
-        if (state == PathState::Unreachable) {
-            declined.append(reason.isEmpty() ? unreachableReason(record.path) : reason);
-            continue;
-        }
-        if (state == PathState::Missing)
+        if (!listable(record, &declined))
             continue;
 
         ++matched;
@@ -982,12 +1043,14 @@ void FolderModel::listRecent()
     m_rows.append(parent);
 
     QVector<RecentEntry> opened;
+    QStringList skipped;
     QString error;
-    if (!recentlyUsed(&opened, &error)) {
+    if (!recentlyUsed(&opened, &skipped, &error)) {
         m_error = error;
         return;
     }
-    if (opened.isEmpty()) {
+    m_error = skipped.join(QString::fromUtf8(" \xc2\xb7 "));
+    if (opened.isEmpty() && skipped.isEmpty()) {
         m_error = QStringLiteral("the desktop has opened nothing lately, or keeps no "
                                  "list of it");
         return;
@@ -1025,11 +1088,6 @@ void FolderModel::listNames()
     m_rows.append(parent);
 
     const bool onlyUntagged = browsingFacets() && m_untagged;
-    const QRegularExpression glob(
-        m_pattern.isEmpty() ? QString()
-                            : QRegularExpression::wildcardToRegularExpression(m_pattern),
-        QRegularExpression::CaseInsensitiveOption);
-
     if (roots().isEmpty()) {
         m_error = QStringLiteral("no root is declared, so there is no scope for the "
                                  "question \u00B7 `omafiles roots add --id <name> "
@@ -1044,14 +1102,21 @@ void FolderModel::listNames()
     int found = 0;
     QVector<Entry> files;
     for (const Root &root : roots()) {
-        if (!rootIsReachable(root)) {
+        QString error;
+        const PathState storage = rootState(root, &error);
+        if (storage == PathState::Unreachable) {
             notes.append(QStringLiteral("%1 is not here").arg(root.id));
             continue;
         }
+        if (storage != PathState::Present) {
+            notes.append(QStringLiteral("%1 cannot be checked: %2").arg(root.id, error));
+            continue;
+        }
         QStringList names;
+        QVector<Gap> lacking;
         qint64 age = -1;
-        QString error;
-        if (!readNames(root, &names, &age, &error)) {
+        if (!readNames(root, &names, &age, &error, &lacking,
+                       m_index ? &m_index->store() : nullptr)) {
             notes.append(error);
             continue;
         }
@@ -1061,17 +1126,24 @@ void FolderModel::listNames()
             continue;
         }
         oldest = qMax(oldest, age);
+        // The sweep that built the list was short, and so is every answer out
+        // of it, as `ls --cached` says.
+        for (const Gap &gap : std::as_const(lacking))
+            notes.append(QStringLiteral("the list is short: %1").arg(gap.said));
         for (const QString &path : std::as_const(names)) {
             if (onlyUntagged && m_index && !m_index->tagsForPath(path).isEmpty())
                 continue;
             // Matched on the string before anything stats it: the filter is
             // what makes a large answer usable, so it has to be the cheap step.
             const QString name = path.mid(path.lastIndexOf(QLatin1Char('/')) + 1);
-            if (!m_pattern.isEmpty() && !glob.match(name).hasMatch())
+            if (!m_pattern.isEmpty() && !nameFits(m_pattern, name))
                 continue;
             if (!needle.isEmpty() && !name.toLower().contains(needle))
                 continue;
             if (!m_showHidden && name.startsWith(QLatin1Char('.')))
+                continue;
+            // Before the count, so "N of M shown" counts what the criteria keep.
+            if (!m_criteria.isEmpty() && !admits(describe(QFileInfo(path), name)))
                 continue;
             ++found;
             if (files.size() >= kNamesShown)
@@ -1082,7 +1154,7 @@ void FolderModel::listNames()
 
     QStringList said;
     if (oldest >= 0) {
-        said.append(QStringLiteral("as of %1 ago").arg(spelledAge(oldest)));
+        said.append(QStringLiteral("as of %1 ago").arg(spelledDuration(oldest)));
     }
     if (found > files.size()) {
         said.append(QStringLiteral("%1 of %2 shown; filter to narrow it")
@@ -1111,23 +1183,10 @@ void FolderModel::listTag()
     const QString needle = m_filter.trimmed().toLower();
     QStringList declined;
     QVector<Entry> rows;
-    for (const Record &record : m_index->records()) {
+    for (const Record &record : m_index->store().records()) {
         if (!record.tags.contains(m_selectedTag))
             continue;
-        QString reason;
-        const PathState state = pathState(record.path, &reason);
-        if (state == PathState::Unknown) {
-            declined.append(reason);
-            continue;
-        }
-        // Neither is listed: one has no file behind it and the other has one
-        // nobody has plugged in. The second is said out loud, because a
-        // listing that quietly halved is worse than a short one that says so.
-        if (state == PathState::Unreachable) {
-            declined.append(reason.isEmpty() ? unreachableReason(record.path) : reason);
-            continue;
-        }
-        if (state == PathState::Missing)
+        if (!listable(record, &declined))
             continue;
         const QFileInfo info(record.path);
         if (!needle.isEmpty() && !info.fileName().toLower().contains(needle))
@@ -1161,6 +1220,7 @@ void FolderModel::rebuild()
         listDirectory();
     else
         listTag();
+    m_rows.removeIf([this](const Entry &row) { return !admits(row); });
     watch();
     endResetModel();
     emit changed();
@@ -1168,7 +1228,7 @@ void FolderModel::rebuild()
 
 void FolderModel::listDirectory()
 {
-    const QDir dir(m_directory);
+    const QDir dir(directory());
     const QString needle = m_filter.trimmed().toLower();
 
     // Before the directory is read rather than after: a folder that is not
@@ -1190,9 +1250,9 @@ void FolderModel::listDirectory()
     QStringList unnameable;
     QString reason;
     PathState state = PathState::Present;
-    if (!readDirectory(m_directory, &names, &unnameable, &reason, &state)) {
+    if (!readDirectory(directory(), &names, &unnameable, &reason, &state)) {
         m_error = state == PathState::Missing
-            ? QStringLiteral("path missing: %1").arg(m_directory)
+            ? QStringLiteral("path missing: %1").arg(directory())
             : QStringLiteral("%1; nothing in it was listed").arg(reason);
         return;
     }

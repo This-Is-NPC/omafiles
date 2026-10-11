@@ -1,20 +1,11 @@
-// The studio, driven by the keyboard, with no screen involved.
-//
-// This file exists because of one bug. Walking into a folder killed every key
-// in the window: the state object emitted a single `changed()` for everything,
-// that signal was the NOTIFY of the tab and pane list properties, and writing
-// the new working directory therefore told QML the tab list had changed --
-// so the Repeaters tore down the pane, the view holding the focus went with it,
-// and the window stopped answering the keyboard while still looking correct.
-//
-// Nothing a unit test on the model could have caught, and nothing a screenshot
-// shows. So the test drives the real window with real key events and asks the
-// real state what happened.
+// The studio, driven by the keyboard, with no screen involved: the real window
+// with real key events, asking the real state what happened.
 
 #include "Clipboard.h"
 #include "FolderModel.h"
 #include "GraphItem.h"
 #include "IndexModel.h"
+#include "Names.h"
 #include "Open.h"
 #include "Paths.h"
 #include "Roots.h"
@@ -37,8 +28,11 @@
 #include <QLockFile>
 #include <QRegularExpression>
 #include <QPainter>
+#include <QProcess>
 #include <QScopeGuard>
+#include <QSettings>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QtQml>
 #include <QtTest>
@@ -51,25 +45,8 @@
 
 using namespace omafiles;
 
-// Nothing in this binary starts a program.
-//
-// It used to. A `chromium` sat for ten hours on `/tmp/tst_studio-OpeLNM/two.md`
-// -- a fixture the run that opened it had already deleted -- and the journal has
-// the same pair of launches on seven other runs. `drawsItself` is the route: it
-// parks the cursor on `two.md`, presses `t` for the tag panel and then Enter
-// twice, and asserted nothing about the handoff, so on the runs where the panel
-// had not taken the keyboard both Enters activated the file row instead. The
-// test passed either way.
-//
-// The rest of the file avoided the hazard by hand -- the graph test picks tag
-// nodes, the key sweep leans on row 1 of `sweep` being a folder -- and avoiding
-// a hazard only ever works for the tests that remember it is there. So the
-// launcher is a seam now and this replaces it before `main` runs: a case added
-// tomorrow cannot start a program either, whatever it presses, without anyone
-// having to remember why.
-//
-// The requests are kept rather than dropped, because a recording is better
-// coverage than an avoidance: `recordsAnOpenInsteadOfLaunchingIt` reads them.
+// Nothing in this binary starts a program: the launcher seam is replaced before
+// `main` runs, and `recordsAnOpenInsteadOfLaunchingIt` reads what it recorded.
 static QVector<OpenRequest> &openRequests()
 {
     static QVector<OpenRequest> recorded;
@@ -197,8 +174,10 @@ private slots:
     void listsEveryFileCarryingATagWhereverItIs();
     void saysWhetherAFolderIsShutGoneOrEmpty();
     void listsTheNamesTheSystemWillNotDescribe();
+    void dropsARowWhoseFolderIsNowAFile();
     void saysWhenNothingInTheIndexCanBeReached();
     void sortsByTypeOnTheSuffix();
+    void sortsByModifiedWithinASecond();
     void cyclesTheSortFieldAndItsOwnDirection();
     void showsHiddenFilesOnlyWhenAsked();
     void movesBetweenTheListAndTheTagPanel();
@@ -254,9 +233,23 @@ private slots:
     void copiesCutsAndPastesThroughTheDesktopClipboard();
     void marksARunARangeAndAPattern();
     void findsByNameAcrossTheRoots();
+    void matchesAPatternTheWayTheCliDoes();
     void runsAScriptOverTheMarkedSet();
     void makesLinksBesideAndHere();
     void listsWhatTheDesktopOpenedLately();
+    void choosesTheDetailsColumnsAndKeepsThem();
+    void marksWhatARubberBandCrosses();
+    void changesPermissionsThroughTheCommandLine();
+    void narrowsAnyListingByTypeTagAndDate();
+    void trashesAMarkedLinkByItsName();
+    void movesAMarkedLinkByItsName();
+    void changesPermissionsOfAMarkedLinkByItsName();
+    void copiesAndTagsAMarkedLinkThroughItsName();
+    void searchesOnlyTheDirectoriesItCanSpell();
+    void countsARowUnderAFileAsGone();
+    void plansNothingUnderARootThatIsAway();
+    void readsNoTagsAtALinkWhereARowWas();
+    void listsARecasedNameUnderItsRow();
 
 private:
     QQuickWindow *window() const;
@@ -284,6 +277,12 @@ private:
     enum class Shot { Diagnostic, Documentation };
     void shot(const QString &name, Shot kind = Shot::Diagnostic);
     void tagDirectory(const QString &path, const QString &tag, bool reload = true);
+    /// Writes `path`'s row into the index in place of the one it had: a second
+    /// line for one path is a malformed index.
+    void putIndexRow(const QString &path, const QStringList &tags);
+    /// `a-target.txt`, `link` to it and `plain.txt` in `dir`, open in the tab
+    /// with `link` and `plain.txt` marked and the cursor on `link`.
+    void markALinkAndAFile(const QDir &dir);
 
     QTemporaryDir m_home;
     QTemporaryDir m_state;
@@ -321,15 +320,9 @@ void TestStudio::writeIndex()
         {"seven.txt", "\"backup\""},
     };
     for (const auto &row : rows) {
-        const QString path = tree.filePath(QString::fromLatin1(row.file));
-        const QFileInfo info(path);
-        // Deliberately the old shape, with `mtime`, `dev` and `ino` still on it.
-        // Nothing reads those any more, and the studio has to go on reading an
-        // index that was written while they did.
-        index.write(QStringLiteral("{\"path\":\"%1\",\"tags\":[%2],\"mtime\":%3,"
-                                    "\"dev\":0,\"ino\":0}\n")
-                        .arg(path, QString::fromLatin1(row.tags))
-                        .arg(info.lastModified().toSecsSinceEpoch())
+        index.write(QStringLiteral("{\"path\":\"%1\",\"tags\":[%2]}\n")
+                        .arg(tree.filePath(QString::fromLatin1(row.file)),
+                             QString::fromLatin1(row.tags))
                         .toUtf8());
     }
 }
@@ -354,6 +347,7 @@ void TestStudio::initTestCase()
     // it: an override that is entirely commented out over a default of 0.
     QVERIFY(m_desktop.isValid());
     qputenv("XDG_CONFIG_HOME", QDir(m_desktop.path()).filePath("config").toUtf8());
+    qputenv("XDG_CACHE_HOME", QDir(m_desktop.path()).filePath("cache").toUtf8());
     qputenv("OMARCHY_PATH", QDir(m_desktop.path()).filePath("omarchy").toUtf8());
     QVERIFY(writeLooknfeel(m_desktop.filePath("config/hypr/looknfeel.lua"),
                            commentedLooknfeel()));
@@ -366,8 +360,8 @@ void TestStudio::initTestCase()
     // so `~` has somewhere to go; with a folder in it, so `l` has something to
     // enter; and with enough rows that `j`, `k` and `G` all land differently.
     QVERIFY(tree.mkpath(QStringLiteral("sweep/nested")));
-    // The dotfile is named so it matches a `.txt` filter as well: the filter
-    // used to reveal every hidden name whenever what you typed began with a dot.
+    // The dotfile is named so it matches a `.txt` filter as well: a filter that
+    // begins with a dot must not reveal hidden names.
     for (const QString &name : {QStringLiteral("sweep/one.txt"),
                                  QStringLiteral("sweep/two.txt"),
                                  QStringLiteral("sweep/three.txt"),
@@ -404,13 +398,9 @@ void TestStudio::initTestCase()
 
 
 
-    // Nothing is registered or injected here.
-    //
-    // Every type is declared in its header and registered by the build, and
-    // the singletons are made by the engine on first use -- which is
-    // during `load`, after the environment above is in place, so they still see
-    // the temporary XDG directories and never the real ones. This block used to
-    // be an exact copy of the studio's `main`, kept in step by memory.
+    // Nothing is registered or injected here: the singletons are made by the
+    // engine during `load`, after the environment above, so they see the
+    // temporary XDG directories and never the real ones.
     m_engine = new QQmlApplicationEngine(this);
     m_engine->load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
 
@@ -444,6 +434,21 @@ void TestStudio::cleanupTestCase()
 // unfiltered, list view, keyboard on the list.
 void TestStudio::init()
 {
+    // A test that failed with a menu, a sheet or a prompt open would hand it to
+    // the next one, which would then fail for a reason that is not its own.
+    QObject *window = m_engine->rootObjects().first();
+    for (QQuickItem *item : window->findChildren<QQuickItem *>()) {
+        const QByteArray type = item->metaObject()->className();
+        const bool overlay = type.startsWith("ContextMenu") || type.startsWith("CommandPalette")
+            || type.startsWith("HelpSheet") || type.startsWith("ModeSheet");
+        if (overlay && item->isVisible())
+            QMetaObject::invokeMethod(item, "close");
+    }
+    window->setProperty("prompt", QString());
+    window->setProperty("filtering", false);
+    window->setProperty("editingPath", false);
+    QVERIFY(!window->property("blocked").toBool());
+
     // A test that leaves a graph tab open would hand the next one a window with
     // no file list in it, and the failure would land on the wrong test.
     PaneState *pane = m_workspace->paneAtIndex(0);
@@ -462,6 +467,7 @@ void TestStudio::init()
     QCOMPARE(tab()->kind(), QStringLiteral("files"));
     tab()->setSelectedTag(QString());
     tab()->setFilter(QString());
+    tab()->setCriteria({});
     tab()->setViewMode(QStringLiteral("list"));
     tab()->setShowHidden(false);
     tab()->setSortRole(QStringLiteral("name"));
@@ -584,8 +590,7 @@ bool TestStudio::chooseInMenu(const QString &objectName, const QString &label)
     // Counted from the top, which is where `openAt` puts the cursor. Not
     // forced there first: a menu that answers a pointer nobody is touching
     // would still land on the right entry if it were, and this counting from
-    // zero is what fails loudly when the mouse starts fighting the keyboard
-    // again.
+    // zero is what fails loudly when the mouse fights the keyboard.
     for (int i = 0; i < at; ++i)
         key('j');
     key(Qt::Key_Return);
@@ -612,17 +617,9 @@ void TestStudio::settle()
         QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
 }
 
-// Renders the window to a file when OMAFILES_SHOTS names a directory. Off by
-// default: the suite is about behaviour, and nobody wants a test that writes
-// pictures every time it runs. With it on, a keyboard-driven window can be
-// looked at without a screen, a session or a compositor.
-// Writes one picture, if asked.
-//
-// `drawsItself` and `writesTheDocumentationShots` both take pictures, and two of
-// the names collided: running the whole suite with OMAFILES_SHOTS=docs/img wrote
-// `drawsItself`'s idea of `keys` and `graph` over the two committed images. The
-// diagnostic ones go in a subdirectory of their own, so only the documentation
-// case can write a name the documentation uses.
+// Renders the window to a file when OMAFILES_SHOTS names a directory. Diagnostic
+// pictures go in a subdirectory, so only the documentation case can write a name
+// the documentation uses.
 void TestStudio::shot(const QString &name, Shot kind)
 {
     QString dir = QString::fromLocal8Bit(qgetenv("OMAFILES_SHOTS"));
@@ -651,21 +648,52 @@ void TestStudio::shot(const QString &name, Shot kind)
 // Appends a row to the index the way the command line would, without telling
 // the window. `reload` says whether to hand it the news; the keys that exist to
 // fetch it need a row it has not been handed.
-void TestStudio::tagDirectory(const QString &path, const QString &tag, bool reload)
+void TestStudio::putIndexRow(const QString &path, const QStringList &tags)
 {
     QFile index(QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl")));
-    QVERIFY(index.open(QIODevice::Append | QIODevice::Text));
-    index.write(QStringLiteral("{\"path\":\"%1\",\"tags\":[\"%2\"]}\n")
-                    .arg(path, tag)
-                    .toUtf8());
+    QVERIFY(index.open(QIODevice::ReadOnly | QIODevice::Text));
+    QByteArray kept;
+    for (const QByteArray &line : index.readAll().split('\n')) {
+        if (!line.trimmed().isEmpty()
+            && QJsonDocument::fromJson(line).object().value(QStringLiteral("path")) != path)
+            kept += line + '\n';
+    }
     index.close();
+    const QJsonObject row{{QStringLiteral("path"), path},
+                          {QStringLiteral("tags"), QJsonArray::fromStringList(tags)}};
+    QVERIFY(index.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text));
+    index.write(kept + QJsonDocument(row).toJson(QJsonDocument::Compact) + '\n');
+}
+
+void TestStudio::tagDirectory(const QString &path, const QString &tag, bool reload)
+{
+    putIndexRow(path, {tag});
     if (reload)
         m_index->reload();
 }
 
+void TestStudio::markALinkAndAFile(const QDir &dir)
+{
+    for (const char *name : {"a-target.txt", "plain.txt"}) {
+        QFile made(dir.filePath(QString::fromLatin1(name)));
+        QVERIFY(made.open(QIODevice::WriteOnly));
+    }
+    const QString link = dir.filePath(QStringLiteral("link"));
+    if (!QFileInfo(link).isSymLink())
+        QVERIFY(QFile::link(dir.filePath(QStringLiteral("a-target.txt")), link));
+    tab()->setCwd(dir.path());
+    settle();
+    focusRow(QStringLiteral("plain.txt"));
+    key(Qt::Key_Space);
+    focusRow(QStringLiteral("link"));
+    key(Qt::Key_Space);
+    QCOMPARE(tab()->markedCount(), 2);
+    focusRow(QStringLiteral("link"));
+}
+
 // -------------------------------------------------------------------- tests
 
-// The reported bug, in the order it was reported: go in, try to come back.
+// Go in, come back, and the keyboard still answers.
 void TestStudio::walksIntoAFolderAndBackOut()
 {
     key('j');
@@ -678,8 +706,8 @@ void TestStudio::walksIntoAFolderAndBackOut()
     key('h');
     QCOMPARE(cwd(), m_tree.path());
 
-    // And again, because the first `h` used to work by accident in some builds
-    // while the window was already dead to everything after it.
+    // And again: a window whose first `h` works can still be dead to the keys
+    // after it.
     focusRow(QStringLiteral("alpha"));
     key('l');
     QCOMPARE(cwd(), m_tree.filePath(QStringLiteral("alpha")));
@@ -688,21 +716,14 @@ void TestStudio::walksIntoAFolderAndBackOut()
 }
 
 // The other half of `l`: on a folder it walks in, and on a file it asks the
-// desktop to open the thing.
-//
-// That half was asserted by nothing at all, because every test that could have
-// reached it stepped around it instead -- and the one that stopped stepping
-// around it, `drawsItself`, opened a browser on a temporary file eight times
-// over two days without ever failing. With the launcher replaced there is a
-// request to read, so each route is covered rather than avoided, and a route
-// that stops working now says so.
+// desktop to open the thing, read here from the recording launcher.
 void TestStudio::recordsAnOpenInsteadOfLaunchingIt()
 {
     QObject *root = m_engine->rootObjects().first();
     const QString file = m_tree.filePath(QStringLiteral("two.md"));
     focusRow(QStringLiteral("two.md"));
 
-    // Enter, which is what `drawsItself` was pressing.
+    // Enter.
     openRequests().clear();
     key(Qt::Key_Return);
     QCOMPARE(openRequests().size(), 1);
@@ -733,8 +754,7 @@ void TestStudio::recordsAnOpenInsteadOfLaunchingIt()
     QCOMPARE(root->property("blocked").toBool(), false);
 
     // A file node on the graph hands its path straight to the model, with no
-    // folder listing in between. This is the case `walksTheGraphWithTheKeyboard`
-    // picks tag nodes to stay away from.
+    // folder listing in between.
     openRequests().clear();
     m_workspace->addTab(QStringLiteral("graph"));
     settle();
@@ -767,8 +787,7 @@ void TestStudio::recordsAnOpenInsteadOfLaunchingIt()
              "sharePath did not ask for a share");
     QCOMPARE(openRequests().at(0).path, file);
 
-    // And a folder is not an open at all, which is the only reason the key
-    // sweep has never launched anything.
+    // And a folder is not an open at all.
     openRequests().clear();
     focusRow(QStringLiteral("alpha"));
     key(Qt::Key_Return);
@@ -778,9 +797,7 @@ void TestStudio::recordsAnOpenInsteadOfLaunchingIt()
     QCOMPARE(cwd(), m_tree.path());
 }
 
-// The failure was never really about `h`. Writing any tab state at all took the
-// keyboard down with it, so the check is that the window still answers after
-// each kind of write.
+// The window still answers the keyboard after each kind of write to tab state.
 void TestStudio::keepsTheKeyboardAfterEveryStateChange()
 {
     // Down if there is room, up otherwise: the point is that the key is
@@ -908,9 +925,8 @@ void TestStudio::readsOutTheRowUnderTheCursor()
     QVERIFY(filesRoot()->property("entry").toMap()
                 .value(QStringLiteral("mode")).toString().startsWith(QLatin1Char('d')));
 
-    // Marking the row reads out straight away. Nothing here moves the cursor,
-    // so nothing else would re-read the row, and the panel went on saying the
-    // row was unmarked until you walked off it and back.
+    // Marking the row reads out straight away, though nothing here moves the
+    // cursor to make the panel re-read it.
     QObject *folder = filesRoot()->property("folder").value<QObject *>();
     QMetaObject::invokeMethod(folder, "clearMarks");
     focusRow(QStringLiteral("two.md"));
@@ -1108,6 +1124,42 @@ void TestStudio::sortsByTypeOnTheSuffix()
     settle();
 }
 
+// Two files modified in the same second sort by which came first, not by name.
+void TestStudio::sortsByModifiedWithinASecond()
+{
+    const auto dateIt = [this](const char *name, const QDateTime &when) {
+        QFile file(m_tree.filePath(QString::fromLatin1(name)));
+        QVERIFY(file.open(QIODevice::ReadWrite));
+        QVERIFY(file.setFileTime(when, QFileDevice::FileModificationTime));
+    };
+    const auto restore = qScopeGuard([&dateIt] {
+        dateIt("five.zip", QDateTime::currentDateTime());
+        dateIt("plain.txt", QDateTime::currentDateTime());
+    });
+    const QDateTime second = QDateTime::fromSecsSinceEpoch(978307200);
+    dateIt("plain.txt", second.addMSecs(100));
+    dateIt("five.zip", second.addMSecs(900));
+    tab()->setSortRole(QStringLiteral("mtime"));
+    tab()->setSortAscending(true);
+    settle();
+
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    QMetaObject::invokeMethod(folder, "reload");
+    settle();
+    QStringList names;
+    for (int i = 0; i < folder->property("count").toInt(); ++i) {
+        QVariantMap row;
+        QMetaObject::invokeMethod(folder, "entryAt", Q_RETURN_ARG(QVariantMap, row),
+                                  Q_ARG(int, i));
+        names << row.value(QStringLiteral("name")).toString();
+    }
+    QCOMPARE(names.mid(names.indexOf(QStringLiteral("plain.txt")), 2),
+             (QStringList{QStringLiteral("plain.txt"), QStringLiteral("five.zip")}));
+
+    tab()->setSortRole(QStringLiteral("name"));
+    settle();
+}
+
 // The size column is blank for a folder, and what belongs there is what is in
 // it. Counted for the focused row only, so the answer has to come off the same
 // map the panel reads.
@@ -1143,16 +1195,15 @@ void TestStudio::countsWhatIsTaggedInThisFolder()
              "every row counted as tagged, including the folders and plain.txt");
 
     // A folder with nothing tagged in it says so, while the index still holds
-    // plenty -- which is the case that made this necessary.
+    // plenty.
     tab()->setCwd(m_tree.filePath(QStringLiteral("alpha")));
     settle();
     QCOMPARE(filesRoot()->property("folder").value<QObject *>()
                  ->property("taggedCount").toInt(), 0);
     QVERIFY(m_index->tagRowCount() > 0);
 
-    // A tagged folder counts, and shows its tags. `omafiles tag add -- some-dir`
-    // has always worked; the window used to skip the lookup for directories and
-    // show nothing.
+    // A tagged folder counts, and shows its tags, as `omafiles tag add --
+    // some-dir` files them.
     tab()->setCwd(m_tree.path());
     settle();
     const int before = filesRoot()->property("folder").value<QObject *>()
@@ -1247,9 +1298,9 @@ void TestStudio::listsEveryFileCarryingATagWhereverItIs()
         listed.append(path);
     }
     QStringList expected;
-    for (const Record &record : m_index->records()) {
+    for (const Record &record : m_index->store().records()) {
         if (record.tags.contains(QLatin1String("work"))
-            && pathState(record.path, nullptr) == PathState::Present)
+            && rowState(record.path, nullptr) == PathState::Present)
             expected.append(record.path);
     }
     listed.sort();
@@ -1286,9 +1337,7 @@ void TestStudio::listsEveryFileCarryingATagWhereverItIs()
     QVERIFY2(rowOf(QStringLiteral("later.txt")) >= 0,
              "a row the index gained never reached the tag listing");
 
-    // Walking into a folder asks for that folder, so it lets the tag go. The
-    // tab's directory was never moved by the tag, so `beta` was still there to
-    // come back to until this.
+    // Walking into a folder asks for that folder, so it lets the tag go.
     focusRow(QFileInfo(elsewhere.path()).fileName());
     key('l');
     QCOMPARE(tab()->selectedTag(), QString());
@@ -1360,7 +1409,89 @@ void TestStudio::saysWhetherAFolderIsShutGoneOrEmpty()
     key(Qt::Key_Return);
     QCOMPARE(cwd(), scratch.path());
 
+    // A name the kernel will not resolve is not taken as resolved: from inside
+    // a folder whose parent is shut, a relative name stays under that folder.
+    const QString outer = QDir(scratch.path()).filePath(QStringLiteral("outer"));
+    QVERIFY(QDir().mkpath(outer + QStringLiteral("/inner/sub")));
+    const QString inner = QFileInfo(outer + QStringLiteral("/inner")).canonicalFilePath();
+    const QString started = QDir::currentPath();
+    QVERIFY(QDir::setCurrent(inner));
+    QVERIFY(QFile::setPermissions(outer, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+    const auto restore = qScopeGuard([&] {
+        QFile::setPermissions(outer, QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                         | QFileDevice::ExeOwner);
+        QDir::setCurrent(started);
+    });
+    // A relative name is resolved once, by the tab, so nothing the window
+    // binds to it has anything to write back, and no QML says otherwise.
+    QTest::failOnWarning(QRegularExpression(QStringLiteral("\\.qml:\\d+")));
+    tab()->setCwd(QStringLiteral("sub"));
+    settle();
+    QCOMPARE(cwd(), inner + QStringLiteral("/sub"));
+    QVERIFY2(complaint().contains(QStringLiteral("Permission denied")), qPrintable(complaint()));
+
     tab()->setCwd(m_tree.path());
+    settle();
+}
+
+// A row whose folder is now a file is gone, by the rule `prune` and `verify`
+// keep: the tag listing and the facet listing leave it out and say nothing,
+// where a row the system declines to describe would be named.
+void TestStudio::dropsARowWhoseFolderIsNowAFile()
+{
+    const QString index = QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl"));
+    const auto restore = qScopeGuard([this] {
+        writeIndex();
+        m_index->reload();
+    });
+
+    QTemporaryDir scratch;
+    QVERIFY(scratch.isValid());
+    const QString kept = QDir(scratch.path()).filePath(QStringLiteral("kept.txt"));
+    const QString flattened = QDir(scratch.path()).filePath(QStringLiteral("flattened"));
+    for (const QString &path : {kept, flattened}) {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("x");
+    }
+    {
+        QFile file(index);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text));
+        for (const QString &path : {kept, flattened + QStringLiteral("/inner.txt")}) {
+            file.write(QStringLiteral("{\"path\":\"%1\",\"tags\":[\"work\"]}\n")
+                           .arg(path).toUtf8());
+        }
+    }
+    m_index->reload();
+    settle();
+
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    QVERIFY(folder);
+    const auto check = [&](const char *listing) {
+        QVERIFY2(folder->property("error").toString().isEmpty(),
+                 qPrintable(QStringLiteral("the %1 named a row that is gone: %2")
+                                .arg(QLatin1String(listing),
+                                     folder->property("error").toString())));
+        QVERIFY2(rowOf(QStringLiteral("kept.txt")) >= 0,
+                 qPrintable(QStringLiteral("the %1 lost the row that is there")
+                                .arg(QLatin1String(listing))));
+        QVERIFY(rowOf(QStringLiteral("inner.txt")) < 0);
+    };
+
+    tab()->setSelectedTag(QStringLiteral("work"));
+    settle();
+    check("tag listing");
+    tab()->setSelectedTag(QString());
+    settle();
+
+    m_workspace->addTab(QStringLiteral("tags"));
+    settle();
+    folder = filesRoot()->property("folder").value<QObject *>();
+    QVERIFY(folder);
+    tab()->setFacets({QStringLiteral("work")});
+    settle();
+    check("facet listing");
+    m_workspace->closeCurrentTab();
     settle();
 }
 
@@ -1757,12 +1888,9 @@ void TestStudio::reachesControlsWithTabAndComesBackWithEscape()
 
     key(Qt::Key_Escape);
 
-    // Measured on where the focus actually is. The two obvious assertions --
-    // that `focusRegion` is "list" and that `j` still moves the cursor -- are
-    // both true with Escape doing nothing at all: Tab never changed the region
-    // in the first place, and a key pressed on a focused chip bubbles up to the
-    // window's own handler anyway. So the half this test is named for used to
-    // pass with the Escape branch disabled.
+    // Measured on where the focus actually is: `focusRegion` and `j` alone are
+    // both satisfied with Escape doing nothing, since a key on a focused chip
+    // bubbles up to the window anyway.
     QVERIFY2(window()->activeFocusItem() != reached,
              "Escape left the keyboard on the control Tab had reached");
     QCOMPARE(window()->activeFocusItem(), before);
@@ -1899,10 +2027,8 @@ void TestStudio::typesAPathAndAFilter()
     QVERIFY2(cursor() != before, "the list stopped answering after the text boxes");
 }
 
-// The graph is a second view of the same index, and it used to be reachable
-// only by mouse: its key handler could open the node under the selection but
-// nothing could move the selection, so with no mouse there was never a node
-// under it.
+// The graph is a second view of the same index, and the keyboard both moves
+// its selection and opens the node under it.
 void TestStudio::walksTheGraphWithTheKeyboard()
 {
     QObject *root = m_engine->rootObjects().first();
@@ -1933,13 +2059,8 @@ void TestStudio::walksTheGraphWithTheKeyboard()
     // to that tag, which is what picking the same tag in the dock does to the
     // list beside it, and what a tag in the Places panel does in Dolphin or a
     // tag in the sidebar does in Finder. Written onto the graph tab instead, a
-    // tag reaches nothing but that tab's title.
-    //
-    // A tag and not a file because this case is about tags -- the file half is
-    // `recordsAnOpenInsteadOfLaunchingIt`, which can press it now that the
-    // launcher is a seam. It used to be a tag because activating a file node
-    // launched whatever the machine had registered for text/plain, and a suite
-    // that does that is a suite nobody can run.
+    // tag reaches nothing but that tab's title. The file half is
+    // `recordsAnOpenInsteadOfLaunchingIt`.
     graph->setProperty("selectedId", QString());
     QString picked;
     for (int i = 0; i < 32 && picked.isEmpty(); ++i) {
@@ -1990,9 +2111,7 @@ void TestStudio::walksTheGraphWithTheKeyboard()
     graph = root->property("activeGraph").value<QObject *>();
     QVERIFY(graph);
 
-    // The named spellings of the same four moves. `j k g G` were pressed above
-    // and the arrows, Home and End were not -- so the graph could have answered
-    // only the letters and the suite would not have known.
+    // The named spellings of the same four moves: the arrows, Home and End.
     graph->setProperty("selectedId", QString());
     key(Qt::Key_Right);
     const QString stepped = graph->property("selectedId").toString();
@@ -2050,13 +2169,11 @@ void TestStudio::runsACommandFromThePalette()
     key(':');
     QCOMPARE(root->property("blocked").toBool(), true);
 
-    // Deliberately spelled with `j` and `k` in it: the palette used to treat
-    // those two letters as list navigation and accept the event, so a query
-    // containing either lost the letter. `icons` alone has neither, which is
-    // why nothing noticed.
+    // Spelled with `j` and `k` in it: in the query they are letters, not list
+    // navigation.
     for (char ch : QByteArray("jkicons"))
         key(ch);
-    // The two that were swallowed, and the whole word, arrived.
+    // Both letters, and the whole word, arrived.
     QObject *query = root->findChild<QObject *>(QStringLiteral("paletteQuery"));
     QVERIFY2(query, "the palette has no query field to check");
     QCOMPARE(query->property("text").toString(), QStringLiteral("jkicons"));
@@ -2110,9 +2227,7 @@ void TestStudio::commandPaletteSortUsesPickSortRole()
     QCOMPARE(tab()->sortAscending(), true);
 }
 
-// `0`, `+` and `-` used to be three keys whose only effect was on pixels, so
-// nothing could tell whether they worked. They are the reason GraphItem grew a
-// readable `scale`.
+// `0`, `+` and `-` are read back through GraphItem's `scale`.
 void TestStudio::zoomsAndResetsTheGraph()
 {
     QObject *root = m_engine->rootObjects().first();
@@ -2136,9 +2251,8 @@ void TestStudio::zoomsAndResetsTheGraph()
     QVERIFY2(graph->property("zoomLevel").toReal() < bigger, "- did not zoom out");
 
     // `=` is the unshifted `+` on most layouts, and has to zoom the same way.
-    // Asserted against the value before the press: comparing it to 1.0 was true
-    // whether or not the key did anything, because the two presses above had
-    // already brought it back to 1.0.
+    // Asserted against the value before the press, which the two presses above
+    // have already brought back to 1.0.
     const qreal beforeEquals = graph->property("zoomLevel").toReal();
     key('=');
     QVERIFY2(graph->property("zoomLevel").toReal() > beforeEquals, "= did not zoom in");
@@ -2165,9 +2279,8 @@ void TestStudio::zoomsAndResetsTheGraph()
     settle();
 }
 
-// The whole of the graph's mouse handling was unreached by any test, including
-// `hitNode` -- the calculation that decides which node you clicked on, and the
-// one that had to change when the labels stopped being truncated.
+// The graph's mouse handling, including `hitNode`, which decides which node a
+// click lands on.
 void TestStudio::picksAGraphNodeWithTheMouse()
 {
     QObject *root = m_engine->rootObjects().first();
@@ -2179,9 +2292,8 @@ void TestStudio::picksAGraphNodeWithTheMouse()
     QVERIFY(item);
 
     // The layout is computed from the item's size, so a node's position is only
-    // meaningful once that size is final. Forcing a frame settles it; without
-    // this the test read a position from one layout and clicked it in another,
-    // and failed only when the machine was busy enough for the two to differ.
+    // meaningful once that size is final. Forcing a frame settles it, so the
+    // position read and the position clicked belong to the same layout.
     QTest::qWait(80);
     window()->grabWindow();
     QTRY_VERIFY(item->width() > 100 && item->height() > 100);
@@ -2209,7 +2321,7 @@ void TestStudio::picksAGraphNodeWithTheMouse()
     settle();
 
     // If the item resized between the two, the coordinates describe a layout
-    // that no longer exists -- say that, rather than failing on the click.
+    // that is gone -- say that, rather than failing on the click.
     QCOMPARE(QSizeF(item->width(), item->height()), laidOutAt);
 
     const QPointF scene = item->mapToScene(at);
@@ -2228,13 +2340,9 @@ void TestStudio::picksAGraphNodeWithTheMouse()
     settle();
 }
 
-// Every view has to survive being drawn, and be the thing that drew.
-//
-// The first version of this counted colours across the whole window, which the
-// toolbar, tab strip, dock and status bar satisfy on their own -- so replacing
-// the graph's entire painter with a `return` left it passing. It now looks only
-// at the region the view owns, and compares that region against the same window
-// with the view empty.
+// Every view has to survive being drawn, and be the thing that drew: only the
+// region the view owns is read, against the same window with the view empty,
+// since the chrome around it has colours of its own.
 void TestStudio::drawsEveryView()
 {
     QObject *root = m_engine->rootObjects().first();
@@ -2332,12 +2440,8 @@ void TestStudio::drawsEveryView()
     settle();
 }
 
-// Clicking a file in the other pane has to make that pane the focused one.
-//
-// The only thing that set `focusedPane` from the mouse sat at `z: -1` beneath
-// the whole pane, and the list took the press first -- so a click moved that
-// pane's cursor while the keyboard went on driving the other one, and the row
-// you had just clicked was not the row `j` would move from.
+// Clicking a file in the other pane makes that pane the focused one, so the row
+// just clicked is the row `j` moves from.
 void TestStudio::clickingARowFocusesItsPane()
 {
     QMetaObject::invokeMethod(m_workspace, "splitRight",
@@ -2348,8 +2452,7 @@ void TestStudio::clickingARowFocusesItsPane()
 
     // Aimed at the pane itself, not at a fraction of the window. The split is
     // laid out on a later frame than the one `settle` pumps, so a hardcoded
-    // point could be measured against a layout that had not happened yet --
-    // which is why this failed about one run in ten, and only under load.
+    // point could be measured against a layout that has not happened yet.
     QTest::qWait(80);
     window()->grabWindow();
     const auto panes = [this] { return itemsNamed(QStringLiteral("pane")); };
@@ -2386,8 +2489,7 @@ void TestStudio::clickingARowFocusesItsPane()
 
     // And empty space inside a pane counts as that pane. The rows carry a tap
     // handler of their own; below the last row there is nothing but the pane,
-    // and a click there used to move the keyboard nowhere -- so the pane you
-    // were looking at and the pane `j` drove were different ones.
+    // and a click there moves the keyboard to it.
     m_workspace->setFocusedPane(1);
     settle();
     QCOMPARE(m_workspace->focusedPane(), 1);
@@ -2437,13 +2539,8 @@ struct StateEnv {
     const QByteArray previous;
 };
 
-// The graph wears the desktop's theme like everything else.
-//
-// It did not. `GraphItem` declares a `theme` property of its own, and a QML
-// binding searches the object before the context -- so `theme: theme` on that
-// one type bound the property to itself, left it null forever, and the painter
-// fell back to hardcoded colours. Every other panel followed the desktop, so
-// nothing looked broken; the graph was simply always the same blue.
+// The graph wears the desktop's theme like everything else: the property holds
+// the theme, and the pixels change with its palette.
 void TestStudio::dressesTheGraphInTheDesktopTheme()
 {
     QObject *root = m_engine->rootObjects().first();
@@ -2526,9 +2623,8 @@ void TestStudio::dressesTheGraphInTheDesktopTheme()
 }
 
 
-// QQuickPaintedItem used to clear with Qt::transparent; offscreen grabWindow
-// composites that onto white, so the map sat as dark ink on a white hole while
-// the chrome followed Theme.background.
+// The map clears to Theme.background: offscreen grabWindow composites a
+// transparent clear onto white.
 void TestStudio::paintsTheGraphOnTheThemeBackground()
 {
     QObject *root = m_engine->rootObjects().first();
@@ -2810,11 +2906,8 @@ void TestStudio::followsTheDesktopsRoundingIntoQml()
     QCOMPARE(root->property("blocked").toBool(), false);
 }
 
-// `?` and `Space`, which fell between the two keymap tests.
-//
-// The sweep exempts `?` because it opens a sheet that takes the keyboard, and
-// skips `Space` because its spelling is a word -- so the sheet the whole keymap
-// test is built around, and the key that marks a row, were pressed by nothing.
+// `?` and `Space`, which the key sweep skips: one opens a sheet that takes the
+// keyboard and the other is spelled as a word.
 void TestStudio::showsTheKeySheetAndMarksARow()
 {
     QObject *root = m_engine->rootObjects().first();
@@ -2848,11 +2941,8 @@ void TestStudio::showsTheKeySheetAndMarksARow()
     key(Qt::Key_Escape);
     settle();
 
-    // Every entry on the sheet has to be readable. Widening it to four columns
-    // stopped the last group falling off the bottom and started cutting the
-    // longest label off at the right instead -- the sort entry read `name,
-    // tags, type, size, mo...` -- which is the same failure in the other
-    // direction, and the committed screenshot had it in it.
+    // Every entry on the sheet has to be readable: nothing falls off the
+    // bottom and no label is cut off at the right.
     key('?');
     QVERIFY(root->property("blocked").toBool());
     window()->grabWindow();
@@ -2877,9 +2967,8 @@ void TestStudio::showsTheKeySheetAndMarksARow()
 // Closing a pane must not leave a binding running against the pane it closed.
 //
 // `pragma ComponentBehavior: Bound` keeps the enclosing scope alive for one
-// more evaluation, so the tab delegate re-ran with its pane already null and
-// printed a TypeError on every close. Log noise today, and the noise that hides
-// the next real one.
+// more evaluation, so a delegate can run with its pane already null; no
+// TypeError may be printed.
 void TestStudio::survivesClosingAPaneWithoutComplaint()
 {
     QStringList complaints;
@@ -2900,10 +2989,8 @@ void TestStudio::survivesClosingAPaneWithoutComplaint()
     QCOMPARE(m_workspace->paneCount(), 1);
 
     // The binding does not re-evaluate until the scene is rendered again, and
-    // `settle` only spins the event loop. Handing the handler back after two
-    // rounds of processEvents captured nothing at all on any run -- so the
-    // assertion below was true of an empty list whether the fix was there or
-    // not. Force the render while still listening.
+    // `settle` only spins the event loop, so the render is forced while still
+    // listening.
     window()->grabWindow();
     QTest::qWait(60);
     settle();
@@ -2917,16 +3004,9 @@ void TestStudio::survivesClosingAPaneWithoutComplaint()
     QVERIFY2(errors.isEmpty(), qPrintable(errors.join(QLatin1Char('\n'))));
 }
 
-// A tag added by the CLI shows up without anyone pressing reload.
-//
-// The window watches the index file, and several tests here quietly depend on
-// that -- the reload keys are asserted by the signal they emit rather than by
-// what arrives, precisely because the watcher has already fetched it. Nothing
-// asserted the watcher itself. It also coalesces now, because one CLI write is
-// four filesystem events -- a lock file appearing, a temporary appearing, the
-// rename, the lock file going -- and each one used to cost a full re-read; a
-// coalescer that swallowed the last event would be silent in exactly the same
-// way as no watcher at all.
+// A tag added by the CLI shows up without anyone pressing reload. One CLI write
+// is four filesystem events, coalesced into one re-read that must not swallow
+// the last of them.
 void TestStudio::noticesTheIndexChangingUnderIt()
 {
     const QString index = QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl"));
@@ -2935,11 +3015,13 @@ void TestStudio::noticesTheIndexChangingUnderIt()
 
     // Appended in place, not committed by rename the way the CLI does. That is
     // deliberate and it is enough: the watch is on the file, and either shape
-    // of write moves it. The rename path is covered by the CLI suite.
+    // of write moves it. The rename path is covered by the CLI suite. The file
+    // the fixture leaves untagged, because a second line for one path is a
+    // malformed index.
     {
         QFile handle(index);
         QVERIFY(handle.open(QIODevice::Append | QIODevice::Text));
-        const QString path = QDir(m_tree.path()).filePath(QStringLiteral("one.txt"));
+        const QString path = QDir(m_tree.path()).filePath(QStringLiteral("plain.txt"));
         handle.write(QStringLiteral("{\"path\":\"%1\",\"tags\":[\"watched\"]}\n")
                          .arg(path).toUtf8());
     }
@@ -2970,9 +3052,7 @@ void TestStudio::noticesTheIndexChangingUnderIt()
 }
 
 // On a machine where the command line has never run there is no index
-// directory, so there was nothing to watch and nothing ever took the watch
-// again -- the window's promise that it follows the file was false until
-// somebody pressed F5, which is exactly the first run where nobody knows to.
+// directory, and the window still picks up the index the first write creates.
 void TestStudio::watchesTheIndexOnAFreshInstall()
 {
     QTemporaryDir fresh;
@@ -3003,9 +3083,8 @@ void TestStudio::watchesTheIndexOnAFreshInstall()
 //
 // It skips anything whose spelling has more than one character, which is every
 // named key and every chord -- so `Home`, `End`, `PgUp`, `PgDn`, `Ctrl+D`,
-// `Ctrl+U`, `F5`, `Ctrl+R`, `Menu`, `Shift+F10` and the arrows were on the key
-// sheet and pressed by nothing. Four of them had just been added to that sheet
-// in the belief they were covered.
+// `Ctrl+U`, `F5`, `Ctrl+R`, `Menu`, `Shift+F10` and the arrows, which the key
+// sheet lists and the letter sweep does not press.
 void TestStudio::answersTheNamedAndChordedKeys()
 {
     QObject *root = m_engine->rootObjects().first();
@@ -3103,11 +3182,8 @@ void TestStudio::answersTheNamedAndChordedKeys()
     key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
     QCOMPARE(m_workspace->paneCount(), 1);
 
-    // The arrows in the icons view. It is the only entry on the sheet that
-    // names a view, the bare-key sweep skips it because `\u2190 \u2192` is not ASCII,
-    // and every other press of Left and Right here is in the list -- where they
-    // walk the tree instead. So the one thing the entry promises was tested by
-    // nothing.
+    // The arrows in the icons view, where they move along the row rather than
+    // walk the tree as they do in the list.
     reset(1);
     tab()->setViewMode(QStringLiteral("icons"));
     settle();
@@ -3168,7 +3244,7 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         {"]", "tabs"},    {"[", "tabs"},
         {"/", ""},                         // opens the filter bar
         {"r", ""},        {"n", ""},       // open a prompt in it
-        {"*", ""},        {"f", ""},
+        {"*", ""},        {"f", ""},        {"F", ""},
         {"J", ""},        {"K", ""},
     };
 
@@ -3336,11 +3412,8 @@ void TestStudio::drawsItself()
 
     key('1');
     key('t');
-    // The handoff, asserted rather than assumed. `focusTags` returns silently
-    // when the panel is not there yet, and the two Enters below were written for
-    // a keyboard that is in the tag panel -- with the cursor parked on `two.md`
-    // they went to the list instead and opened the file twice. That is the whole
-    // of the bug: the picture was of the wrong thing and the suite said nothing.
+    // The handoff, asserted rather than assumed: `focusTags` returns silently
+    // when the panel is not there yet, and the Enters below are for the panel.
     QCOMPARE(m_engine->rootObjects().first()->property("focusRegion").toString(),
              QStringLiteral("tags"));
     key(Qt::Key_Return);
@@ -3398,16 +3471,11 @@ void TestStudio::writesTheDocumentationShots()
     // same bytes twice: the path is in the picture, on the address bar, so a
     // unique directory per run would put a different string in every image.
     //
-    // `/tmp` spelled out rather than `QDir::tempPath()`, which honours `TMPDIR`.
-    // On a machine that sets it, the address bar rendered a different string and
-    // the byte-compare in `shots-check.sh` failed -- so `git commit` was refused
-    // for a reason that had nothing to do with the commit.
+    // `/tmp` spelled out rather than `QDir::tempPath()`, which honours `TMPDIR`
+    // and would put a different string on the address bar.
     //
-    // Fixed and shared is a collision waiting to happen -- two runs at once
-    // wrote each other's fixture and both still passed -- so the name is held
-    // under a lock for the length of the run. Same discipline as the index: the
-    // lock is older than the read, and a second run waits rather than
-    // interleaving.
+    // Fixed and shared, so the name is held under a lock for the length of the
+    // run and a second run waits rather than writing the same fixture.
     const QString fixture = QStringLiteral("/tmp/omafiles-docs");
     QVERIFY2(QDir().mkpath(fixture),
              "the documentation pictures need a writable /tmp; the path is in the picture");
@@ -3686,11 +3754,8 @@ void TestStudio::followsTheFolderOnDisk()
     settle();
 }
 
-// The number beside a folder is every name it holds. A count taken from a
-// listing that filters on what a stat says each entry is calls a folder of
-// dangling links, links round to themselves and fifos empty -- the same failure
-// the listing itself was fixed for, in the one place that still read a directory
-// its own way.
+// The number beside a folder is every name it holds, dangling links, links
+// round to themselves and fifos included.
 void TestStudio::countsEveryNameAFolderHolds()
 {
     QTemporaryDir scratch;
@@ -3767,20 +3832,10 @@ void TestStudio::tagStripSaysHowManyTagsDoNotFit()
     }
 
     QStringList tags;
-    QStringList jsonTags;
-    for (int i = 0; i < 16; ++i) {
-        const QString tag = QString(QChar('a' + i));
-        tags << tag;
-        jsonTags << QStringLiteral("\"%1\"").arg(tag);
-    }
+    for (int i = 0; i < 16; ++i)
+        tags << QString(QChar('a' + i));
 
-    {
-        QFile index(QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl")));
-        QVERIFY(index.open(QIODevice::Append | QIODevice::Text));
-        index.write(QStringLiteral("{\"path\":\"%1\",\"tags\":[%2]}\n")
-                        .arg(path, jsonTags.join(QLatin1Char(',')))
-                        .toUtf8());
-    }
+    putIndexRow(path, tags);
     m_index->reload();
     settle();
 
@@ -3890,19 +3945,9 @@ void TestStudio::namesTheMenuRowTheOverflowAndTheTabClose()
         file.write("x");
     }
     QStringList tags;
-    QStringList jsonTags;
-    for (int i = 0; i < 16; ++i) {
-        const QString tag = QString(QChar('a' + i));
-        tags << tag;
-        jsonTags << QStringLiteral("\"%1\"").arg(tag);
-    }
-    {
-        QFile index(QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl")));
-        QVERIFY(index.open(QIODevice::Append | QIODevice::Text));
-        index.write(QStringLiteral("{\"path\":\"%1\",\"tags\":[%2]}\n")
-                        .arg(path, jsonTags.join(QLatin1Char(',')))
-                        .toUtf8());
-    }
+    for (int i = 0; i < 16; ++i)
+        tags << QString(QChar('a' + i));
+    putIndexRow(path, tags);
     m_index->reload();
     settle();
     tab()->setViewMode(QStringLiteral("details"));
@@ -4208,8 +4253,7 @@ void TestStudio::copiesWhatTheRowIsToTheClipboard()
 }
 
 // A tag listing is not a place in the tree: its rows live in as many folders as
-// they like, and until now there was no way from one of them to the folder it is
-// really in.
+// they like, and there is a way from one of them to the folder it is really in.
 void TestStudio::walksToTheFolderHoldingATaggedFile()
 {
     const QString file = QDir(m_tree.path()).filePath(QStringLiteral("sweep/one.txt"));
@@ -4545,15 +4589,9 @@ void TestStudio::asksOneQuestionWhicheverWayItIsWalked()
     settle();
 }
 
-// The menu answered the keyboard and swallowed the mouse.
-//
-// Every case in this file drove it with `m`, `j` and Enter, and every one of
-// them passed while clicking an entry did nothing but close the menu. The
-// `FocusScope` holding the panel had no size -- nobody ever gave it one -- and
-// Qt Quick delivers a press to a child only when the point is inside its
-// ancestors, so a zero-by-zero scope hands every click straight through to the
-// scrim behind it. Keyboard focus does not care about geometry, which is why
-// only half the menu was ever broken and why no test noticed.
+// The menu answers the mouse as well as the keyboard. Qt Quick delivers a press
+// to a child only inside its ancestors, so the scope holding the panel needs a
+// size; keyboard focus does not care about geometry.
 void TestStudio::choosesARowMenuEntryWithTheMouse()
 {
     const QString file = QDir(m_tree.path()).filePath(QStringLiteral("one.txt"));
@@ -5203,6 +5241,77 @@ void TestStudio::findsByNameAcrossTheRoots()
     QVERIFY(files().contains(QStringLiteral("one.txt")));
 }
 
+// `f` and `*` ask fnmatch(3), the question `ls --name` asks: a backslash
+// escapes, and a lone `[` is itself rather than a pattern that matches nothing.
+// A gap line in the list is not a name.
+void TestStudio::matchesAPatternTheWayTheCliDoes()
+{
+    QObject *root = m_engine->rootObjects().first();
+    QTemporaryDir cache;
+    QTemporaryDir shelf;
+    QVERIFY(cache.isValid() && shelf.isValid());
+    const QDir room(shelf.path());
+    for (const char *name : {"[", "a*b", "axb"}) {
+        QFile file(room.filePath(QString::fromLatin1(name)));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("x");
+    }
+    const QByteArray previousCache = qgetenv("XDG_CACHE_HOME");
+    qputenv("XDG_CACHE_HOME", cache.path().toUtf8());
+    const QVector<Root> previousRoots =
+        setRoots({Root{QStringLiteral("patterns"), room.absolutePath(), false, QString()}});
+    const auto restore = qScopeGuard([&previousCache, &previousRoots] {
+        qputenv("XDG_CACHE_HOME", previousCache);
+        setRoots(previousRoots);
+    });
+    QVERIFY(writeNames(QStringLiteral("patterns"),
+                       {QStringLiteral("["), QStringLiteral("a*b"), QStringLiteral("axb")},
+                       {{room.filePath(QStringLiteral("a[b")),
+                         QStringLiteral("a[b is unreadable; nothing under it was listed")}},
+                       nullptr, nullptr));
+
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    const auto files = [folder] {
+        QStringList out;
+        for (int i = 0; i < folder->property("count").toInt(); ++i) {
+            QVariantMap entry;
+            QMetaObject::invokeMethod(folder, "entryAt", Q_RETURN_ARG(QVariantMap, entry),
+                                      Q_ARG(int, i));
+            if (entry.value(QStringLiteral("kind")).toString() == QLatin1String("file"))
+                out.append(entry.value(QStringLiteral("name")).toString());
+        }
+        return out;
+    };
+    const auto find = [&](const QString &pattern) {
+        key('f');
+        QMetaObject::invokeMethod(root, "finishFinding", Q_ARG(QVariant, QVariant(true)),
+                                  Q_ARG(QVariant, QVariant(pattern)));
+        settle();
+        return files();
+    };
+
+    QCOMPARE(find(QStringLiteral("[")), QStringList{QStringLiteral("[")});
+    QCOMPARE(find(QStringLiteral("a\\*b")), QStringList{QStringLiteral("a*b")});
+    QCOMPARE(find(QStringLiteral("*")),
+             (QStringList{QStringLiteral("["), QStringLiteral("a*b"), QStringLiteral("axb")}));
+    // Said beside the age, the way `ls --cached` says it.
+    QVERIFY2(folder->property("error").toString().contains(
+                 QStringLiteral("the list is short: a[b is unreadable")),
+             qPrintable(folder->property("error").toString()));
+
+    // And `*` over those rows marks by the same rule.
+    int matched = -1;
+    QMetaObject::invokeMethod(folder, "markMatching", Q_RETURN_ARG(int, matched),
+                              Q_ARG(QString, QStringLiteral("a\\*b")));
+    QCOMPARE(matched, 1);
+    QMetaObject::invokeMethod(folder, "markMatching", Q_RETURN_ARG(int, matched),
+                              Q_ARG(QString, QStringLiteral("[")));
+    QCOMPARE(matched, 1);
+    key('A');
+    key('h');
+    QCOMPARE(tab()->pattern(), QString());
+}
+
 // A script in the config folder is a menu entry, run over the marked set with
 // the paths as its arguments and their folder as its working directory --
 // through the launcher seam, so nothing here runs it.
@@ -5371,5 +5480,1066 @@ void TestStudio::listsWhatTheDesktopOpenedLately()
     QVERIFY(xbel.remove());
 }
 
+// The details columns are one list: the headings and every row's cells follow
+// it, the heading menu and the palette both change it, and a fresh workspace
+// reads it back from the state directory.
+void TestStudio::choosesTheDetailsColumnsAndKeepsThem()
+{
+    const QStringList defaults{QStringLiteral("tags"), QStringLiteral("type"),
+                               QStringLiteral("size"), QStringLiteral("mtime")};
+    QCOMPARE(m_workspace->columns(), defaults);
+    const auto restore = qScopeGuard([this, &defaults] {
+        for (const QString &field : m_workspace->columns())
+            m_workspace->toggleColumn(field);
+        for (const QString &field : defaults)
+            m_workspace->toggleColumn(field);
+    });
+    tab()->setViewMode(QStringLiteral("details"));
+    settle();
+
+    const auto byX = [](QList<QQuickItem *> items) {
+        std::sort(items.begin(), items.end(), [](QQuickItem *a, QQuickItem *b) {
+            return a->mapToScene({0, 0}).x() < b->mapToScene({0, 0}).x();
+        });
+        return items;
+    };
+    const auto heading = [this](const QString &label) -> QQuickItem * {
+        for (QQuickItem *item : itemsNamed(QStringLiteral("columnHead")))
+            if (item->isVisible() && item->property("label").toString() == label)
+                return item;
+        return nullptr;
+    };
+    const auto headings = [&] {
+        QList<QQuickItem *> shown;
+        for (QQuickItem *item : itemsNamed(QStringLiteral("columnHead")))
+            if (item->isVisible())
+                shown.append(item);
+        QStringList labels;
+        for (QQuickItem *item : byX(shown))
+            labels.append(item->property("label").toString());
+        return labels;
+    };
+    // True when every drawn row has exactly these cells, left to right.
+    const auto everyRowHas = [&](const QStringList &fields) {
+        QHash<QQuickItem *, QList<QQuickItem *>> rows;
+        for (QQuickItem *item : itemsNamed(QStringLiteral("columnCell")))
+            rows[item->parentItem()].append(item);
+        if (rows.isEmpty())
+            return false;
+        for (const QList<QQuickItem *> &cells : std::as_const(rows)) {
+            QStringList drawn;
+            for (QQuickItem *cell : byX(cells))
+                drawn.append(cell->property("modelData").toString());
+            if (drawn != fields)
+                return false;
+        }
+        return true;
+    };
+    const auto cellText = [&](const QString &row, const QString &field) {
+        for (QQuickItem *cell : itemsNamed(QStringLiteral("columnCell"))) {
+            if (cell->property("modelData").toString() != field
+                || cell->parentItem()->parentItem()->property("name").toString() != row)
+                continue;
+            QObject *drawn = cell->property("item").value<QObject *>();
+            return drawn ? drawn->property("text").toString() : QString();
+        }
+        return QStringLiteral("<no cell>");
+    };
+    const auto click = [this](QQuickItem *item, Qt::MouseButton button) {
+        QTest::mouseClick(window(), button, Qt::NoModifier,
+                          item->mapToScene({item->width() / 2, item->height() / 2}).toPoint());
+        settle();
+    };
+    const auto palette = [this](const QByteArray &query) {
+        key(':');
+        for (char ch : query)
+            key(ch);
+        key(Qt::Key_Return);
+    };
+    // A Row places its children at the next polish, so until then every
+    // heading and cell sits at the same x and no order can be read off them.
+    const auto laidOut = [&] {
+        QHash<QQuickItem *, QSet<qreal>> xs;
+        QHash<QQuickItem *, int> counts;
+        for (const QString &name : {QStringLiteral("columnHead"), QStringLiteral("columnCell")}) {
+            for (QQuickItem *item : itemsNamed(name)) {
+                if (!item->isVisible())
+                    continue;
+                xs[item->parentItem()].insert(item->mapToScene({0, 0}).x());
+                ++counts[item->parentItem()];
+            }
+        }
+        for (auto it = counts.cbegin(); it != counts.cend(); ++it)
+            if (xs.value(it.key()).size() != it.value())
+                return false;
+        return true;
+    };
+
+    QTRY_VERIFY(laidOut());
+    QCOMPARE(headings(), (QStringList{"name", "tags", "type", "size", "modified"}));
+    QVERIFY(everyRowHas(defaults));
+
+    // A right-click on one heading offers to move that one, and to hide any.
+    QQuickItem *sizeHead = heading(QStringLiteral("size"));
+    QVERIFY(sizeHead);
+    click(sizeHead, Qt::RightButton);
+    const QStringList offered = menuLabels(QStringLiteral("columnMenu"));
+    QVERIFY2(offered.contains(QStringLiteral("Move the size column left")),
+             qPrintable(offered.join(QLatin1Char('|'))));
+    QVERIFY(offered.contains(QStringLiteral("Move the size column right")));
+    QVERIFY(!offered.contains(QStringLiteral("Move the type column left")));
+    QVERIFY(offered.contains(QStringLiteral("Show the owner column")));
+    QVERIFY(chooseInMenu(QStringLiteral("columnMenu"), QStringLiteral("Hide the size column")));
+    const QStringList hidden{QStringLiteral("tags"), QStringLiteral("type"),
+                             QStringLiteral("mtime")};
+    QCOMPARE(m_workspace->columns(), hidden);
+    QTRY_VERIFY(laidOut());
+    QCOMPARE(headings(), (QStringList{"name", "tags", "type", "modified"}));
+    QVERIFY(everyRowHas(hidden));
+
+    // Over the name, which never moves, it offers to move every column.
+    click(heading(QStringLiteral("name")), Qt::RightButton);
+    const QStringList overName = menuLabels(QStringLiteral("columnMenu"));
+    QVERIFY2(overName.contains(QStringLiteral("Move the tags column right"))
+                 && overName.contains(QStringLiteral("Move the modified column left")),
+             qPrintable(overName.join(QLatin1Char('|'))));
+    key(Qt::Key_Escape);
+
+    // The palette reaches the same commands from the keyboard.
+    palette("show the owner");
+    palette("show the mode");
+    QCOMPARE(m_workspace->columns(),
+             (QStringList{"tags", "type", "mtime", "owner", "mode"}));
+    palette("move the owner column left");
+    const QStringList moved{QStringLiteral("tags"), QStringLiteral("type"),
+                            QStringLiteral("owner"), QStringLiteral("mtime"),
+                            QStringLiteral("mode")};
+    QCOMPARE(m_workspace->columns(), moved);
+    QTRY_VERIFY(laidOut());
+    QCOMPARE(headings(), (QStringList{"name", "tags", "type", "owner", "modified", "mode"}));
+    QVERIFY(everyRowHas(moved));
+
+    // The new cells say what the details panel says about the same row.
+    focusRow(QStringLiteral("two.md"));
+    const QVariantMap entry = filesRoot()->property("entry").toMap();
+    const QString mode = entry.value(QStringLiteral("mode")).toString();
+    QVERIFY2(mode.startsWith(QStringLiteral("-rw")), qPrintable(mode));
+    QCOMPARE(cellText(QStringLiteral("two.md"), QStringLiteral("mode")), mode);
+    const passwd *me = getpwuid(getuid());
+    QVERIFY(me);
+    QCOMPARE(cellText(QStringLiteral("two.md"), QStringLiteral("owner")),
+             QString::fromLocal8Bit(me->pw_name));
+
+    // A heading still sorts wherever it now stands; one the tab cannot sort by
+    // does nothing.
+    QQuickItem *ownerHead = heading(QStringLiteral("owner"));
+    QVERIFY(ownerHead);
+    click(ownerHead, Qt::LeftButton);
+    QCOMPARE(tab()->sortRole(), QStringLiteral("name"));
+    QVERIFY(tab()->sortAscending());
+    QQuickItem *typeHead = heading(QStringLiteral("type"));
+    QVERIFY(typeHead);
+    click(typeHead, Qt::LeftButton);
+    QCOMPARE(tab()->sortRole(), QStringLiteral("type"));
+
+    // What the next window starts with.
+    QVERIFY(QFileInfo::exists(
+        QDir(m_state.path()).filePath(QStringLiteral("omafiles/studio.conf"))));
+    Workspace next;
+    QCOMPARE(next.columns(), moved);
+
+    // Every column hidden is a choice too, and not the absence of one.
+    for (const QString &field : moved)
+        m_workspace->toggleColumn(field);
+    QVERIFY(Workspace().columns().isEmpty());
+
+    // A hand-edited file keeps the fields it names once and drops the rest.
+    {
+        QSettings state(QDir(m_state.path()).filePath(QStringLiteral("omafiles/studio.conf")),
+                        QSettings::IniFormat);
+        state.setValue(QStringLiteral("details/columns"),
+                       QStringList{"mode", "colour", "mode", "size"});
+    }
+    QCOMPARE(Workspace().columns(), (QStringList{"mode", "size"}));
+}
+
+// One left-button event with the modifiers held, the way a hand holds them
+// through a drag. QTest's own mouseMove sends none.
+static void sendLeft(QQuickWindow *window, QEvent::Type type, const QPointF &at,
+                     Qt::KeyboardModifiers mods = Qt::NoModifier)
+{
+    const Qt::MouseButton button = type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton;
+    const Qt::MouseButtons held = type == QEvent::MouseButtonRelease ? Qt::NoButton
+                                                                     : Qt::LeftButton;
+    QMouseEvent event(type, at, window->mapToGlobal(at), button, held, mods);
+    QCoreApplication::sendEvent(window, &event);
+}
+
+// Presses at `from` and moves to `to` in steps, past the drag threshold,
+// without letting go.
+static void pressAndDrag(QQuickWindow *window, const QPointF &from, const QPointF &to,
+                         Qt::KeyboardModifiers mods = Qt::NoModifier)
+{
+    sendLeft(window, QEvent::MouseButtonPress, from, mods);
+    for (int step = 1; step <= 8; ++step)
+        sendLeft(window, QEvent::MouseMove, from + (to - from) * step / 8.0, mods);
+}
+
+// Dragging from where no row claims the press draws a band and marks what it
+// crosses: plain replaces, Shift adds, Ctrl toggles, Escape puts the marks
+// back, and the view scrolls when the band reaches its edge.
+void TestStudio::marksWhatARubberBandCrosses()
+{
+    QObject *root = m_engine->rootObjects().first();
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    QQuickItem *view = qobject_cast<QQuickItem *>(filesRoot()->property("view").value<QObject *>());
+    QObject *band = filesRoot()->property("band").value<QObject *>();
+    QVERIFY(folder && view && band);
+    // A failed check returns with the button down; the next case gets it up.
+    const auto restore = qScopeGuard([&] {
+        sendLeft(window(), QEvent::MouseButtonRelease, QPointF(1, 1));
+        QMetaObject::invokeMethod(folder, "clearMarks");
+        tab()->setViewMode(QStringLiteral("list"));
+        tab()->setCwd(m_tree.path());
+        root->setProperty("filtering", false);
+        QMetaObject::invokeMethod(root, "takeFocus");
+        settle();
+    });
+    QMetaObject::invokeMethod(folder, "clearMarks");
+    settle();
+    window()->grabWindow();
+
+    const auto markedRows = [&] {
+        QList<int> rows;
+        for (int i = 0; i < folder->property("count").toInt(); ++i) {
+            QString path;
+            QMetaObject::invokeMethod(folder, "pathAt", Q_RETURN_ARG(QString, path),
+                                      Q_ARG(int, i));
+            bool marked = false;
+            QMetaObject::invokeMethod(folder, "isMarked", Q_RETURN_ARG(bool, marked),
+                                      Q_ARG(QString, path));
+            if (marked)
+                rows.append(i);
+        }
+        return rows;
+    };
+    const auto rowsFrom = [](int first, int last) {
+        QList<int> rows;
+        for (int i = first; i <= last; ++i)
+            rows.append(i);
+        return rows;
+    };
+    // Past the name, where the list leaves the press to the band.
+    const auto beside = [&](int row) {
+        QQuickItem *item = viewItemAt(view, row);
+        return item ? item->mapToScene(QPointF(item->width() * 0.55, item->height() * 0.5))
+                    : QPointF();
+    };
+    const auto release = [&](const QPointF &at) {
+        sendLeft(window(), QEvent::MouseButtonRelease, at);
+        settle();
+    };
+
+    const int a = rowOf(QStringLiteral("beta"));
+    QVERIFY(a >= 0);
+    const int b = a + 2;
+    const int c = b + 2;
+    QVERIFY(c < folder->property("count").toInt());
+    for (int row = 1; row <= c; ++row) {
+        QString kind;
+        QMetaObject::invokeMethod(folder, "kindAt", Q_RETURN_ARG(QString, kind), Q_ARG(int, row));
+        QVERIFY(kind != QLatin1String("parent"));
+    }
+
+    // A plain drag marks what it covers from the move that starts it, and
+    // gives rows back as it shrinks. Like a click on a row, it takes the
+    // keyboard back to the list.
+    key('/');
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("filter"));
+    QMetaObject::invokeMethod(folder, "toggleMarkAt", Q_ARG(int, c));
+    const int cursorBefore = cursor();
+    sendLeft(window(), QEvent::MouseButtonPress, beside(a));
+    sendLeft(window(), QEvent::MouseMove, beside(b));
+    QVERIFY(band->property("live").toBool());
+    QCOMPARE(markedRows(), rowsFrom(a, b));
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+    sendLeft(window(), QEvent::MouseMove, beside(a));
+    QCOMPARE(markedRows(), QList<int>{a});
+    sendLeft(window(), QEvent::MouseMove, beside(b));
+    release(beside(b));
+    QVERIFY(!band->property("live").toBool());
+    QCOMPARE(markedRows(), rowsFrom(a, b));
+    QCOMPARE(cursor(), cursorBefore);
+
+    // Shift adds to what was marked.
+    QMetaObject::invokeMethod(folder, "clearMarks");
+    QMetaObject::invokeMethod(folder, "toggleMarkAt", Q_ARG(int, c));
+    pressAndDrag(window(), beside(a), beside(b), Qt::ShiftModifier);
+    release(beside(b));
+    QCOMPARE(markedRows(), rowsFrom(a, b) << c);
+
+    // Ctrl turns each row it crosses over, and leaves the rest alone.
+    pressAndDrag(window(), beside(a), beside(a + 1), Qt::ControlModifier);
+    release(beside(a + 1));
+    QCOMPARE(markedRows(), (QList<int>{b, c}));
+
+    // Escape during the drag puts the marks back and ends the band.
+    pressAndDrag(window(), beside(a), beside(b));
+    QCOMPARE(markedRows(), rowsFrom(a, b));
+    QTest::keyClick(window(), Qt::Key_Escape);
+    settle();
+    QVERIFY(!band->property("live").toBool());
+    QCOMPARE(markedRows(), (QList<int>{b, c}));
+    sendLeft(window(), QEvent::MouseMove, beside(c));
+    release(beside(c));
+    QCOMPARE(markedRows(), (QList<int>{b, c}));
+
+    // The icon and the name are the row's: a drag from there draws nothing.
+    QQuickItem *first = viewItemAt(view, a);
+    QVERIFY(first);
+    const QPointF onName = first->mapToScene(
+        QPointF(filesRoot()->property("nameIndent").toReal() + 4, first->height() * 0.5));
+    pressAndDrag(window(), onName, beside(b));
+    QVERIFY(!band->property("live").toBool());
+    release(beside(b));
+    QCOMPARE(markedRows(), (QList<int>{b, c}));
+
+    // A click beside the name is still a click on the row, and Shift and a
+    // click still marks a range on top of what is marked.
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier, beside(a).toPoint());
+    settle();
+    QCOMPARE(cursor(), a);
+    QCOMPARE(markedRows(), (QList<int>{b, c}));
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::ShiftModifier, beside(a + 1).toPoint());
+    settle();
+    QCOMPARE(markedRows(), (QList<int>{a, a + 1, b, c}));
+
+    // The details table puts its heading above the rows; the band still lands
+    // on the rows it crosses, and a drag from the heading is not a band.
+    QMetaObject::invokeMethod(folder, "clearMarks");
+    tab()->setViewMode(QStringLiteral("details"));
+    settle();
+    window()->grabWindow();
+    pressAndDrag(window(), beside(a), beside(b));
+    release(beside(b));
+    QCOMPARE(markedRows(), rowsFrom(a, b));
+    QMetaObject::invokeMethod(folder, "clearMarks");
+    const QPointF heading = view->mapToScene(QPointF(view->width() * 0.55, 8));
+    pressAndDrag(window(), heading, beside(b));
+    QVERIFY(!band->property("live").toBool());
+    release(beside(b));
+    QCOMPARE(markedRows(), QList<int>{});
+
+    // In the grid the band crosses tiles side by side, from the space under a
+    // tile's name.
+    tab()->setViewMode(QStringLiteral("icons"));
+    settle();
+    QQuickItem *grid = qobject_cast<QQuickItem *>(filesRoot()->property("view").value<QObject *>());
+    QVERIFY(grid && grid != view);
+    window()->grabWindow();
+    const auto under = [&](int cell) {
+        QQuickItem *item = viewItemAt(grid, cell);
+        return item ? item->mapToScene(QPointF(item->width() * 0.5, item->height() - 6))
+                    : QPointF();
+    };
+    const qreal cellWidth = grid->property("cellWidth").toReal();
+    // Row 0 is `..`, which no band marks; the three after it share a line.
+    const int start = 1;
+    QVERIFY(int(grid->width() / cellWidth) >= start + 3);
+    pressAndDrag(window(), under(start), under(start + 2));
+    release(under(start + 2));
+    QCOMPARE(markedRows(), rowsFrom(start, start + 2));
+    QQuickItem *tile = viewItemAt(grid, start + 1);
+    QVERIFY(tile);
+    QMetaObject::invokeMethod(folder, "clearMarks");
+    pressAndDrag(window(), tile->mapToScene(QPointF(tile->width() * 0.5, 24)), under(start + 2));
+    QVERIFY(!band->property("live").toBool());
+    release(under(start + 2));
+    QCOMPARE(markedRows(), QList<int>{});
+    tab()->setViewMode(QStringLiteral("list"));
+    settle();
+
+    // Held against the bottom edge, the band scrolls the list and keeps
+    // marking what comes into view.
+    QTemporaryDir many;
+    QVERIFY(many.isValid());
+    for (int i = 0; i < 80; ++i) {
+        QFile file(QDir(many.path()).filePath(
+            QStringLiteral("f%1.txt").arg(i, 2, 10, QLatin1Char('0'))));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+    }
+    tab()->setCwd(many.path());
+    settle();
+    window()->grabWindow();
+    QCOMPARE(markedRows(), QList<int>{});
+    const qreal top = view->property("contentY").toReal();
+    const QPointF edge = view->mapToScene(QPointF(view->width() * 0.55, view->height() - 2));
+    pressAndDrag(window(), beside(1), edge);
+    const int shown = markedRows().size();
+    QTRY_VERIFY(view->property("contentY").toReal() > top + 60);
+    release(edge);
+    const QList<int> swept = markedRows();
+    QVERIFY(swept.size() > shown + 1);
+    QCOMPARE(swept, rowsFrom(1, swept.last()));
+}
+
+// The first visible item named `name` at or under `from`.
+static QQuickItem *shownItem(QQuickItem *from, const QString &name)
+{
+    QList<QQuickItem *> queue{from};
+    while (!queue.isEmpty()) {
+        QQuickItem *item = queue.takeFirst();
+        if (item->objectName() == name && item->isVisible())
+            return item;
+        queue.append(item->childItems());
+    }
+    return nullptr;
+}
+
+// A click on a mode bit in the details panel is `chmod` on the row, and the
+// row menu runs it over the marked set only once the sheet has shown the mode
+// and Enter has said yes. Nothing is changed here: the recorder answers.
+void TestStudio::changesPermissionsThroughTheCommandLine()
+{
+    QObject *root = m_engine->rootObjects().first();
+    const QDir tree(m_tree.path());
+    const QString one = tree.filePath(QStringLiteral("one.txt"));
+    const QString two = tree.filePath(QStringLiteral("two.md"));
+    QVERIFY(::chmod(QFile::encodeName(one).constData(), 0640) == 0);
+    QVERIFY(::chmod(QFile::encodeName(two).constData(), 0640) == 0);
+    const auto restore = qScopeGuard([&] {
+        ::chmod(QFile::encodeName(one).constData(), 0644);
+        ::chmod(QFile::encodeName(two).constData(), 0644);
+    });
+
+    focusRow(QStringLiteral("one.txt"));
+    QCOMPARE(filesRoot()->property("entry").toMap()
+                 .value(QStringLiteral("permissions")).toInt(), 0640);
+
+    const auto clickBit = [this](int cell) {
+        // A frame lays the details panel out for the row just focused; before
+        // one, a bit's position is the last row's and the click lands on the
+        // views list beneath it.
+        window()->grabWindow();
+        QQuickItem *bits = shownItem(window()->contentItem(), QStringLiteral("detailsMode"));
+        QQuickItem *bit = bits ? shownItem(bits, QStringLiteral("modeBit%1").arg(cell)) : nullptr;
+        if (!bit)
+            return false;
+        const QPointF centre = bit->mapToScene(QPointF(bit->width() / 2, bit->height() / 2));
+        QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier, centre.toPoint());
+        settle();
+        return true;
+    };
+
+    // The owner's execute bit: 640 becomes 740, as the octal the verb takes.
+    verbRuns().clear();
+    QVERIFY2(clickBit(2), "the details panel shows no mode bits");
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(), (QStringList{"chmod", "740", "--", one}));
+    QVERIFY2(m_index->notice().contains(QStringLiteral("set 740 on 1 file")),
+             qPrintable(m_index->notice()));
+
+    // A link, and somebody else's file: read out, and a click runs nothing.
+    QTemporaryDir other;
+    QVERIFY(other.isValid());
+    const QString mine = QDir(other.path()).filePath(QStringLiteral("a-target.txt"));
+    QFile made(mine);
+    QVERIFY(made.open(QIODevice::WriteOnly));
+    made.close();
+    QVERIFY(QFile::link(mine, QDir(other.path()).filePath(QStringLiteral("link"))));
+    tab()->setCwd(other.path());
+    settle();
+    focusRow(QStringLiteral("link"));
+    QCOMPARE(filesRoot()->property("entry").toMap().value(QStringLiteral("link")).toBool(), true);
+    verbRuns().clear();
+    QVERIFY(clickBit(0));
+    QVERIFY2(verbRuns().isEmpty(), "a click on a link's mode ran chmod");
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Permissions…")));
+    settle();
+    QCOMPARE(root->property("blocked").toBool(), true);
+    key(Qt::Key_Space);
+    key(Qt::Key_Return);
+    QVERIFY2(verbRuns().isEmpty(), "the sheet ran chmod through a link");
+    key(Qt::Key_Escape);
+    if (::geteuid() != 0) {
+        tab()->setCwd(QStringLiteral("/"));
+        settle();
+        focusRow(QStringLiteral("usr"));
+        QCOMPARE(filesRoot()->property("entry").toMap().value(QStringLiteral("mine")).toBool(),
+                 false);
+        // The owner's bits, not what they come to for whoever is looking.
+        struct stat usr {};
+        QVERIFY(::stat("/usr", &usr) == 0);
+        QCOMPARE(filesRoot()->property("entry").toMap()
+                     .value(QStringLiteral("permissions")).toInt(), int(usr.st_mode & 0777));
+        QVERIFY(clickBit(0));
+        QVERIFY2(verbRuns().isEmpty(), "a click on somebody else's mode ran chmod");
+        key('m');
+        QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Permissions…")));
+        settle();
+        QCOMPARE(root->property("blocked").toBool(), true);
+        key(Qt::Key_Space);
+        key(Qt::Key_Return);
+        QVERIFY2(verbRuns().isEmpty(), "the sheet ran chmod over somebody else's file");
+        key(Qt::Key_Escape);
+    }
+    tab()->setCwd(m_tree.path());
+    settle();
+
+    // Over a marked set: the sheet starts from the row's bits, the keys walk
+    // and flip them, and nothing runs before Enter.
+    focusRow(QStringLiteral("one.txt"));
+    key(Qt::Key_Space);
+    focusRow(QStringLiteral("two.md"));
+    key(Qt::Key_Space);
+    focusRow(QStringLiteral("one.txt"));
+    verbRuns().clear();
+    key('m');
+    QVERIFY2(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Permissions of 2 files…")),
+             qPrintable(menuLabels(QStringLiteral("fileMenu")).join(QLatin1String(" | "))));
+    settle();
+    QCOMPARE(root->property("blocked").toBool(), true);
+    QQuickItem *sheetBits = shownItem(window()->contentItem(), QStringLiteral("sheetMode"));
+    QVERIFY(sheetBits);
+    QCOMPARE(sheetBits->property("octal").toString(), QStringLiteral("640"));
+    key('l');
+    key('l');
+    key(Qt::Key_Space);
+    for (int i = 0; i < 3; ++i)
+        key('l');
+    key(Qt::Key_Space);
+    QCOMPARE(sheetBits->property("octal").toString(), QStringLiteral("750"));
+    QVERIFY2(verbRuns().isEmpty(), "the sheet ran chmod before it was told to");
+    key(Qt::Key_Return);
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(), (QStringList{"chmod", "750", "--", one, two}));
+    QCOMPARE(root->property("blocked").toBool(), false);
+
+    // From the palette, over the row under the cursor; Esc runs nothing and
+    // gives the keyboard back.
+    verbRuns().clear();
+    key(':');
+    for (char ch : QByteArray("permissions"))
+        key(ch);
+    key(Qt::Key_Return);
+    settle();
+    QCOMPARE(root->property("blocked").toBool(), true);
+    key(Qt::Key_Space);
+    key(Qt::Key_Escape);
+    QVERIFY(verbRuns().isEmpty());
+    QCOMPARE(root->property("blocked").toBool(), false);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+    key('A');
+}
+
+// Type, tags and modification date narrow whatever the tab lists, each a
+// criterion ANDed with the others and with `/`, held by the tab and shown as a
+// chip that takes it off.
+void TestStudio::narrowsAnyListingByTypeTagAndDate()
+{
+    QObject *root = m_engine->rootObjects().first();
+    QFile old(QDir(m_tree.path()).filePath(QStringLiteral("plain.txt")));
+    QVERIFY(old.open(QIODevice::ReadWrite));
+    QVERIFY(old.setFileTime(QDateTime::currentDateTime().addDays(-400),
+                            QFileDevice::FileModificationTime));
+    const auto restore = qScopeGuard([&old] {
+        old.setFileTime(QDateTime::currentDateTime(), QFileDevice::FileModificationTime);
+        old.close();
+    });
+    m_index->reload();
+    settle();
+
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    const auto rows = [folder] {
+        QStringList out;
+        for (int i = 0; i < folder->property("count").toInt(); ++i) {
+            QVariantMap entry;
+            QMetaObject::invokeMethod(folder, "entryAt", Q_RETURN_ARG(QVariantMap, entry),
+                                      Q_ARG(int, i));
+            if (entry.value(QStringLiteral("kind")).toString() != QLatin1String("parent"))
+                out.append(entry.value(QStringLiteral("name")).toString());
+        }
+        return out;
+    };
+    const auto chips = [this] {
+        QStringList out;
+        for (QQuickItem *chip : itemsNamed(QStringLiteral("criterionChip")))
+            out.append(chip->property("label").toString());
+        return out;
+    };
+    QVERIFY(rows().contains(QStringLiteral("alpha")));
+    QVERIFY(rows().contains(QStringLiteral("one.txt")));
+    QVERIFY(chips().isEmpty());
+
+    // Folders only, from the menu under `F`; the same entry takes it off.
+    key('F');
+    QVERIFY(root->property("blocked").toBool());
+    QVERIFY(chooseInMenu(QStringLiteral("filterMenu"), QStringLiteral("Only folders")));
+    QVERIFY(rows().contains(QStringLiteral("alpha")));
+    for (const QString &name : rows())
+        QVERIFY2(QFileInfo(QDir(m_tree.path()).filePath(name)).isDir(), qPrintable(name));
+    QCOMPARE(chips(), QStringList{QStringLiteral("folders  ×")});
+    key('F');
+    QVERIFY(chooseInMenu(QStringLiteral("filterMenu"), QStringLiteral("✓ Only folders")));
+    QVERIFY(rows().contains(QStringLiteral("one.txt")));
+    QVERIFY(chips().isEmpty());
+
+    // The type is the Type column's word for the row under the cursor, and a
+    // tag on that row narrows further: both have to hold.
+    focusRow(QStringLiteral("one.txt"));
+    key('F');
+    QVERIFY(chooseInMenu(QStringLiteral("filterMenu"), QStringLiteral("Only txt")));
+    QVERIFY(rows().contains(QStringLiteral("plain.txt")));
+    for (const QString &name : rows())
+        QVERIFY2(name.endsWith(QLatin1String(".txt")), qPrintable(name));
+    focusRow(QStringLiteral("one.txt"));
+    key('F');
+    QVERIFY(chooseInMenu(QStringLiteral("filterMenu"), QStringLiteral("Only #work")));
+    QCOMPARE(rows(), QStringList{QStringLiteral("one.txt")});
+
+    // Taken off chip by chip, and all at once.
+    const QList<QQuickItem *> shown = itemsNamed(QStringLiteral("criterionChip"));
+    QCOMPARE(shown.size(), 2);
+    QMetaObject::invokeMethod(shown.first(), "clicked");
+    settle();
+    QCOMPARE(chips().size(), 1);
+    const QList<QQuickItem *> clear = itemsNamed(QStringLiteral("clearCriteria"));
+    QCOMPARE(clear.size(), 1);
+    QMetaObject::invokeMethod(clear.first(), "clicked");
+    settle();
+    QVERIFY(tab()->criteria().isEmpty());
+    QVERIFY(chips().isEmpty());
+
+    // The file's own date and not when it was tagged: `plain.txt` carries no
+    // tag and was last written 400 days ago.
+    tab()->toggleCriterion(QStringLiteral("tagged"), false);
+    settle();
+    QVERIFY(rows().contains(QStringLiteral("plain.txt")));
+    QVERIFY(!rows().contains(QStringLiteral("one.txt")));
+    tab()->toggleCriterion(QStringLiteral("within"), 31536000);
+    settle();
+    QVERIFY(!rows().contains(QStringLiteral("plain.txt")));
+    QCOMPARE(chips(), (QStringList{QStringLiteral("untagged  ×"),
+                                   QStringLiteral("modified in the last year  ×")}));
+    QVERIFY(old.setFileTime(QDateTime::currentDateTime().addDays(-30),
+                            QFileDevice::FileModificationTime));
+    QMetaObject::invokeMethod(folder, "reload");
+    settle();
+    QVERIFY(rows().contains(QStringLiteral("plain.txt")));
+    tab()->setCriteria({});
+
+    // From the palette, and together with `/`.
+    tab()->setFilter(QStringLiteral("o"));
+    settle();
+    key(':');
+    for (char ch : QByteArray("only files"))
+        key(ch);
+    key(Qt::Key_Return);
+    QVERIFY(rows().contains(QStringLiteral("two.md")));
+    for (const QString &name : rows()) {
+        QVERIFY2(name.contains(QLatin1Char('o'))
+                     && QFileInfo(QDir(m_tree.path()).filePath(name)).isFile(),
+                 qPrintable(name));
+    }
+    tab()->setFilter(QString());
+
+    // Per tab: a new one starts unfiltered and this one keeps its own.
+    m_workspace->addTab(QStringLiteral("files"));
+    settle();
+    QVERIFY(tab()->criteria().isEmpty());
+    QVERIFY(chips().isEmpty());
+    m_workspace->closeCurrentTab();
+    settle();
+    QCOMPARE(tab()->criteria().value(QStringLiteral("kind")).toString(), QStringLiteral("file"));
+    // A duplicate is this tab again, criteria and all.
+    m_workspace->duplicateTab(0, m_workspace->paneAtIndex(0)->currentIndex());
+    settle();
+    QCOMPARE(tab()->criteria().value(QStringLiteral("kind")).toString(), QStringLiteral("file"));
+    m_workspace->closeCurrentTab();
+    settle();
+
+    // A tag listing is narrowed the same way.
+    tab()->setSelectedTag(QStringLiteral("notes"));
+    tab()->setCriteria({{QStringLiteral("type"), QStringLiteral("md")}});
+    settle();
+    QCOMPARE(rows(), (QStringList{QStringLiteral("six.md"), QStringLiteral("two.md")}));
+    tab()->setSelectedTag(QString());
+
+    // A search out of the lists of names draws only its first screenfuls, and
+    // is narrowed before that cut: a folder past thousands of files is found.
+    QTemporaryDir cache;
+    QTemporaryDir shelf;
+    QVERIFY(cache.isValid() && shelf.isValid());
+    QVERIFY(QDir(shelf.path()).mkdir(QStringLiteral("zz")));
+    const QByteArray previousCache = qgetenv("XDG_CACHE_HOME");
+    qputenv("XDG_CACHE_HOME", cache.path().toUtf8());
+    const QVector<Root> previousRoots =
+        setRoots({Root{QStringLiteral("shelf"), shelf.path(), false, QString()}});
+    const auto unroot = qScopeGuard([&previousCache, &previousRoots] {
+        qputenv("XDG_CACHE_HOME", previousCache);
+        setRoots(previousRoots);
+    });
+    const QDir names(QDir(cache.path()).filePath(QStringLiteral("omafiles/names")));
+    QVERIFY(QDir().mkpath(names.absolutePath()));
+    QFile list(names.filePath(QStringLiteral("shelf")));
+    QVERIFY(list.open(QIODevice::WriteOnly | QIODevice::Text));
+    for (int i = 0; i < 2100; ++i)
+        list.write(QStringLiteral("f%1.txt\n").arg(i, 4, 10, QLatin1Char('0')).toUtf8());
+    list.write("zz\n");
+    list.close();
+    tab()->setCriteria({{QStringLiteral("kind"), QStringLiteral("dir")}});
+    tab()->setPattern(QStringLiteral("*"));
+    settle();
+    QCOMPARE(rows(), QStringList{QStringLiteral("zz")});
+    tab()->setPattern(QString());
+    tab()->setCriteria({});
+    settle();
+}
+
+// A link row is the link: marked beside a file, it hands the command line its
+// own name, and each verb applies its own symlink rule to it. `trash` and `rm`
+// act on the name, so the target is left where it was.
+void TestStudio::trashesAMarkedLinkByItsName()
+{
+    QTemporaryDir other;
+    QVERIFY(other.isValid());
+    const QDir dir(other.path());
+    markALinkAndAFile(dir);
+    // The target is a row of its own, and not marked with the link.
+    QVERIFY(!tab()->isMarked(dir.filePath(QStringLiteral("a-target.txt"))));
+
+    verbRuns().clear();
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Move 2 files to trash")));
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(),
+             (QStringList{"--yes", "trash", "--", dir.filePath(QStringLiteral("link")),
+                          dir.filePath(QStringLiteral("plain.txt"))}));
+}
+
+// `mv` moves the link as the link it is.
+void TestStudio::movesAMarkedLinkByItsName()
+{
+    QTemporaryDir other;
+    QVERIFY(other.isValid());
+    const QDir dir(other.path());
+    markALinkAndAFile(dir);
+
+    key('x', Qt::ControlModifier);
+    verbRuns().clear();
+    tab()->setCwd(m_tree.path());
+    settle();
+    key('v', Qt::ControlModifier);
+    QCOMPARE(verbRuns().size(), 2);
+    QCOMPARE(verbRuns().at(0),
+             (QStringList{"mv", "--", dir.filePath(QStringLiteral("link")), m_tree.path()}));
+    QCOMPARE(verbRuns().at(1),
+             (QStringList{"mv", "--", dir.filePath(QStringLiteral("plain.txt")), m_tree.path()}));
+
+    // One row renamed is `mv` too.
+    tab()->setCwd(dir.path());
+    settle();
+    focusRow(QStringLiteral("link"));
+    verbRuns().clear();
+    key('r');
+    QMetaObject::invokeMethod(m_engine->rootObjects().first(), "finishRename",
+                              Q_ARG(QVariant, QVariant(true)),
+                              Q_ARG(QVariant, QVariant(QStringLiteral("ln"))));
+    settle();
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(), (QStringList{"mv", "--", dir.filePath(QStringLiteral("link")),
+                                              dir.filePath(QStringLiteral("ln"))}));
+}
+
+// `chmod` is handed the link, which it refuses by name rather than changing the
+// target through it.
+void TestStudio::changesPermissionsOfAMarkedLinkByItsName()
+{
+    QTemporaryDir other;
+    QVERIFY(other.isValid());
+    const QDir dir(other.path());
+    markALinkAndAFile(dir);
+
+    verbRuns().clear();
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Permissions of 2 files…")));
+    settle();
+    key(Qt::Key_Return);
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first().first(), QStringLiteral("chmod"));
+    QCOMPARE(verbRuns().first().mid(2),
+             (QStringList{"--", dir.filePath(QStringLiteral("link")),
+                          dir.filePath(QStringLiteral("plain.txt"))}));
+}
+
+// `cp` and the `tag` verbs resolve the link themselves, so they are handed its
+// name like the rest; the row shows the tags its target carries.
+void TestStudio::copiesAndTagsAMarkedLinkThroughItsName()
+{
+    QTemporaryDir other;
+    QVERIFY(other.isValid());
+    const QDir dir(other.path());
+    const QString link = dir.filePath(QStringLiteral("link"));
+    const QString plain = dir.filePath(QStringLiteral("plain.txt"));
+    QFile index(QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl")));
+    QVERIFY(index.open(QIODevice::ReadOnly));
+    const QByteArray before = index.readAll();
+    index.close();
+    const auto restore = qScopeGuard([this, &index, before] {
+        if (index.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            index.write(before);
+            index.close();
+        }
+        m_index->reload();
+    });
+    QFile target(dir.filePath(QStringLiteral("a-target.txt")));
+    QVERIFY(target.open(QIODevice::WriteOnly));
+    target.close();
+    tagDirectory(dir.filePath(QStringLiteral("a-target.txt")), QStringLiteral("linked"));
+    markALinkAndAFile(dir);
+
+    const QVariantMap entry = filesRoot()->property("entry").toMap();
+    QCOMPARE(entry.value(QStringLiteral("path")).toString(), link);
+    QCOMPARE(entry.value(QStringLiteral("tags")).toStringList(), QStringList{"linked"});
+
+    key('t');
+    const QString tag = m_index->tagAt(0);
+    QVERIFY(!tag.isEmpty());
+    key(Qt::Key_Escape);
+    focusRow(QStringLiteral("link"));
+    verbRuns().clear();
+    key('m');
+    QVERIFY(chooseInMenu(QStringLiteral("fileMenu"), QStringLiteral("Apply tag %1").arg(tag)));
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(), (QStringList{"tag", "add", "--tag", tag, "--", link, plain}));
+
+    key('c', Qt::ControlModifier);
+    verbRuns().clear();
+    tab()->setCwd(m_tree.path());
+    settle();
+    key('v', Qt::ControlModifier);
+    QCOMPARE(verbRuns().size(), 2);
+    QCOMPARE(verbRuns().at(0), (QStringList{"cp", "--", link, m_tree.path()}));
+    QCOMPARE(verbRuns().at(1), (QStringList{"cp", "--", plain, m_tree.path()}));
+}
+
 QTEST_MAIN(TestStudio)
+// A search path entry that is not UTF-8 is skipped, the way the basedir spec
+// ignores an invalid one: decoded, `\xff` names the U+FFFD directory beside it.
+void TestStudio::searchesOnlyTheDirectoriesItCanSpell()
+{
+    QTemporaryDir desk;
+    QVERIFY(desk.isValid());
+    const QDir base(desk.path());
+    const QString shadow = base.filePath(QStringLiteral("\uFFFD"));
+    const auto write = [](const QString &path, const QByteArray &body) {
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+            return false;
+        return file.write(body) == body.size();
+    };
+    const auto entry = [](const char *name) {
+        return QByteArray("[Desktop Entry]\nType=Application\nName=") + name
+            + "\nExec=x %f\n";
+    };
+    const QString shadowApps = QDir(shadow).filePath(QStringLiteral("applications"));
+    const QString keptApps = base.filePath(QStringLiteral("kept/applications"));
+    const QString homeApps = QDir(m_home.path()).filePath(QStringLiteral("applications"));
+    QVERIFY(write(QDir(shadowApps).filePath(QStringLiteral("mimeinfo.cache")),
+                  "[MIME Cache]\ntext/plain=oma-shadow.desktop;\n"));
+    QVERIFY(write(QDir(shadowApps).filePath(QStringLiteral("oma-shadow.desktop")),
+                  entry("Oma Shadow")));
+    QVERIFY(write(QDir(shadow).filePath(QStringLiteral("mimeapps.list")),
+                  "[Default Applications]\ntext/plain=oma-elsewhere.desktop;\n"));
+    QVERIFY(write(QDir(homeApps).filePath(QStringLiteral("oma-elsewhere.desktop")),
+                  entry("Oma Elsewhere")));
+    QVERIFY(write(QDir(keptApps).filePath(QStringLiteral("mimeinfo.cache")),
+                  "[MIME Cache]\ntext/plain=oma-kept.desktop;\n"));
+    QVERIFY(write(QDir(keptApps).filePath(QStringLiteral("oma-kept.desktop")),
+                  entry("Oma Kept")));
+
+    const QByteArray unspelled = QFile::encodeName(desk.path()) + "/\xff";
+    const QByteArray dataDirs = qgetenv("XDG_DATA_DIRS");
+    const QByteArray configDirs = qgetenv("XDG_CONFIG_DIRS");
+    const auto restore = qScopeGuard([&] {
+        qputenv("XDG_DATA_DIRS", dataDirs);
+        qputenv("XDG_CONFIG_DIRS", configDirs);
+        QDir(homeApps).removeRecursively();
+    });
+    // The system's own directories stay on the end: the type of a file is
+    // looked up in the MIME database under them.
+    qputenv("XDG_DATA_DIRS", unspelled + ':' + QFile::encodeName(base.filePath("kept")) + ':'
+                                 + (dataDirs.isEmpty() ? "/usr/local/share:/usr/share" : dataDirs));
+    qputenv("XDG_CONFIG_DIRS", unspelled + ':' + (configDirs.isEmpty() ? "/etc/xdg" : configDirs));
+
+    QStringList names;
+    for (const QVariant &app :
+         m_index->applicationsFor(QDir(m_tree.path()).filePath(QStringLiteral("one.txt"))))
+        names.append(app.toMap().value(QStringLiteral("name")).toString());
+    QVERIFY2(names.contains(QStringLiteral("Oma Kept")), qPrintable(names.join(u'|')));
+    QVERIFY2(!names.contains(QStringLiteral("Oma Shadow")), qPrintable(names.join(u'|')));
+    QVERIFY2(!names.contains(QStringLiteral("Oma Elsewhere")), qPrintable(names.join(u'|')));
+}
+
+// A file where a row's directory was means nothing can be at the path, so the
+// window counts the row gone and names `prune`, which drops it.
+void TestStudio::countsARowUnderAFileAsGone()
+{
+    QTemporaryDir fresh;
+    QVERIFY(fresh.isValid());
+    const QDir data(fresh.path());
+    QVERIFY(data.mkpath(QStringLiteral("omafiles")));
+    QFile plain(data.filePath(QStringLiteral("plain")));
+    QVERIFY(plain.open(QIODevice::WriteOnly));
+    plain.close();
+    QFile index(data.filePath(QStringLiteral("omafiles/index.jsonl")));
+    QVERIFY(index.open(QIODevice::WriteOnly | QIODevice::Text));
+    index.write(QStringLiteral("{\"path\":\"%1/inside\",\"tags\":[\"x\"]}\n")
+                    .arg(plain.fileName())
+                    .toUtf8());
+    index.close();
+    const QByteArray previous = qgetenv("XDG_DATA_HOME");
+    qputenv("XDG_DATA_HOME", fresh.path().toUtf8());
+    const auto restore = qScopeGuard([&previous] { qputenv("XDG_DATA_HOME", previous); });
+
+    IndexModel model;
+    QVERIFY2(model.error().contains(QStringLiteral("none of their files are there")),
+             qPrintable(model.error()));
+}
+
+// The window opens through the plan alone, so a stray file in the mount point
+// of a root that is away is refused there.
+void TestStudio::plansNothingUnderARootThatIsAway()
+{
+    QTemporaryDir fresh;
+    QVERIFY(fresh.isValid());
+    const QDir room(fresh.path());
+    QFile stray(room.filePath(QStringLiteral("stray.txt")));
+    QVERIFY(stray.open(QIODevice::WriteOnly));
+    stray.close();
+    const QVector<Root> previousRoots = setRoots(
+        {Root{QStringLiteral("disk"), room.absolutePath(), false, QStringLiteral(".here")}});
+    const auto restore = qScopeGuard([&previousRoots] { setRoots(previousRoots); });
+
+    OpenPlan plan;
+    QString why;
+    PathState state = PathState::Present;
+    QVERIFY2(!planOpen(stray.fileName(), &plan, &why, &state), "a stray file was planned");
+    QCOMPARE(state, PathState::Unreachable);
+    QVERIFY2(why.contains(QStringLiteral("root disk is declared and not here")), qPrintable(why));
+}
+
+// A row counts where resolving its path gives it back, so a link now at a
+// row's path, or at a directory above it, is untagged in the window as in `ls`.
+void TestStudio::readsNoTagsAtALinkWhereARowWas()
+{
+    QTemporaryDir fresh;
+    QVERIFY(fresh.isValid());
+    const QDir room(fresh.path());
+    QVERIFY(room.mkpath(QStringLiteral("real")));
+    for (const QString &name : {QStringLiteral("q"), QStringLiteral("real/f")}) {
+        QFile file(room.filePath(name));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+    }
+    QVERIFY(QFile::link(room.filePath(QStringLiteral("q")), room.filePath(QStringLiteral("p"))));
+    QVERIFY(QFile::link(room.filePath(QStringLiteral("real")),
+                        room.filePath(QStringLiteral("dir"))));
+    QVERIFY(room.mkpath(QStringLiteral("data/omafiles")));
+    QFile index(room.filePath(QStringLiteral("data/omafiles/index.jsonl")));
+    QVERIFY(index.open(QIODevice::WriteOnly | QIODevice::Text));
+    for (const QString &name : {QStringLiteral("dir/f"), QStringLiteral("p")})
+        index.write(QStringLiteral("{\"path\":\"%1\",\"tags\":[\"t\"]}\n")
+                        .arg(room.filePath(name))
+                        .toUtf8());
+    index.close();
+    const QByteArray previous = qgetenv("XDG_DATA_HOME");
+    qputenv("XDG_DATA_HOME", room.filePath(QStringLiteral("data")).toUtf8());
+    const auto restore = qScopeGuard([&previous] { qputenv("XDG_DATA_HOME", previous); });
+
+    IndexModel model;
+    QCOMPARE(model.tagsForPath(room.filePath(QStringLiteral("p"))), QStringList());
+    QCOMPARE(model.tagsForPath(room.filePath(QStringLiteral("dir/f"))), QStringList());
+}
+
+// A file re-cased on a casefold tmpfs since the sweep keeps its row in a listing;
+// the run repeats itself in a user and mount namespace, or skips without one.
+void TestStudio::listsARecasedNameUnderItsRow()
+{
+    const QString folded = qEnvironmentVariable("OMAFILES_TEST_CASEFOLD");
+    if (folded.isEmpty()) {
+        const QString unshare = QStandardPaths::findExecutable(QStringLiteral("unshare"));
+        if (unshare.isEmpty())
+            QSKIP("no unshare here");
+        QTemporaryDir cf;
+        QVERIFY(cf.isValid());
+        QProcess inner;
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert(QStringLiteral("OMAFILES_TEST_CASEFOLD"), cf.path());
+        inner.setProcessEnvironment(env);
+        inner.start(unshare,
+                    {QStringLiteral("-rm"), QStringLiteral("sh"), QStringLiteral("-c"),
+                     QStringLiteral("mount -t tmpfs -o casefold tmpfs \"$2\" && chattr +F \"$2\" "
+                                    "|| exit 97; exec \"$3\" -U --map-user=%1 \"$0\" \"$1\"")
+                         .arg(::getuid()),
+                     QCoreApplication::applicationFilePath(),
+                     QString::fromLatin1(QTest::currentTestFunction()), cf.path(), unshare});
+        QVERIFY(inner.waitForFinished(60000));
+        const QString said = QString::fromUtf8(inner.readAll());
+        if (inner.exitCode() == 97)
+            QSKIP("no casefold tmpfs in a namespace here");
+        QVERIFY2(inner.exitCode() == 0
+                     && said.contains(QStringLiteral("PASS   : TestStudio::listsARecasedNameUnderItsRow")),
+                 qPrintable(said));
+        return;
+    }
+
+    QTemporaryDir cache;
+    QVERIFY(cache.isValid());
+    const QDir room(folded);
+    for (const char *name : {"foo.txt", "other.txt"}) {
+        QFile file(room.filePath(QString::fromLatin1(name)));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+    }
+    qputenv("XDG_CACHE_HOME", cache.path().toUtf8());
+    setRoots({Root{QStringLiteral("usb"), room.absolutePath(), false, QString()}});
+    QVERIFY(writeNames(QStringLiteral("usb"),
+                       {QStringLiteral("foo.txt"), QStringLiteral("other.txt")}, {}, nullptr,
+                       nullptr));
+    tagDirectory(room.filePath(QStringLiteral("foo.txt")), QStringLiteral("usb"), false);
+    QVERIFY(QFile::rename(room.filePath(QStringLiteral("foo.txt")),
+                          room.filePath(QStringLiteral("t1"))));
+    QVERIFY(QFile::rename(room.filePath(QStringLiteral("t1")),
+                          room.filePath(QStringLiteral("Foo.TXT"))));
+    m_index->reload();
+
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    QVERIFY(folder);
+    const auto files = [&folder] {
+        QStringList out;
+        for (int i = 0; i < folder->property("count").toInt(); ++i) {
+            QVariantMap entry;
+            QMetaObject::invokeMethod(folder, "entryAt", Q_RETURN_ARG(QVariantMap, entry),
+                                      Q_ARG(int, i));
+            if (entry.value(QStringLiteral("kind")).toString() == QLatin1String("file"))
+                out.append(entry.value(QStringLiteral("name")).toString());
+        }
+        return out;
+    };
+    key('f');
+    QMetaObject::invokeMethod(m_engine->rootObjects().first(), "finishFinding",
+                              Q_ARG(QVariant, QVariant(true)),
+                              Q_ARG(QVariant, QVariant(QStringLiteral("f*"))));
+    settle();
+    QCOMPARE(files(), QStringList{QStringLiteral("Foo.TXT")});
+
+    m_workspace->addTab(QStringLiteral("tags"));
+    settle();
+    folder = filesRoot()->property("folder").value<QObject *>();
+    tab()->setUntagged(true);
+    settle();
+    QCOMPARE(files(), QStringList{QStringLiteral("other.txt")});
+}
+
 #include "tst_studio.moc"

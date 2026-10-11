@@ -1,15 +1,15 @@
 #include "Roots.h"
 
 #include "Paths.h"
+#include "Store.h"
+#include "Tag.h"
 
 #include <QDir>
 #include <QFile>
-#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QSaveFile>
-#include <QTextStream>
 
+#include <cstdlib>
 #include <sys/stat.h>
 
 #include <utility>
@@ -24,30 +24,71 @@ QVector<Root> &table()
     return declared;
 }
 
-// Whether something is mounted at `path`, by the test `mountpoint(1)` uses: a
-// mount point and the directory holding it are on different devices, because
-// the mount is what put a different filesystem there. It answers for every kind
-// of mount a person can make -- a disk, a bind, sshfs, rclone, gvfs -- because
-// all of them are a filesystem of their own.
-bool isMountPoint(const QString &path)
+bool &readRespelled()
+{
+    static bool respelled = false;
+    return respelled;
+}
+
+// A mount point as `/proc/self/mountinfo` writes it: a space, tab, newline or
+// backslash in it is `\` and three octal digits.
+QByteArray mountTarget(const QByteArray &field)
+{
+    QByteArray target;
+    for (qsizetype i = 0; i < field.size(); ++i) {
+        const auto octal = [&field](qsizetype at) {
+            return at < field.size() && field.at(at) >= '0' && field.at(at) <= '7';
+        };
+        if (field.at(i) == '\\' && octal(i + 1) && octal(i + 2) && octal(i + 3)) {
+            target += char(((field.at(i + 1) - '0') << 6) | ((field.at(i + 2) - '0') << 3)
+                           | (field.at(i + 3) - '0'));
+            i += 3;
+        } else {
+            target += field.at(i);
+        }
+    }
+    return target;
+}
+
+// Whether something is mounted at `path`, the way util-linux `mountpoint(1)`
+// asks: as a mount point in the kernel's table, which holds a bind mount from
+// the same filesystem too. Where the table will not read, by the fallback it
+// uses: a mount point is on a device the directory holding it is not.
+//
+// Present for a mount, Unreachable for none, Unknown where either `stat` fails
+// for any reason but ENOENT.
+PathState mountState(const QString &path, QString *error)
 {
     struct stat here {};
+    PathState found = statState(path, error, true, &here);
+    if (found != PathState::Present)
+        return found == PathState::Missing ? PathState::Unreachable : found;
+    QFile table(QStringLiteral("/proc/self/mountinfo"));
+    if (openToRead(&table, {}, nullptr, Reading::Stream) == PathState::Present) {
+        // The table holds resolved paths, as `mountpoint` compares them, and
+        // `rootState` asks only of a root that resolves to itself.
+        const QByteArray wanted = QFile::encodeName(path);
+        for (const QByteArray &line : table.readAll().split('\n')) {
+            const QList<QByteArray> fields = line.split(' ');
+            if (fields.size() > 4 && mountTarget(fields.at(4)) == wanted)
+                return PathState::Present;
+        }
+        return PathState::Unreachable;
+    }
+    const QString parent = typedDirectory(path, nullptr);
     struct stat above {};
-    if (::stat(path.toLocal8Bit().constData(), &here) != 0)
-        return false;
-    const QString parent = QFileInfo(path).absolutePath();
-    if (parent == path)
-        return true;
-    if (::stat(parent.toLocal8Bit().constData(), &above) != 0)
-        return false;
-    return here.st_dev != above.st_dev;
+    found = statState(parent, error, true, &above);
+    if (found != PathState::Present)
+        return found == PathState::Missing ? PathState::Unreachable : found;
+    return parent == path || here.st_dev != above.st_dev ? PathState::Present
+                                                         : PathState::Unreachable;
 }
 
 } // namespace
 
 QString normalizeRootId(const QString &raw, QString *error)
 {
-    const QString folded = raw.trimmed().toLower();
+    const QString folded = asciiFolded(raw);
     bool shaped = !folded.isEmpty() && folded.size() <= 64;
     for (int i = 0; shaped && i < folded.size(); ++i) {
         const QChar c = folded.at(i);
@@ -62,20 +103,26 @@ QString normalizeRootId(const QString &raw, QString *error)
     }
     if (!shaped) {
         if (error)
-            *error = QStringLiteral("roots: %1 is not an id; letters, digits, `-`, `_` "
+            *error = QStringLiteral("%1 is not an id; letters, digits, `-`, `_` "
                                     "and `.`, starting with a letter or a digit, at "
-                                    "most 64").arg(raw);
+                                    "most 64").arg(spelled(raw));
         return {};
     }
     return folded;
 }
 
+QString normalizeRootCheck(const QString &raw, QString *error)
+{
+    if (isCleanRelative(raw) && raw != QLatin1String("."))
+        return raw;
+    if (error)
+        *error = QStringLiteral("--check takes a path inside the root, relative to it, not %1").arg(spelled(raw));
+    return {};
+}
+
 QString defaultRootsPath()
 {
-    QString configHome = QString::fromLocal8Bit(qgetenv("XDG_CONFIG_HOME"));
-    if (configHome.isEmpty())
-        configHome = QDir::homePath() + QStringLiteral("/.config");
-    return QDir(configHome).filePath(QStringLiteral("omafiles/roots.jsonl"));
+    return QDir(configHome()).filePath(QStringLiteral("omafiles/roots.jsonl"));
 }
 
 const QVector<Root> &roots()
@@ -93,55 +140,65 @@ QVector<Root> setRoots(QVector<Root> declared)
 bool loadRoots(const QString &path, QString *error)
 {
     QVector<Root> declared;
-    QFile file(path);
-    if (!file.exists()) {
-        setRoots(declared);
-        return true;
-    }
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    bool respelled = false;
+    QVector<KeptLine> lines;
+    QString why;
+    if (!readKeptLines(path, QStringLiteral("roots"), &lines, &why)) {
         if (error)
-            *error = QStringLiteral("roots: cannot read %1").arg(path);
+            *error = why;
         return false;
     }
-
-    int lineNumber = 0;
-    while (!file.atEnd()) {
-        ++lineNumber;
-        const QByteArray line = file.readLine().trimmed();
-        if (line.isEmpty() || line.startsWith('#'))
-            continue;
-        QJsonParseError parseError;
-        const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
-        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
-            if (error)
-                *error = QStringLiteral("roots: malformed jsonl at %1:%2").arg(path).arg(lineNumber);
-            return false;
-        }
-        const QJsonObject object = doc.object();
-        Root root;
-        root.id = object.value(QStringLiteral("id")).toString();
-        root.path = object.value(QStringLiteral("path")).toString();
-        root.mount = object.value(QStringLiteral("mount")).toBool();
-        root.check = object.value(QStringLiteral("check")).toString();
-        if (root.id.isEmpty() || root.path.isEmpty()) {
-            if (error)
-                *error = QStringLiteral("roots: %1:%2 needs an id and a path").arg(path).arg(lineNumber);
-            return false;
-        }
-        // Absolute, and without a trailing slash, because every comparison
-        // below is a string one: `/mnt/nas/` and `/mnt/nas` would be two roots
-        // holding the same files.
-        root.path = QDir::cleanPath(QDir(root.path).absolutePath());
-        for (const Root &already : std::as_const(declared)) {
-            if (already.id == root.id) {
-                if (error)
-                    *error = QStringLiteral("roots: %1 is declared twice").arg(root.id);
-                return false;
+    for (const KeptLine &line : std::as_const(lines)) {
+        const QJsonObject &object = line.object;
+        const QJsonValue id = object.value(QStringLiteral("id"));
+        const QJsonValue where = object.value(QStringLiteral("path"));
+        const QJsonValue mount = object.value(QStringLiteral("mount"));
+        const QJsonValue check = object.value(QStringLiteral("check"));
+        Root root{id.toString(), where.toString(), mount.toBool(), check.toString()};
+        // The shape `roots add` writes, refused rather than cleaned, because a
+        // row and a cache file are placed by it: an id `../x` names a cache
+        // outside the cache directory, and a relative path moves with the cwd.
+        const auto problem = [&]() -> QString {
+            if (!id.isString() || !where.isString() || root.id.isEmpty() || root.path.isEmpty())
+                return QStringLiteral("it needs an id and a path");
+            if (!mount.isUndefined() && mount != QJsonValue(true))
+                return QStringLiteral("its mount is not true");
+            if (!check.isUndefined() && (!check.isString() || root.check.isEmpty()))
+                return QStringLiteral("its check is not a path");
+            if (!isCleanAbsolute(root.path))
+                return QStringLiteral("%1 is not an absolute path in its clean form")
+                    .arg(spelled(root.path));
+            if (normalizeRootId(root.id, nullptr) != root.id)
+                return QStringLiteral("%1 is not an id in the form `roots add` writes")
+                    .arg(spelled(root.id));
+            if (!root.check.isEmpty() && normalizeRootCheck(root.check, nullptr).isEmpty())
+                return QStringLiteral("%1 is not a clean path inside the root")
+                    .arg(spelled(root.check));
+            // Where its directory stores the name now, as a row is placed.
+            if (const QString stored = storedSpelling(root.path); stored != root.path) {
+                root.path = stored;
+                respelled = true;
             }
+            for (const Root &already : std::as_const(declared)) {
+                if (already.id == root.id)
+                    return QStringLiteral("%1 is declared twice").arg(root.id);
+                if (already.path == root.path)
+                    return QStringLiteral("%1 is declared as %2 and as %3")
+                        .arg(spelled(root.path), already.id, root.id);
+            }
+            return {};
+        };
+        why = problem();
+        if (!why.isEmpty()) {
+            if (error)
+                *error = QStringLiteral("roots: malformed jsonl at %1:%2: %3")
+                             .arg(spelled(path), QString::number(line.number), why);
+            return false;
         }
         declared.append(root);
     }
     setRoots(declared);
+    readRespelled() = respelled;
     return true;
 }
 
@@ -150,16 +207,14 @@ bool loadRoots(QString *error)
     return loadRoots(defaultRootsPath(), error);
 }
 
+bool rootsRespelled()
+{
+    return readRespelled();
+}
+
 bool saveRoots(const QString &path, const QVector<Root> &declared, QString *error)
 {
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        if (error)
-            *error = QStringLiteral("roots: cannot write %1").arg(path);
-        return false;
-    }
-    QTextStream out(&file);
+    QVector<QJsonObject> lines;
     for (const Root &root : declared) {
         QJsonObject object{
             {QStringLiteral("id"), root.id},
@@ -169,12 +224,12 @@ bool saveRoots(const QString &path, const QVector<Root> &declared, QString *erro
             object.insert(QStringLiteral("mount"), true);
         if (!root.check.isEmpty())
             object.insert(QStringLiteral("check"), root.check);
-        out << QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact)) << '\n';
+        lines.append(object);
     }
-    out.flush();
-    if (!file.commit()) {
+    QString why;
+    if (!writeKeptLines(path, lines, &why)) {
         if (error)
-            *error = QStringLiteral("roots: cannot commit %1").arg(path);
+            *error = QStringLiteral("roots: cannot write %1: %2").arg(spelled(path), why);
         return false;
     }
     return true;
@@ -203,6 +258,12 @@ const Root *rootFor(const QString &absolutePath)
     return best;
 }
 
+const Root *rootAt(const QString &absolutePath)
+{
+    const Root *root = rootFor(absolutePath);
+    return root && root->path == absolutePath ? root : nullptr;
+}
+
 // Three answers, weakest last.
 //
 // A declared `check` is the sure one: it is a name that only exists when the
@@ -210,28 +271,27 @@ const Root *rootFor(const QString &absolutePath)
 // where it says. And a root that is simply part of the filesystem is here when
 // its directory is -- which is the same test as before roots existed, so
 // declaring one over a folder that is always present changes nothing.
-bool rootIsReachable(const Root &root)
+PathState rootState(const Root &root, QString *error)
 {
-    if (!root.check.isEmpty())
-        return QFileInfo::exists(QDir(root.path).filePath(root.check));
-    if (root.mount)
-        return isMountPoint(root.path);
-    return QFileInfo::exists(root.path);
+    // A root is a resolved path: one a symlink now stands at or above leads to
+    // some other directory, so the storage declared there is away.
+    const QByteArray declared = QFile::encodeName(root.path);
+    if (char *real = ::realpath(declared.constData(), nullptr)) {
+        const bool moved = declared != real;
+        std::free(real);
+        if (moved)
+            return PathState::Unreachable;
+    }
+    if (root.mount && root.check.isEmpty())
+        return mountState(root.path, error);
+    const QString probe = root.check.isEmpty() ? root.path : QDir(root.path).filePath(root.check);
+    const PathState found = statState(probe, error);
+    return found == PathState::Missing ? PathState::Unreachable : found;
 }
 
-bool underUnreachableRoot(const QString &absolutePath)
+QString unreachableReason(const QString &path, const Root &root)
 {
-    const Root *root = rootFor(absolutePath);
-    return root && !rootIsReachable(*root);
-}
-
-QString unreachableReason(const QString &absolutePath)
-{
-    const Root *root = rootFor(absolutePath);
-    if (!root || rootIsReachable(*root))
-        return {};
-    return QStringLiteral("%1: root %2 is declared and not here")
-        .arg(absolutePath, root->id);
+    return QStringLiteral("%1: root %2 is declared and not here").arg(spelled(path), root.id);
 }
 
 void splitByRoot(const QString &absolutePath, QString *rootId, QString *relative)
@@ -246,13 +306,10 @@ void splitByRoot(const QString &absolutePath, QString *rootId, QString *relative
     }
     if (rootId)
         *rootId = root->id;
-    if (relative) {
-        // `.` for the root itself, so that the pair always spells something and
-        // an empty relative can go on meaning "no root".
-        *relative = absolutePath == root->path
-            ? QStringLiteral(".")
-            : absolutePath.mid(root->path.size() + 1);
-    }
+    // `.` for the root itself, so that the pair always spells something and an
+    // empty relative can go on meaning "no root".
+    if (relative)
+        *relative = relativeTo(absolutePath, root->path);
 }
 
 QString joinRoot(const QString &rootId, const QString &relative)

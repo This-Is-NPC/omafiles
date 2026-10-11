@@ -39,7 +39,8 @@ SOURCES += \
     ../src/core/Roots.cpp \
     ../src/core/Names.cpp \
     ../src/core/Open.cpp \
-    ../src/core/Recent.cpp
+    ../src/core/Recent.cpp \
+    ../src/core/Glob.cpp
 
 HEADERS += \
     ../src/studio/Theme.h \

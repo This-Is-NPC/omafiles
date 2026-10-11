@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Paths.h"
+
 #include <QString>
 #include <QVector>
 
@@ -37,6 +39,11 @@ struct Root {
 /// roots is a distinction nobody means to draw.
 QString normalizeRootId(const QString &raw, QString *error);
 
+/// `raw` as a root's check: a clean path relative to the root, with no `..`
+/// out of it, or empty with a reason. An absolute check would stop naming the
+/// storage the day it is mounted somewhere else.
+QString normalizeRootCheck(const QString &raw, QString *error);
+
 /// Where the declarations live: one JSON object per line, the shape the index
 /// uses, so the same eyes and the same tools read both.
 QString defaultRootsPath();
@@ -53,9 +60,13 @@ const QVector<Root> &roots();
 QVector<Root> setRoots(QVector<Root> table);
 
 /// Reads `path` into the table. A file that is not there is not a failure: it
-/// is a machine that has declared nothing.
+/// is a machine that has declared nothing. A root's path spelled in another
+/// case than its directory stores the name is read as the stored name.
 bool loadRoots(const QString &path, QString *error);
 bool loadRoots(QString *error);
+/// Whether the last load placed a root where its directory stores the name in
+/// another case than the file spells it, so writing the table back respells it.
+bool rootsRespelled();
 /// Writes the table back, by rename, the way the index is written.
 bool saveRoots(const QString &path, const QVector<Root> &table, QString *error);
 
@@ -63,16 +74,13 @@ const Root *rootById(const QString &id);
 /// The root holding `absolutePath`, or null. The longest match wins, so a root
 /// declared inside another one takes the rows under it.
 const Root *rootFor(const QString &absolutePath);
-/// Whether the root's storage is here to be read.
-bool rootIsReachable(const Root &root);
-/// Whether `absolutePath` lies under a root that is declared and not here.
-///
-/// The question `prune` has to ask before it drops a row, and the reason
-/// `PathState::Unreachable` exists.
-bool underUnreachableRoot(const QString &absolutePath);
-/// A sentence naming the root a path is waiting on, for whoever has to report
-/// it. Empty where the path is not under an unreachable root.
-QString unreachableReason(const QString &absolutePath);
+/// The root declared at `absolutePath` itself, or null.
+const Root *rootAt(const QString &absolutePath);
+/// Whether the root's storage is here: Present, Unreachable where it is away,
+/// or Unknown with the system's reason where the question could not be asked.
+PathState rootState(const Root &root, QString *error);
+/// A sentence naming the root `path` is waiting on, for whoever has to report it.
+QString unreachableReason(const QString &path, const Root &root);
 
 /// The two halves a row is stored as: the id of the root holding `absolutePath`
 /// and the rest of the way there. Both empty when no root holds it, which is

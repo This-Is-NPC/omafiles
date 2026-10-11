@@ -1,13 +1,31 @@
 #include "Workspace.h"
 
-#include <QDir>
+#include "Paths.h"
+
 #include <QFileInfo>
+#include <QSettings>
 
 namespace omafiles {
 namespace {
 // Empty until `main` sets it, and resolved only when a tab asks, so a studio
 // started with no argument opens exactly where it always did.
 QString g_startPath;
+
+QString statePath()
+{
+    return stateHome() + QStringLiteral("/omafiles/studio.conf");
+}
+
+const QString kColumnsKey = QStringLiteral("details/columns");
+
+// Resolved by the kernel where it will, and otherwise kept as typed: a folder
+// that is gone or shut is still where the tab is standing.
+QString standingPath(const QString &path)
+{
+    const QString typed = path.isEmpty() ? homeDirectory() : path;
+    const QString real = realPath(typed, nullptr);
+    return real.isEmpty() ? anchoredPath(typed) : real;
+}
 } // namespace
 
 void TabState::setStartPath(const QString &path)
@@ -17,13 +35,13 @@ void TabState::setStartPath(const QString &path)
 
 QString TabState::startPath()
 {
-    return g_startPath.isEmpty() ? QDir::homePath() : g_startPath;
+    return g_startPath.isEmpty() ? homeDirectory() : g_startPath;
 }
 
 TabState::TabState(QString kind, QObject *parent)
     : QObject(parent)
     , m_kind(std::move(kind))
-    , m_cwd(startPath())
+    , m_cwd(standingPath(startPath()))
 {
 }
 
@@ -147,9 +165,10 @@ void TabState::setSelectedNode(const QString &id)
 // every file manager with a selection treats walking into another directory.
 void TabState::setCwd(const QString &path)
 {
-    if (m_cwd == path)
+    const QString next = standingPath(path);
+    if (next.isEmpty() || m_cwd == next)
         return;
-    m_cwd = path;
+    m_cwd = next;
     setMarked({});
     emit cwdChanged();
     emit titleChanged();
@@ -178,6 +197,24 @@ void TabState::setFilter(const QString &text)
         return;
     m_filter = text;
     emit filterChanged();
+}
+
+void TabState::setCriteria(const QVariantMap &criteria)
+{
+    if (m_criteria == criteria)
+        return;
+    m_criteria = criteria;
+    emit criteriaChanged();
+}
+
+void TabState::toggleCriterion(const QString &key, const QVariant &value)
+{
+    QVariantMap next = m_criteria;
+    if (next.value(key) == value)
+        next.remove(key);
+    else
+        next.insert(key, value);
+    setCriteria(next);
 }
 
 void TabState::setViewMode(const QString &mode)
@@ -330,13 +367,11 @@ void PaneState::closeTab(int index)
         return;
     TabState *tab = m_tabs.takeAt(index);
     tab->deleteLater();
-    const int before = m_current;
     if (m_current >= m_tabs.size())
         m_current = m_tabs.size() - 1;
     emit tabsChanged();
     // The tab under the cursor is a different object now even when the index
     // did not move, so the view has to be told either way.
-    Q_UNUSED(before)
     emit currentChanged();
 }
 
@@ -354,6 +389,56 @@ Workspace::Workspace(QObject *parent)
     : QObject(parent)
 {
     adopt(new PaneState(QStringLiteral("files"), this), 0);
+
+    const QSettings state(statePath(), QSettings::IniFormat);
+    const QStringList fields = columnFields();
+    if (!state.contains(kColumnsKey)) {
+        m_columns = {QStringLiteral("tags"), QStringLiteral("type"), QStringLiteral("size"),
+                     QStringLiteral("mtime")};
+        return;
+    }
+    // A hand-edited file may name a field twice or one that does not exist.
+    for (const QString &field : state.value(kColumnsKey).toStringList()) {
+        if (fields.contains(field) && !m_columns.contains(field))
+            m_columns.append(field);
+    }
+}
+
+QStringList Workspace::columnFields()
+{
+    return {QStringLiteral("tags"), QStringLiteral("type"), QStringLiteral("size"),
+            QStringLiteral("mtime"), QStringLiteral("owner"), QStringLiteral("mode")};
+}
+
+void Workspace::setColumns(const QStringList &columns)
+{
+    if (m_columns == columns)
+        return;
+    m_columns = columns;
+    QSettings state(statePath(), QSettings::IniFormat);
+    state.setValue(kColumnsKey, m_columns);
+    emit columnsChanged();
+}
+
+// A column switched on joins at the right end.
+void Workspace::toggleColumn(const QString &field)
+{
+    if (!columnFields().contains(field))
+        return;
+    QStringList next = m_columns;
+    if (!next.removeOne(field))
+        next.append(field);
+    setColumns(next);
+}
+
+void Workspace::moveColumn(const QString &field, int delta)
+{
+    const int from = m_columns.indexOf(field);
+    if (from < 0)
+        return;
+    QStringList next = m_columns;
+    next.move(from, qBound(0, from + delta, int(next.size()) - 1));
+    setColumns(next);
 }
 
 // Every pane reports its current tab upward, so `currentTab` is correct no
@@ -457,6 +542,7 @@ void copyView(const TabState &from, TabState *to)
     to->setUntagged(from.untagged());
     to->setSelectedTag(from.selectedTag());
     to->setFilter(from.filter());
+    to->setCriteria(from.criteria());
     to->setViewMode(from.viewMode());
     to->setShowHidden(from.showHidden());
     to->setSortRole(from.sortRole());

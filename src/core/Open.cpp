@@ -12,17 +12,21 @@
 #include <QMimeType>
 #include <QProcess>
 #include <QSet>
-#include <QStandardPaths>
 #include <QTextStream>
 
 #include <utility>
+
+#include <sys/stat.h>
+#include <unistd.h>
 
 
 namespace omafiles {
 
 namespace {
 
-QByteArray runQuery(const QString &program, const QStringList &args)
+// Output that is not UTF-8 is no answer: a desktop id or a type decoded into
+// U+FFFD names some other one.
+QString runQuery(const QString &program, const QStringList &args)
 {
     QProcess proc;
     proc.setProcessChannelMode(QProcess::MergedChannels);
@@ -34,13 +38,63 @@ QByteArray runQuery(const QString &program, const QStringList &args)
     }
     if (proc.exitStatus() != QProcess::NormalExit || proc.exitCode() != 0)
         return {};
-    return proc.readAllStandardOutput().trimmed();
+    QString answer;
+    nameFromBytes(proc.readAllStandardOutput().trimmed(), &answer);
+    return answer;
+}
+
+// The program a variable names, found, or empty. A value that is not UTF-8 is
+// empty too: decoded into U+FFFD it would find some other program.
+QString programNamed(const char *variable)
+{
+    QString name;
+    if (!nameFromBytes(qgetenv(variable), &name) || name.isEmpty())
+        return {};
+    return findExecutable(name);
+}
+
+// A colon-separated search path, or `fallback` where it is unset. An entry that
+// is not UTF-8 is skipped, as the basedir spec ignores an invalid entry.
+QStringList searchPath(const char *variable, const QString &fallback)
+{
+    const QByteArray value = qgetenv(variable);
+    if (value.isEmpty())
+        return fallback.split(QLatin1Char(':'));
+    QStringList dirs;
+    for (const QByteArray &entry : value.split(':')) {
+        QString dir;
+        if (nameFromBytes(entry, &dir) && !dir.isEmpty())
+            dirs.append(dir);
+    }
+    return dirs;
+}
+
+} // namespace
+
+QStringList executableDirs()
+{
+    return searchPath("PATH", QStringLiteral("/bin:/usr/bin"));
 }
 
 QString findExecutable(const QString &name)
 {
-    return QStandardPaths::findExecutable(name);
+    const auto runnable = [](const QString &path) {
+        struct stat st {};
+        return statState(path, nullptr, true, &st) == PathState::Present && S_ISREG(st.st_mode)
+            && ::access(QFile::encodeName(path).constData(), X_OK) == 0;
+    };
+    // A name holding a `/` is a path, as `execvp` reads it.
+    if (name.contains(QLatin1Char('/')))
+        return runnable(name) ? name : QString();
+    for (const QString &dir : executableDirs()) {
+        const QString path = QDir(dir).filePath(name);
+        if (runnable(path))
+            return path;
+    }
+    return {};
 }
+
+namespace {
 
 // The applications directories, in the order the desktop searches them: the
 // user's own first, then the system's. `$XDG_DATA_HOME` and `$XDG_DATA_DIRS`
@@ -49,14 +103,8 @@ QString findExecutable(const QString &name)
 // its applications where it says it does.
 QStringList applicationDirs()
 {
-    const QByteArray home = qgetenv("XDG_DATA_HOME");
-    const QByteArray dirs = qgetenv("XDG_DATA_DIRS");
-    QStringList roots;
-    roots.append(home.isEmpty() ? QDir::homePath() + QStringLiteral("/.local/share")
-                                : QString::fromLocal8Bit(home));
-    const QString rest = dirs.isEmpty() ? QStringLiteral("/usr/local/share:/usr/share")
-                                        : QString::fromLocal8Bit(dirs);
-    roots += rest.split(QLatin1Char(':'), Qt::SkipEmptyParts);
+    QStringList roots{dataHome()};
+    roots += searchPath("XDG_DATA_DIRS", QStringLiteral("/usr/local/share:/usr/share"));
 
     QStringList out;
     for (const QString &root : std::as_const(roots)) {
@@ -128,30 +176,33 @@ QStringList desktopIds(const QString &value)
     return value.split(QLatin1Char(';'), Qt::SkipEmptyParts);
 }
 
-bool desktopWantsTerminal(const QString &desktopPath)
+// Whether an entry asks for a terminal and runs one of the usual terminal
+// editors, known by the file name of the program its `Exec` starts: the first
+// word, past `env` with its options and assignments, unquoted as the Desktop
+// Entry spec quotes one; a desktop id is no program name.
+bool isTerminalEditor(const QMap<QString, QString> &entry)
 {
-    QFile file(desktopPath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    const QString terminal = entry.value(QStringLiteral("Terminal")).toLower();
+    if (terminal != QLatin1String("true") && terminal != QLatin1String("1"))
         return false;
-    QTextStream stream(&file);
-    while (!stream.atEnd()) {
-        const QString line = stream.readLine().trimmed();
-        if (line.startsWith(QLatin1String("Terminal="), Qt::CaseInsensitive)) {
-            const QString value = line.section(QLatin1Char('='), 1).trimmed().toLower();
-            return value == QLatin1String("true") || value == QLatin1String("1");
-        }
+    const QStringList words = QProcess::splitCommand(entry.value(QStringLiteral("Exec")));
+    qsizetype first =
+        !words.isEmpty() && QFileInfo(words.front()).fileName() == QLatin1String("env") ? 1 : 0;
+    // GNU env's spelling: `-u NAME` and `-C DIR` take the next word.
+    while (first > 0 && first < words.size()) {
+        const QString &word = words.at(first);
+        if (word == QLatin1String("-u") || word == QLatin1String("-C"))
+            first += 2;
+        else if (word.startsWith(QLatin1Char('-')) || word.contains(QLatin1Char('=')))
+            ++first;
+        else
+            break;
     }
-    return false;
-}
-
-bool isEditorDesktop(const QString &desktopId)
-{
-    const QString id = desktopId.toLower();
-    return id.contains(QLatin1String("nvim")) || id.contains(QLatin1String("vim"))
-        || id.contains(QLatin1String("helix")) || id.contains(QLatin1String("emacs"))
-        || id.contains(QLatin1String("nano")) || id.contains(QLatin1String("micro"))
-        || id.contains(QLatin1String("code")) || id.contains(QLatin1String("cursor"))
-        || id.contains(QLatin1String("zed")) || id.contains(QLatin1String("sublime"));
+    static const QStringList editors{
+        QStringLiteral("nvim"), QStringLiteral("vim"),   QStringLiteral("vi"),
+        QStringLiteral("hx"),   QStringLiteral("helix"), QStringLiteral("emacs"),
+        QStringLiteral("emacsclient"), QStringLiteral("nano"), QStringLiteral("micro")};
+    return first < words.size() && editors.contains(QFileInfo(words.at(first)).fileName());
 }
 
 // The terminal to open a folder in.
@@ -163,12 +214,9 @@ bool isEditorDesktop(const QString &desktopId)
 // flag -- the flag for it is spelled differently by all of them.
 QString findTerminal()
 {
-    const QByteArray named = qgetenv("TERMINAL");
-    if (!named.isEmpty()) {
-        const QString found = findExecutable(QString::fromLocal8Bit(named));
-        if (!found.isEmpty())
-            return found;
-    }
+    const QString named = programNamed("TERMINAL");
+    if (!named.isEmpty())
+        return named;
     static const char *const known[] = {"alacritty", "ghostty", "kitty", "foot",
                                         "wezterm", "x-terminal-emulator",
                                         "gnome-terminal", "konsole", "xterm"};
@@ -185,10 +233,7 @@ QString findTerminal()
 QString findEditorCommand()
 {
     for (const char *name : {"VISUAL", "EDITOR"}) {
-        const QByteArray value = qgetenv(name);
-        if (value.isEmpty())
-            continue;
-        const QString found = findExecutable(QString::fromLocal8Bit(value));
+        const QString found = programNamed(name);
         if (!found.isEmpty())
             return found;
     }
@@ -200,14 +245,8 @@ QString findEditorCommand()
 QStringList associationFiles()
 {
     QStringList files;
-    const QByteArray config = qgetenv("XDG_CONFIG_HOME");
-    files.append(QDir(config.isEmpty() ? QDir::homePath() + QStringLiteral("/.config")
-                                       : QString::fromLocal8Bit(config))
-                     .filePath(QStringLiteral("mimeapps.list")));
-    const QByteArray configDirs = qgetenv("XDG_CONFIG_DIRS");
-    const QString rest = configDirs.isEmpty() ? QStringLiteral("/etc/xdg")
-                                              : QString::fromLocal8Bit(configDirs);
-    for (const QString &dir : rest.split(QLatin1Char(':'), Qt::SkipEmptyParts))
+    files.append(QDir(configHome()).filePath(QStringLiteral("mimeapps.list")));
+    for (const QString &dir : searchPath("XDG_CONFIG_DIRS", QStringLiteral("/etc/xdg")))
         files.append(QDir(dir).filePath(QStringLiteral("mimeapps.list")));
     const QStringList apps = applicationDirs();
     for (const QString &dir : apps)
@@ -220,7 +259,7 @@ QString queryMime(const QString &path)
     const QString xdgMime = findExecutable(QStringLiteral("xdg-mime"));
     if (xdgMime.isEmpty())
         return {};
-    return QString::fromUtf8(runQuery(xdgMime, {QStringLiteral("query"), QStringLiteral("filetype"), path}));
+    return runQuery(xdgMime, {QStringLiteral("query"), QStringLiteral("filetype"), path});
 }
 
 QString queryDefaultDesktop(const QString &mime)
@@ -230,7 +269,7 @@ QString queryDefaultDesktop(const QString &mime)
     const QString xdgMime = findExecutable(QStringLiteral("xdg-mime"));
     if (xdgMime.isEmpty())
         return {};
-    return QString::fromUtf8(runQuery(xdgMime, {QStringLiteral("query"), QStringLiteral("default"), mime}));
+    return runQuery(xdgMime, {QStringLiteral("query"), QStringLiteral("default"), mime});
 }
 
 } // namespace
@@ -251,9 +290,9 @@ QJsonObject OpenPlan::toJson() const
 
 QString formatOpenPlan(const OpenPlan &plan)
 {
-    QStringList parts;
-    parts.append(plan.program);
-    parts.append(plan.arguments);
+    QStringList parts{shellQuoted(plan.program)};
+    for (const QString &argument : plan.arguments)
+        parts.append(shellQuoted(argument));
     return parts.join(QLatin1Char(' '));
 }
 
@@ -273,13 +312,13 @@ bool planOpen(const QString &path, OpenPlan *plan, QString *error, PathState *st
     plan->mime = queryMime(resolved);
     plan->desktopId = queryDefaultDesktop(plan->mime);
 
-    const QString desktopPath = findDesktopFile(plan->desktopId);
-    const bool terminalApp = desktopWantsTerminal(desktopPath);
+    const QMap<QString, QString> entry =
+        desktopSection(findDesktopFile(plan->desktopId), QStringLiteral("Desktop Entry"));
     const QString omarchyEditor = findExecutable(QStringLiteral("omarchy-launch-editor"));
     const QString xdgOpen = findExecutable(QStringLiteral("xdg-open"));
     const QString gio = findExecutable(QStringLiteral("gio"));
 
-    if (terminalApp && !omarchyEditor.isEmpty() && isEditorDesktop(plan->desktopId)) {
+    if (!omarchyEditor.isEmpty() && isTerminalEditor(entry)) {
         plan->program = omarchyEditor;
         plan->arguments = {resolved};
         return true;
@@ -298,7 +337,7 @@ bool planOpen(const QString &path, OpenPlan *plan, QString *error, PathState *st
     }
 
     if (error)
-        *error = QStringLiteral("open: no xdg-open (needed for Omarchy mimeapps)");
+        *error = QStringLiteral("open: no xdg-open or gio to open it with");
     return false;
 }
 
@@ -529,7 +568,7 @@ bool desktopEdit(const QString &path, QString *error)
         return false;
     }
     if (!QProcess::startDetached(terminal, {QStringLiteral("-e"), editor, path},
-                                 QFileInfo(path).absolutePath())) {
+                                 typedDirectory(path, nullptr))) {
         if (error)
             *error = QStringLiteral("edit failed: %1 -e %2 %3").arg(terminal, editor, path);
         return false;
@@ -644,22 +683,28 @@ bool openInEditor(const QString &path, QString *error)
 // writes for this program live in one place.
 QString scriptsDirectory()
 {
-    QString configHome = QString::fromLocal8Bit(qgetenv("XDG_CONFIG_HOME"));
-    if (configHome.isEmpty())
-        configHome = QDir::homePath() + QStringLiteral("/.config");
-    return QDir(configHome).filePath(QStringLiteral("omafiles/scripts"));
+    return QDir(configHome()).filePath(QStringLiteral("omafiles/scripts"));
 }
 
 QVector<UserScript> userScripts()
 {
     QVector<UserScript> scripts;
     const QDir dir(scriptsDirectory());
-    // Executable and a file: a folder is not a script, and a text somebody
-    // forgot to chmod is a script that would only ever fail.
-    const QFileInfoList entries = dir.entryInfoList(QDir::Files | QDir::Executable,
-                                                    QDir::Name | QDir::IgnoreCase);
-    for (const QFileInfo &entry : entries)
-        scripts.append({entry.fileName(), entry.absoluteFilePath()});
+    QStringList names;
+    readDirectory(dir.path(), &names, nullptr, nullptr);
+    names.sort(Qt::CaseInsensitive);
+    // Executable and a file, through a link too: a folder is not a script, and
+    // a text somebody forgot to chmod is a script that would only ever fail.
+    // A hidden file is not offered, as a listing hides it.
+    for (const QString &name : std::as_const(names)) {
+        if (name.startsWith(QLatin1Char('.')))
+            continue;
+        const QString path = dir.filePath(name);
+        struct stat st {};
+        if (statState(path, nullptr, true, &st) == PathState::Present && S_ISREG(st.st_mode)
+            && ::access(QFile::encodeName(path).constData(), X_OK) == 0)
+            scripts.append({name, path});
+    }
     return scripts;
 }
 

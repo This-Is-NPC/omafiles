@@ -5,6 +5,7 @@
 #include <QSet>
 #include <QtQmlIntegration/qqmlintegration.h>
 #include <QString>
+#include <QVariantMap>
 #include <QVector>
 
 namespace omafiles {
@@ -27,6 +28,8 @@ class TabState : public QObject
     Q_PROPERTY(QString title READ title NOTIFY titleChanged)
     Q_PROPERTY(QString selectedTag READ selectedTag WRITE setSelectedTag NOTIFY selectedTagChanged)
     Q_PROPERTY(QString selectedNode READ selectedNode WRITE setSelectedNode NOTIFY selectedNodeChanged)
+    /// Resolved as it is set: the kernel's name where it gives one, otherwise
+    /// the path as typed, made absolute.
     Q_PROPERTY(QString cwd READ cwd WRITE setCwd NOTIFY cwdChanged)
     /// The tags a `tags` tab has walked into, in the order they were walked.
     ///
@@ -36,6 +39,10 @@ class TabState : public QObject
     Q_PROPERTY(QStringList facets READ facets WRITE setFacets NOTIFY facetsChanged)
     Q_PROPERTY(bool untagged READ untagged WRITE setUntagged NOTIFY facetsChanged)
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY filterChanged)
+    /// What the rows are narrowed to beside the name filter, each key one
+    /// criterion: `kind` (`dir` or `file`), `type` (a Type column word), `tagged`
+    /// (a bool), `tag`, and `within` (seconds since the file was modified).
+    Q_PROPERTY(QVariantMap criteria READ criteria WRITE setCriteria NOTIFY criteriaChanged)
     /// A shell pattern a files tab is answering across the roots -- `*.pdf` --
     /// out of the lists of names `sweep` writes. Empty when the tab is a
     /// folder. It is not the filter: the filter narrows what is on screen,
@@ -79,6 +86,11 @@ public:
     Q_INVOKABLE void enterFacet(const QString &tag);
     Q_INVOKABLE void leaveFacet();
     QString filter() const { return m_filter; }
+    QVariantMap criteria() const { return m_criteria; }
+    void setCriteria(const QVariantMap &criteria);
+    /// Sets one criterion, or takes it off when it already holds `value`, so
+    /// one menu entry both applies and removes it.
+    Q_INVOKABLE void toggleCriterion(const QString &key, const QVariant &value);
     QString pattern() const { return m_pattern; }
     void setPattern(const QString &pattern);
     bool recent() const { return m_recent; }
@@ -118,7 +130,7 @@ public:
     Q_INVOKABLE void toggleSortDirection();
     /// Picking a new field starts it the way that field is usually read.
     Q_INVOKABLE static bool ascendingByDefault(const QString &role);
-    static QString validSortRole(const QString &role);
+    Q_INVOKABLE static QString validSortRole(const QString &role);
 
 signals:
     void titleChanged();
@@ -127,6 +139,7 @@ signals:
     void cwdChanged();
     void facetsChanged();
     void filterChanged();
+    void criteriaChanged();
     void patternChanged();
     void recentChanged();
     void viewModeChanged();
@@ -142,6 +155,7 @@ private:
     QStringList m_facets;
     bool m_untagged = false;
     QString m_filter;
+    QVariantMap m_criteria;
     QString m_pattern;
     bool m_recent = false;
     QString m_viewMode = QStringLiteral("list");
@@ -213,9 +227,20 @@ class Workspace : public QObject
     Q_PROPERTY(int paneCount READ paneCount NOTIFY panesChanged)
     Q_PROPERTY(int focusedPane READ focusedPane WRITE setFocusedPane NOTIFY focusedPaneChanged)
     Q_PROPERTY(omafiles::TabState *currentTab READ currentTab NOTIFY currentTabChanged)
+    /// The details view's columns after the name, in order. One set for the
+    /// window, kept in `$XDG_STATE_HOME/omafiles/studio.conf`.
+    Q_PROPERTY(QStringList columns READ columns NOTIFY columnsChanged)
+    /// Every field a column can show.
+    Q_PROPERTY(QStringList columnFields READ columnFields CONSTANT)
 
 public:
     explicit Workspace(QObject *parent = nullptr);
+
+    QStringList columns() const { return m_columns; }
+    static QStringList columnFields();
+    Q_INVOKABLE void toggleColumn(const QString &field);
+    /// Moves a shown column `delta` places, clamped to the ends.
+    Q_INVOKABLE void moveColumn(const QString &field, int delta);
 
     QQmlListProperty<PaneState> panes();
     int paneCount() const { return m_panes.size(); }
@@ -257,15 +282,18 @@ signals:
     void panesChanged();
     void focusedPaneChanged();
     void currentTabChanged();
+    void columnsChanged();
 
 private:
     static qsizetype paneCountFn(QQmlListProperty<PaneState> *list);
     static PaneState *paneAt(QQmlListProperty<PaneState> *list, qsizetype index);
 
     void adopt(PaneState *pane, int at);
+    void setColumns(const QStringList &columns);
 
     QVector<PaneState *> m_panes;
     int m_focused = 0;
+    QStringList m_columns;
 };
 
 } // namespace omafiles

@@ -35,7 +35,8 @@ bool loadViews(const QString &path, QVector<View> *views, QString *error);
 bool loadViews(QVector<View> *views, QString *error);
 bool saveViews(const QString &path, const QVector<View> &views, QString *error);
 
-/// `[a-z0-9-]` and spaces, trimmed, at most 64. A name is typed at a prompt and
+/// Letters, digits, spaces, `-`, `_` and `.`, at most 64, the spaces at its
+/// ends trimmed and nothing else rewritten. A name is typed at a prompt and
 /// shown in a panel, so it may hold a space where a tag may not; it may not hold
 /// the newline or the tab that would make the file unreadable a line at a time.
 bool isValidViewName(const QString &name);

@@ -15,16 +15,24 @@ int main(int argc, char **argv)
     QCoreApplication::setApplicationVersion(QStringLiteral(OMAFILES_VERSION));
     QGuiApplication::setQuitOnLastWindowClosed(true);
 
+    // The rule the command line keeps, for the same reason: a folder or a base
+    // directory decoded into U+FFFD names some other folder.
+    QStringList args;
+    QString error;
+    if (!omafiles::argumentsFromBytes(argc, argv, &args, &error)
+        || !omafiles::environmentNameable(&error)) {
+        QTextStream(stderr) << QStringLiteral("omafiles-studio: ") << error << Qt::endl;
+        return 1;
+    }
+
     // A positional folder, the way every other file manager takes one, so the
     // studio opens where the caller is and can be the target of a directory
     // open rather than only ever starting at home. Resolved and checked here
     // and not in QML: a path that does not name a folder is an exit code, and
     // a window that opened at home instead would report success for it.
-    const QStringList args = QCoreApplication::arguments();
-    if (args.size() > 1) {
+    if (!args.isEmpty()) {
         QTextStream err(stderr);
-        QString error;
-        const QString folder = omafiles::canonicalPath(args.at(1), &error);
+        const QString folder = omafiles::canonicalPath(args.first(), &error);
         if (folder.isEmpty()) {
             err << QStringLiteral("omafiles-studio: ") << error << Qt::endl;
             return 2;
@@ -41,11 +49,8 @@ int main(int argc, char **argv)
     // verb: every answer about a path depends on which roots are declared, and
     // a window that read them later would spend its first frame calling files
     // missing that are merely on a disk nobody has plugged in.
-    {
-        QString error;
-        if (!omafiles::loadRoots(&error))
-            QTextStream(stderr) << QStringLiteral("omafiles-studio: ") << error << Qt::endl;
-    }
+    if (!omafiles::loadRoots(&error))
+        QTextStream(stderr) << QStringLiteral("omafiles-studio: ") << error << Qt::endl;
 
     // Nothing is registered or injected here. `GraphItem` and `FolderModel`
     // carry QML_ELEMENT and `Theme`, `IndexModel` and `Workspace` carry

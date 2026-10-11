@@ -20,7 +20,8 @@ HEADERS += \
     Names.h \
     View.h \
     Open.h \
-    Recent.h
+    Recent.h \
+    Glob.h
 
 SOURCES += \
     Tag.cpp \
@@ -32,4 +33,5 @@ SOURCES += \
     Names.cpp \
     View.cpp \
     Open.cpp \
-    Recent.cpp
+    Recent.cpp \
+    Glob.cpp

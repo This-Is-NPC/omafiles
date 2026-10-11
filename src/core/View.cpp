@@ -1,22 +1,18 @@
 #include "View.h"
 
+#include "Paths.h"
+#include "Store.h"
+
 #include <QDir>
 #include <QFile>
-#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QJsonObject>
-#include <QSaveFile>
-#include <QTextStream>
 
 namespace omafiles {
 
 QString defaultViewsPath()
 {
-    QString configHome = QString::fromLocal8Bit(qgetenv("XDG_CONFIG_HOME"));
-    if (configHome.isEmpty())
-        configHome = QDir::homePath() + QStringLiteral("/.config");
-    return QDir(configHome).filePath(QStringLiteral("omafiles/views.jsonl"));
+    return QDir(configHome()).filePath(QStringLiteral("omafiles/views.jsonl"));
 }
 
 bool isValidViewName(const QString &name)
@@ -35,63 +31,67 @@ bool isValidViewName(const QString &name)
 
 QString normalizeViewName(const QString &raw, QString *error)
 {
-    const QString trimmed = raw.simplified();
-    if (!isValidViewName(trimmed)) {
-        if (error)
-            *error = QStringLiteral("view: %1 is not a name; letters, digits, spaces, "
+    qsizetype start = 0;
+    qsizetype end = raw.size();
+    while (start < end && raw.at(start) == u' ')
+        ++start;
+    while (end > start && raw.at(end - 1) == u' ')
+        --end;
+    const QString name = raw.mid(start, end - start);
+    if (!isValidViewName(name)) {
+        if (error) {
+            *error = QStringLiteral("%1 is not a name; letters, digits, spaces, "
                                     "`-`, `_` and `.`, at most 64")
-                         .arg(raw);
+                         .arg(spelled(raw));
+        }
         return {};
     }
-    return trimmed;
+    return name;
 }
 
 bool loadViews(const QString &path, QVector<View> *views, QString *error)
 {
-    if (!views)
-        return false;
     views->clear();
-    QFile file(path);
-    if (!file.exists())
-        return true;
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QVector<KeptLine> lines;
+    QString why;
+    if (!readKeptLines(path, QStringLiteral("views"), &lines, &why)) {
         if (error)
-            *error = QStringLiteral("views: cannot read %1").arg(path);
+            *error = why;
         return false;
     }
-
-    int lineNumber = 0;
-    while (!file.atEnd()) {
-        ++lineNumber;
-        const QByteArray line = file.readLine().trimmed();
-        if (line.isEmpty() || line.startsWith('#'))
-            continue;
-        QJsonParseError parseError;
-        const QJsonDocument doc = QJsonDocument::fromJson(line, &parseError);
-        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+    for (const KeptLine &line : std::as_const(lines)) {
+        const QJsonObject &object = line.object;
+        const QJsonValue name = object.value(QStringLiteral("name"));
+        const QJsonValue dir = object.value(QStringLiteral("dir"));
+        const QJsonValue tags = object.value(QStringLiteral("tags"));
+        View view{name.toString(), dir.toString(), {}};
+        // The shape `view add` writes, and nothing it would have refused.
+        const auto problem = [&]() -> QString {
+            if (!name.isString() || normalizeViewName(view.name, nullptr) != view.name)
+                return QStringLiteral("it has no usable name");
+            // A dir that is no path is named before the pair it is in.
+            if (!dir.isUndefined() && !isCleanAbsolute(view.dir))
+                return QStringLiteral("its dir is not an absolute path in its clean form");
+            if (dir.isUndefined() == tags.isUndefined())
+                return QStringLiteral("it needs a dir or tags, and not both");
+            if (const QString shape = tags.isUndefined() ? QString() : keptTagsProblem(tags);
+                !shape.isEmpty())
+                return shape;
+            for (const View &already : std::as_const(*views)) {
+                if (already.name.compare(view.name, Qt::CaseInsensitive) == 0)
+                    return QStringLiteral("%1 is on an earlier line too").arg(view.name);
+            }
+            return {};
+        };
+        why = problem();
+        if (!why.isEmpty()) {
             if (error)
-                *error = QStringLiteral("views: malformed jsonl at %1:%2").arg(path).arg(lineNumber);
+                *error = QStringLiteral("views: malformed jsonl at %1:%2: %3")
+                             .arg(spelled(path), QString::number(line.number), why);
             return false;
         }
-        const QJsonObject object = doc.object();
-        View view;
-        view.name = object.value(QStringLiteral("name")).toString();
-        view.dir = object.value(QStringLiteral("dir")).toString();
-        for (const QJsonValue &value : object.value(QStringLiteral("tags")).toArray()) {
-            if (value.isString())
-                view.tags.append(value.toString());
-        }
-        if (!isValidViewName(view.name)) {
-            if (error)
-                *error = QStringLiteral("views: %1:%2 has no usable name").arg(path).arg(lineNumber);
-            return false;
-        }
-        if (view.dir.isEmpty() && view.tags.isEmpty()) {
-            if (error)
-                *error = QStringLiteral("views: %1:%2 asks nothing; it needs a dir or a tag")
-                             .arg(path).arg(lineNumber);
-            return false;
-        }
+        for (const QJsonValue &tag : tags.toArray())
+            view.tags.append(tag.toString());
         views->append(view);
     }
     return true;
@@ -104,14 +104,7 @@ bool loadViews(QVector<View> *views, QString *error)
 
 bool saveViews(const QString &path, const QVector<View> &views, QString *error)
 {
-    QDir().mkpath(QFileInfo(path).absolutePath());
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        if (error)
-            *error = QStringLiteral("views: cannot write %1").arg(path);
-        return false;
-    }
-    QTextStream out(&file);
+    QVector<QJsonObject> lines;
     for (const View &view : views) {
         QJsonObject object{{QStringLiteral("name"), view.name}};
         if (!view.dir.isEmpty())
@@ -122,12 +115,12 @@ bool saveViews(const QString &path, const QVector<View> &views, QString *error)
                 tags.append(tag);
             object.insert(QStringLiteral("tags"), tags);
         }
-        out << QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact)) << '\n';
+        lines.append(object);
     }
-    out.flush();
-    if (!file.commit()) {
+    QString why;
+    if (!writeKeptLines(path, lines, &why)) {
         if (error)
-            *error = QStringLiteral("views: cannot commit %1").arg(path);
+            *error = QStringLiteral("views: cannot write %1: %2").arg(spelled(path), why);
         return false;
     }
     return true;

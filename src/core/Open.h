@@ -11,6 +11,13 @@
 
 namespace omafiles {
 
+/// The directories `PATH` names, or glibc's `execvp` default where it is unset.
+/// An entry that is not UTF-8 is skipped: it names no directory here.
+QStringList executableDirs();
+/// `name` as a runnable regular file on `PATH`, the way `execvp` finds it, or
+/// empty.
+QString findExecutable(const QString &name);
+
 struct OpenPlan {
     QString program;
     QStringList arguments;
@@ -114,6 +121,7 @@ QVector<OpenApp> applicationsFor(const QString &path);
 bool canOpenWithApp();
 bool openWithApp(const QString &path, const QString &desktopFile, QString *error);
 
+/// The plan as a command line somebody can paste.
 QString formatOpenPlan(const OpenPlan &plan);
 
 } // namespace omafiles

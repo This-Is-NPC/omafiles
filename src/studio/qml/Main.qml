@@ -83,7 +83,8 @@ Window {
     readonly property bool blocked: commandPalette.visible || helpSheet.visible
                                     || fileMenu.visible || tabMenu.visible
                                     || openWithMenu.visible || scriptsMenu.visible
-                                    || viewMenu.visible
+                                    || viewMenu.visible || modeSheet.visible
+                                    || filterMenu.visible
                                     || newTabMenu.visible || editingPath || filtering
                                     || prompt !== ""
 
@@ -143,6 +144,7 @@ Window {
         { title: "find", keys: [
             { key: "/", label: "filter this folder" },
             { key: "f", label: "find by name across the roots" },
+            { key: "F", label: "filter by type, tag or date" },
             { key: "Enter", label: "keep filter" },
             { key: "Esc", label: "clear filter" },
             { key: "t", label: "tag panel" },
@@ -251,6 +253,66 @@ Window {
             activeTab.filter = ""
         filtering = false
         takeFocus()
+    }
+
+    /// The row the menu under `F` was opened over. Held rather than bound to
+    /// the cursor, like `fileMenu.targetPath`, so a closed menu is not rebuilt
+    /// on every step.
+    property var filterRow: ({})
+
+    // The criteria a tab can be narrowed by, each an entry that toggles it. The
+    // type and the tags come off `row`, the way `Mark same type` reads them;
+    // the palette passes no row and lists the rest.
+    function filterActionsFor(row) {
+        if (!onFiles)
+            return []
+        const offered = [{ criterion: "kind", value: "dir" },
+                         { criterion: "kind", value: "file" }]
+        if (row.kind === "file")
+            offered.push({ criterion: "type", value: row.type })
+        offered.push({ criterion: "tagged", value: true },
+                     { criterion: "tagged", value: false })
+        const tags = row.kind === "file" || row.kind === "dir" ? row.tags : []
+        for (let i = 0; i < tags.length; i++)
+            offered.push({ criterion: "tag", value: tags[i] })
+        for (let i = 0; i < criteriaBar.presets.length; i++)
+            offered.push({ criterion: "within", value: criteriaBar.presets[i].seconds })
+
+        const held = activeTab.criteria
+        const out = []
+        for (let i = 0; i < offered.length; i++) {
+            const one = offered[i]
+            const on = held[one.criterion] === one.value
+            out.push({ id: "only-" + one.criterion + ":" + one.value,
+                       label: (on ? "\u2713 " : "") + "Only "
+                              + criteriaBar.label(one.criterion, one.value),
+                       criterion: one.criterion, value: one.value })
+        }
+        if (Object.keys(held).length > 0)
+            out.push({ id: "clear-criteria", label: "Clear filters" })
+        return out
+    }
+
+    function narrow(id) {
+        if (!activeTab)
+            return
+        if (id === "clear-criteria") {
+            activeTab.criteria = ({})
+            return
+        }
+        const one = filterActionsFor(filterRow).find(function (action) {
+            return action.id === id
+        })
+        if (one)
+            activeTab.toggleCriterion(one.criterion, one.value)
+    }
+
+    function openFilterMenu() {
+        if (!onFiles)
+            return
+        filterRow = activeFilesRoot.entry
+        filterMenu.returnFocus = takeFocus
+        filterMenu.openAt(root.width / 2 - 100, root.height / 3)
     }
 
     // Saving what is on screen: the folder, or the tag query. The name is the
@@ -448,6 +510,17 @@ Window {
         IndexModel.renameSet(paths, pattern)
     }
 
+    // `chmod` over the row, or the set it is marked in, once the sheet has
+    // shown the mode and been told to go ahead.
+    function startModeChange(target) {
+        const path = target || cursorPath()
+        const folder = activeFolder
+        if (!path || !folder)
+            return
+        modeSheet.returnFocus = takeFocus
+        modeSheet.openFor(folder.targetPaths(path), folder.entryAt(folder.rowForPath(path)))
+    }
+
     // ----------------------------------------------------------------- links
     function joined(dir, name) {
         return (dir === "/" ? "" : dir) + "/" + name
@@ -542,8 +615,8 @@ Window {
                     activeTab.selectedTag = ""
                     activeTab.pattern = ""
                     activeTab.recent = false
+                    activeTab.cwd = text
                 }
-                activeFolder.directory = text
             }
         }
         editingPath = false
@@ -615,11 +688,8 @@ Window {
         if (!activeViewsList)
             return
         focusRegion = "views"
-        // The focus as well as the region. `t` and `v` are pressed while the
-        // window already holds it, so setting the region alone was enough --
-        // but this is also what the view menu returns to when it closes, and
-        // there the focus is on a scope that has just gone invisible. Without
-        // this the keyboard went dead after using that menu once.
+        // The focus as well as the region: the view menu returns here when it
+        // closes, with the focus on a scope that has just gone invisible.
         root.forceActiveFocus()
         if (Views.count > 0 && activeViewsList.currentIndex < 0)
             activeViewsList.currentIndex = 0
@@ -735,6 +805,48 @@ Window {
         scriptsMenu.targetDir = directory
         scriptsMenu.returnFocus = takeFocus
         scriptsMenu.openAt(menuX, menuY)
+    }
+
+    function columnLabel(field) {
+        return field === "mtime" ? "modified" : field
+    }
+
+    // The details columns as commands: a toggle for every field, and a move each
+    // way for each of `moving` that has somewhere to go. The heading menu and
+    // the command palette both draw this list.
+    function columnActions(moving) {
+        const shown = Workspace.columns
+        const out = []
+        for (const field of Workspace.columnFields)
+            out.push({ id: "column-toggle:" + field,
+                       label: (shown.indexOf(field) >= 0 ? "Hide " : "Show ")
+                              + "the " + columnLabel(field) + " column" })
+        for (const field of moving) {
+            const at = shown.indexOf(field)
+            if (at > 0)
+                out.push({ id: "column-left:" + field,
+                           label: "Move the " + columnLabel(field) + " column left" })
+            if (at >= 0 && at < shown.length - 1)
+                out.push({ id: "column-right:" + field,
+                           label: "Move the " + columnLabel(field) + " column right" })
+        }
+        return out
+    }
+
+    function runColumnAction(id) {
+        const field = id.slice(id.indexOf(":") + 1)
+        if (id.startsWith("column-toggle:"))
+            Workspace.toggleColumn(field)
+        else if (id.startsWith("column-left:"))
+            Workspace.moveColumn(field, -1)
+        else if (id.startsWith("column-right:"))
+            Workspace.moveColumn(field, 1)
+    }
+
+    function openColumnMenu(moving, x, y) {
+        columnMenu.moving = moving
+        columnMenu.returnFocus = takeFocus
+        columnMenu.openAt(x, y)
     }
 
     function openFileMenuForPath(path, kind, x, y) {
@@ -995,17 +1107,21 @@ Window {
         return true
     }
 
-    function handleTagKey(event, text) {
-        const tags = activeTagsList
-        if (!tags)
-            return false
+    // What the tags list and the views list share: `h` back to the files, and
+    // the moves every list takes.
+    function handleSideListKey(event, text) {
         if (text === "h" || event.key === Qt.Key_Left) {
             takeFocus()
             return true
         }
-        if (handleMoveKey(event, text))
-            return true
-        if (handleEndKey(event, text, true))
+        return handleMoveKey(event, text) || handleEndKey(event, text, true)
+    }
+
+    function handleTagKey(event, text) {
+        const tags = activeTagsList
+        if (!tags)
+            return false
+        if (handleSideListKey(event, text))
             return true
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
                 || event.key === Qt.Key_Space) {
@@ -1019,13 +1135,7 @@ Window {
         const views = activeViewsList
         if (!views)
             return false
-        if (text === "h" || event.key === Qt.Key_Left) {
-            takeFocus()
-            return true
-        }
-        if (handleMoveKey(event, text))
-            return true
-        if (handleEndKey(event, text, true))
+        if (handleSideListKey(event, text))
             return true
         if (text === "m" || event.key === Qt.Key_Menu
                 || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
@@ -1095,6 +1205,7 @@ Window {
         case "n": startMakingFolder(); return true
         case "*": startMarking(); return true
         case "f": startFinding(); return true
+        case "F": openFilterMenu(); return true
         // Space and a step, in one key: the way a run of rows is marked
         // without the thumb going back and forth.
         case "J": folder.toggleMarkAt(listing.currentIndex); moveCursor(1); return true
@@ -1168,6 +1279,12 @@ Window {
     }
 
     function handleKey(event) {
+        // A band can be drawn with the filter bar open, which blocks the rest.
+        if (event.key === Qt.Key_Escape && activeFilesRoot && activeFilesRoot.band.live) {
+            activeFilesRoot.band.cancel()
+            event.accepted = true
+            return
+        }
         if (blocked)
             return
 
@@ -1430,7 +1547,7 @@ Window {
                 // pane off the bottom of the window with nothing to say why.
                 readonly property int dividers: 2
                 height: parent.height - header.height - status.height
-                        - filterBar.height - dividers
+                        - criteriaBar.height - filterBar.height - dividers
                 orientation: Qt.Horizontal
 
                 handle: Rectangle {
@@ -1449,6 +1566,17 @@ Window {
                         C.SplitView.preferredWidth: panePreferredWidth
                     }
                 }
+            }
+
+            CriteriaBar {
+                id: criteriaBar
+                objectName: "criteriaBar"
+                width: parent.width
+                criteria: win.onFiles ? win.activeTab.criteria : ({})
+                height: held.length > 0 ? 30 : 0
+                visible: height > 0
+                onRemoved: function (key, value) { win.activeTab.toggleCriterion(key, value) }
+                onCleared: win.narrow("clear-criteria")
             }
 
             // -------------------------------------------------------- filter
@@ -1538,13 +1666,10 @@ Window {
                 cutting: Clipboard.holdsFiles && Clipboard.cutting()
                 tag: win.activeTab ? win.activeTab.selectedTag : ""
                 filter: win.activeTab ? win.activeTab.filter : ""
-                // The folder first: it is about the pane in front of you and
-                // it goes away when you walk out of it, where an index error
-                // stays until the index is fixed and will be there when you do.
-                // The receipt first. It answers something somebody just asked
-                // and it is gone as soon as they ask the next thing; the two
-                // errors under it describe a condition that will still be there
-                // to read afterwards.
+                // The receipt before the errors: it answers what was just asked
+                // and goes with the next question, where an error is a condition
+                // still there afterwards. The folder's before the index's, since
+                // it goes when you walk out of the pane.
                 message: Views.error !== ""
                          ? Views.error
                          : IndexModel.notice !== ""
@@ -1575,9 +1700,11 @@ Window {
                 { id: "path", label: "Type a path", key: "Ctrl+L" },
                 { id: "filter", label: "Filter this folder", key: "/" },
                 { id: "find", label: "Find by name across the roots", key: "f" },
+                { id: "filter-menu", label: "Filter by type, tag or date", key: "F" },
                 { id: "leave-search", label: "Leave the search", key: "h" },
                 { id: "recent", label: "Recently opened on the desktop", key: "" },
                 { id: "rename", label: "Rename", key: "r" },
+                { id: "chmod", label: "Permissions", key: "" },
                 { id: "new-folder", label: "New folder", key: "n" },
                 { id: "copy-files", label: "Copy", key: "Ctrl+C" },
                 { id: "cut-files", label: "Cut", key: "Ctrl+X" },
@@ -1597,8 +1724,10 @@ Window {
                 { id: "sort-mtime", label: "Sort by modified", key: "s" },
                 { id: "sort-flip", label: "Flip sort direction", key: "S" },
                 { id: "keys", label: "Show keys", key: "?" }
-            ]
+            ].concat(win.columnActions(Workspace.columns), win.filterActionsFor({}))
             onChosen: function (id) {
+                // The filter entries are `narrow`'s; it passes over the rest.
+                win.narrow(id)
                 switch (id) {
                 case "add-files": Workspace.addTab("files"); break
                 case "add-tags": Workspace.addTab("tags"); break
@@ -1614,9 +1743,11 @@ Window {
                 case "path": Qt.callLater(win.startPathEdit); break
                 case "filter": Qt.callLater(win.startFilter); break
                 case "find": Qt.callLater(win.startFinding); break
+                case "filter-menu": Qt.callLater(win.openFilterMenu); break
                 case "leave-search": if (win.activeTab) win.activeTab.pattern = ""; break
                 case "recent": win.openRecent(); break
                 case "rename": Qt.callLater(win.startRename); break
+                case "chmod": Qt.callLater(win.startModeChange); break
                 case "new-folder": Qt.callLater(win.startMakingFolder); break
                 case "copy-files": win.copyToClipboard(false); break
                 case "cut-files": win.copyToClipboard(true); break
@@ -1641,6 +1772,7 @@ Window {
                         helpSheet.open()
                     })
                     break
+                default: win.runColumnAction(id)
                 }
                 commandPalette.close()
             }
@@ -1650,6 +1782,12 @@ Window {
             id: helpSheet
             anchors.fill: parent
             groups: win.keymap
+        }
+
+        ModeSheet {
+            id: modeSheet
+            objectName: "modeSheet"
+            anchors.fill: parent
         }
 
         ContextMenu {
@@ -1843,6 +1981,9 @@ Window {
                 { id: "rename",
                   label: fileMenu.counted("Rename", "Rename %1 files by a pattern"),
                   key: "r", when: fileMenu.isRow },
+                { id: "chmod",
+                  label: fileMenu.counted("Permissions…", "Permissions of %1 files…"),
+                  when: fileMenu.onRow },
                 { id: "new-folder", label: "New folder", key: "n",
                   when: win.standingInFolder },
                 { id: "trash", label: fileMenu.counted("Move to trash", "Move %1 files to trash"),
@@ -1940,6 +2081,7 @@ Window {
                 // On the next tick, like `open-with`: the menu is still closing
                 // and its close would take the focus off the prompt opened here.
                 case "rename": Qt.callLater(win.startRename, path); break
+                case "chmod": Qt.callLater(win.startModeChange, path); break
                 case "new-folder": Qt.callLater(win.startMakingFolder); break
                 case "trash": IndexModel.trash(paths); break
 
@@ -2041,6 +2183,14 @@ Window {
         }
 
         ContextMenu {
+            id: filterMenu
+            objectName: "filterMenu"
+            anchors.fill: parent
+            actions: win.filterActionsFor(win.filterRow)
+            onChosen: function (id) { win.narrow(id) }
+        }
+
+        ContextMenu {
             id: viewMenu
             objectName: "viewMenu"
             anchors.fill: parent
@@ -2083,6 +2233,15 @@ Window {
                 case "forget": Views.forget(view.name); break
                 }
             }
+        }
+
+        ContextMenu {
+            id: columnMenu
+            objectName: "columnMenu"
+            anchors.fill: parent
+            property var moving: []
+            actions: win.columnActions(columnMenu.moving)
+            onChosen: function (id) { win.runColumnAction(id) }
         }
 
         ContextMenu {
@@ -2426,6 +2585,7 @@ Window {
             property int paneIndex: parent.paneIndex
             // qmllint enable missing-property
             property alias folder: folder
+            property alias band: band
             readonly property string viewMode: filesRoot.tab ? filesRoot.tab.viewMode : "list"
             readonly property var view: viewMode === "icons" ? grid : listing
 
@@ -2433,10 +2593,19 @@ Window {
             // cells under it that each work out their own width are a heading
             // and a column that do not line up.
             readonly property real nameIndent: 54
-            readonly property real typeWidth: 62
-            readonly property real sizeWidth: 74
-            readonly property real timeWidth: 128
             readonly property real tagsWidth: Math.max(90, Math.min(260, listArea.width * 0.26))
+
+            function columnWidth(field) {
+                switch (field) {
+                case "tags": return filesRoot.tagsWidth
+                case "type": return 62
+                case "size": return 74
+                case "mtime": return 128
+                case "owner": return 80
+                case "mode": return 84
+                }
+                return 0
+            }
 
             readonly property int cursor: view ? view.currentIndex : -1
 
@@ -2503,8 +2672,8 @@ Window {
                 id: folder
                 source: IndexModel
                 tab: filesRoot.tab
-                directory: filesRoot.tab ? filesRoot.tab.cwd : ""
                 filter: filesRoot.tab ? filesRoot.tab.filter : ""
+                criteria: filesRoot.tab ? filesRoot.tab.criteria : ({})
                 selectedTag: filesRoot.tab ? filesRoot.tab.selectedTag : ""
                 facets: filesRoot.tab ? filesRoot.tab.facets : []
                 untagged: filesRoot.tab ? filesRoot.tab.untagged : false
@@ -2513,10 +2682,8 @@ Window {
                 showHidden: filesRoot.tab ? filesRoot.tab.showHidden : false
                 sortRole: filesRoot.tab ? filesRoot.tab.sortRole : "name"
                 sortAscending: filesRoot.tab ? filesRoot.tab.sortAscending : true
-                onDirectoryChanged: if (filesRoot.tab) filesRoot.tab.cwd = directory
                 // Walking into a folder and going home both leave a tag
-                // listing, so the tag travels back to the tab the way the
-                // directory does.
+                // listing, so the tag travels back to the tab.
                 onSelectedTagChanged: if (filesRoot.tab) filesRoot.tab.selectedTag = selectedTag
                 // `h` out of a search ends it in the model, and the tab has
                 // to hear so its title and path bar follow.
@@ -2540,6 +2707,7 @@ Window {
                         clip: true
                         model: folder
                         boundsBehavior: Flickable.StopAtBounds
+                        readonly property int rowHeight: 30
                         currentIndex: 0
                         keyNavigationEnabled: false
                         Accessible.role: filesRoot.viewMode === "details"
@@ -2555,9 +2723,11 @@ Window {
                             color: Theme.sunken
 
                             ColumnHead {
+                                id: nameHead
+                                objectName: "columnHead"
                                 anchors.left: parent.left
                                 anchors.leftMargin: filesRoot.nameIndent
-                                anchors.right: headTags.left
+                                anchors.right: headColumns.left
                                 anchors.rightMargin: 10
                                 height: parent.height
                                 label: "name"
@@ -2565,54 +2735,42 @@ Window {
                                 sortRole: filesRoot.tab ? filesRoot.tab.sortRole : ""
                                 ascending: filesRoot.tab && filesRoot.tab.sortAscending
                                 onPicked: filesRoot.tab.pickSortRole("name")
+                                // Over the name, the menu moves every column.
+                                onMenuAsked: function (x, y) {
+                                    const pos = nameHead.mapToItem(root, x, y)
+                                    win.openColumnMenu(Workspace.columns, pos.x, pos.y)
+                                }
                             }
-                            ColumnHead {
-                                id: headTags
-                                anchors.right: headType.left
-                                anchors.rightMargin: 10
-                                height: parent.height
-                                width: filesRoot.tagsWidth
-                                label: "tags"
-                                role: "tags"
-                                sortRole: filesRoot.tab ? filesRoot.tab.sortRole : ""
-                                ascending: filesRoot.tab && filesRoot.tab.sortAscending
-                                onPicked: filesRoot.tab.pickSortRole("tags")
-                            }
-                            ColumnHead {
-                                id: headType
-                                anchors.right: headSize.left
-                                anchors.rightMargin: 10
-                                height: parent.height
-                                width: filesRoot.typeWidth
-                                label: "type"
-                                role: "type"
-                                sortRole: filesRoot.tab ? filesRoot.tab.sortRole : ""
-                                ascending: filesRoot.tab && filesRoot.tab.sortAscending
-                                onPicked: filesRoot.tab.pickSortRole("type")
-                            }
-                            ColumnHead {
-                                id: headSize
-                                anchors.right: headTime.left
-                                anchors.rightMargin: 10
-                                height: parent.height
-                                width: filesRoot.sizeWidth
-                                label: "size"
-                                role: "size"
-                                sortRole: filesRoot.tab ? filesRoot.tab.sortRole : ""
-                                ascending: filesRoot.tab && filesRoot.tab.sortAscending
-                                onPicked: filesRoot.tab.pickSortRole("size")
-                            }
-                            ColumnHead {
-                                id: headTime
+                            Row {
+                                id: headColumns
                                 anchors.right: parent.right
                                 anchors.rightMargin: 12
                                 height: parent.height
-                                width: filesRoot.timeWidth
-                                label: "modified"
-                                role: "mtime"
-                                sortRole: filesRoot.tab ? filesRoot.tab.sortRole : ""
-                                ascending: filesRoot.tab && filesRoot.tab.sortAscending
-                                onPicked: filesRoot.tab.pickSortRole("mtime")
+                                spacing: 10
+
+                                Repeater {
+                                    model: Workspace.columns
+                                    ColumnHead {
+                                        id: columnHead
+                                        required property string modelData
+                                        objectName: "columnHead"
+                                        height: headColumns.height
+                                        width: filesRoot.columnWidth(columnHead.modelData)
+                                        label: win.columnLabel(columnHead.modelData)
+                                        // A field the tab cannot sort by is a heading
+                                        // and nothing more.
+                                        role: filesRoot.tab && filesRoot.tab.validSortRole(
+                                                  columnHead.modelData) === columnHead.modelData
+                                              ? columnHead.modelData : ""
+                                        sortRole: filesRoot.tab ? filesRoot.tab.sortRole : ""
+                                        ascending: filesRoot.tab && filesRoot.tab.sortAscending
+                                        onPicked: filesRoot.tab.pickSortRole(columnHead.modelData)
+                                        onMenuAsked: function (x, y) {
+                                            const pos = columnHead.mapToItem(root, x, y)
+                                            win.openColumnMenu([columnHead.modelData], pos.x, pos.y)
+                                        }
+                                    }
+                                }
                             }
 
                             Rule { anchors.bottom: parent.bottom }
@@ -2628,6 +2786,8 @@ Window {
                             required property bool marked
                             required property string sizeText
                             required property string mtimeText
+                            required property string owner
+                            required property string mode
                             required property int count
                             required property int index
                             /// A facet row: a tag standing in for a folder. It
@@ -2644,7 +2804,7 @@ Window {
                             readonly property bool onCursor: listing.currentIndex === index
 
                             width: ListView.view.width
-                            height: 30
+                            height: listing.rowHeight
                             Accessible.role: row.details ? Accessible.Cell : Accessible.ListItem
                             Accessible.name: row.name
                             color: onCursor ? Theme.fill(Theme.accent, 0.16)
@@ -2693,66 +2853,69 @@ Window {
                             // name takes a width guessed from the row width and
                             // the tags run off the end of it.
                             Label {
+                                id: rowName
                                 anchors.left: rowIcon.right
                                 anchors.leftMargin: 8
-                                anchors.right: row.details ? detailTags.left : tagArea.left
+                                anchors.right: row.details ? cells.left : tagArea.left
                                 anchors.rightMargin: 10
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: row.name
                                 opacity: row.onCursor ? 1 : 0.88
                             }
 
-                            // A column, so it takes the same width on every row
-                            // and packs from the left where its heading starts.
-                            Label {
-                                id: typeText
-                                visible: row.details
-                                anchors.right: sizeText.left
-                                anchors.rightMargin: 10
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: filesRoot.typeWidth
-                                quiet: true
-                                font.pixelSize: 11
-                                text: row.type
-                            }
-
-                            TagStrip {
-                                id: detailTags
-                                visible: row.details
-                                anchors.right: typeText.left
-                                anchors.rightMargin: 10
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: filesRoot.tagsWidth
-                                limit: filesRoot.tagsWidth
-                                alignRight: false
-                                tags: row.tagList
-                            }
-
-                            Label {
-                                id: sizeText
-                                visible: row.details
-                                anchors.right: mtimeText.left
-                                anchors.rightMargin: 10
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: filesRoot.sizeWidth
-                                quiet: true
-                                font.pixelSize: 11
-                                // A tag has no size but it does have a count,
-                                // and this is the column that answers "how
-                                // much".
-                                text: row.facet ? row.tally : row.sizeText
-                            }
-
-                            Label {
-                                id: mtimeText
+                            // The same columns as the headings, at the same widths,
+                            // each packed from the left where its heading starts.
+                            Row {
+                                id: cells
                                 visible: row.details
                                 anchors.right: parent.right
                                 anchors.rightMargin: 12
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: filesRoot.timeWidth
-                                quiet: true
-                                font.pixelSize: 11
-                                text: row.mtimeText
+                                spacing: 10
+
+                                Repeater {
+                                    model: row.details ? Workspace.columns : []
+                                    Loader {
+                                        id: columnCell
+                                        objectName: "columnCell"
+                                        required property string modelData
+                                        anchors.verticalCenter: parent ? parent.verticalCenter
+                                                                       : undefined
+                                        width: filesRoot.columnWidth(columnCell.modelData)
+                                        sourceComponent: columnCell.modelData === "tags"
+                                                         ? tagCell : textCell
+
+                                        Component {
+                                            id: tagCell
+                                            TagStrip {
+                                                limit: filesRoot.tagsWidth
+                                                alignRight: false
+                                                tags: row.tagList
+                                            }
+                                        }
+                                        Component {
+                                            id: textCell
+                                            Label {
+                                                quiet: true
+                                                font.pixelSize: 11
+                                                text: {
+                                                    switch (columnCell.modelData) {
+                                                    case "type": return row.type
+                                                    // A tag has no size but it does have a
+                                                    // count, and this is the column that
+                                                    // answers "how much".
+                                                    case "size": return row.facet ? row.tally
+                                                                                  : row.sizeText
+                                                    case "mtime": return row.mtimeText
+                                                    case "owner": return row.owner
+                                                    case "mode": return row.mode
+                                                    }
+                                                    return ""
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             // Floats at the end of the row rather than lining up
@@ -2777,6 +2940,16 @@ Window {
                                 anchors.verticalCenter: parent.verticalCenter
                                 limit: row.width * 0.4
                                 tags: row.tagList
+                            }
+
+                            // The icon and the name, where a drag is the row's
+                            // and not the rubber band's.
+                            Item {
+                                objectName: "grip"
+                                x: rowIcon.x
+                                width: rowName.x + Math.min(rowName.contentWidth, rowName.width)
+                                       - rowIcon.x
+                                height: row.height
                             }
 
                             HoverHandler { id: rowHover }
@@ -2839,7 +3012,19 @@ Window {
                             width: grid.cellWidth
                             height: grid.cellHeight
 
+                            Item {
+                                objectName: "grip"
+                                readonly property real span: Math.max(
+                                    cellIcon.width,
+                                    Math.min(cellName.contentWidth, cellName.width))
+                                x: (cell.width - span) / 2
+                                y: tile.y + tileColumn.y
+                                width: span
+                                height: cellName.y + cellName.height
+                            }
+
                             Rectangle {
+                                id: tile
                                 anchors.fill: parent
                                 anchors.margins: 4
                                 radius: Theme.rounding
@@ -2850,11 +3035,13 @@ Window {
                                 border.color: cell.onCursor ? Theme.accent : "transparent"
 
                                 Column {
+                                    id: tileColumn
                                     anchors.fill: parent
                                     anchors.margins: 8
                                     spacing: 6
 
                                     Icon {
+                                        id: cellIcon
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         width: 30
                                         height: 30
@@ -2865,6 +3052,7 @@ Window {
                                         ink: cell.kind === "file" ? Theme.dim : Theme.accent
                                     }
                                     Label {
+                                        id: cellName
                                         width: parent.width
                                         text: (cell.marked ? "\u2022 " : "") + cell.name
                                         font.pixelSize: 11
@@ -2900,6 +3088,19 @@ Window {
                                 }
                             }
                         }
+                    }
+
+                    RubberBand {
+                        id: band
+                        anchors.fill: parent
+                        view: filesRoot.view
+                        folder: folder
+                        cellWidth: filesRoot.view === grid ? grid.cellWidth : listing.width
+                        cellHeight: filesRoot.view === grid ? grid.cellHeight : listing.rowHeight
+                        columns: filesRoot.view === grid
+                                 ? Math.max(1, Math.floor(grid.width / grid.cellWidth)) : 1
+                        // The pane's catch-all has focused the pane already.
+                        onStarted: win.takeFocus()
                     }
                 }
 

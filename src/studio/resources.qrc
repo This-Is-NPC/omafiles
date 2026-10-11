@@ -2,6 +2,7 @@
     <qresource prefix="/">
         <file>qml/Main.qml</file>
         <file>qml/Chip.qml</file>
+        <file>qml/CriteriaBar.qml</file>
         <file>qml/FocusableControl.qml</file>
         <file>qml/ColumnHead.qml</file>
         <file>qml/Details.qml</file>
@@ -11,6 +12,8 @@
         <file>qml/Hints.qml</file>
         <file>qml/Icon.qml</file>
         <file>qml/KeyCap.qml</file>
+        <file>qml/ModeBits.qml</file>
+        <file>qml/ModeSheet.qml</file>
         <file>qml/Label.qml</file>
         <file>qml/Rule.qml</file>
         <file>qml/TabHandle.qml</file>
@@ -20,5 +23,6 @@
         <file>qml/CommandPalette.qml</file>
         <file>qml/ContextMenu.qml</file>
         <file>qml/Tooltip.qml</file>
+        <file>qml/RubberBand.qml</file>
     </qresource>
 </RCC>

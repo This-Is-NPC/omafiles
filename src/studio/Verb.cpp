@@ -1,11 +1,12 @@
 #include "Verb.h"
 
+#include "Open.h"
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QProcess>
 #include <QProcessEnvironment>
-#include <QStandardPaths>
 
 #include <utility>
 
@@ -110,7 +111,7 @@ QString verbProgram()
         QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("omafiles"));
     if (QFileInfo(beside).isExecutable())
         return beside;
-    return QStandardPaths::findExecutable(QStringLiteral("omafiles"));
+    return findExecutable(QStringLiteral("omafiles"));
 }
 
 void runVerb(const QStringList &arguments, VerbReceipt done)

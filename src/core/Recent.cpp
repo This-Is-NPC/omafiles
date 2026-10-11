@@ -1,9 +1,11 @@
 #include "Recent.h"
 
+#include "Paths.h"
+
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
-#include <QFileInfo>
+#include <QSet>
 #include <QUrl>
 #include <QXmlStreamReader>
 
@@ -13,10 +15,7 @@ namespace omafiles {
 
 QString recentlyUsedPath()
 {
-    QString dataHome = QString::fromLocal8Bit(qgetenv("XDG_DATA_HOME"));
-    if (dataHome.isEmpty())
-        dataHome = QDir::homePath() + QStringLiteral("/.local/share");
-    return QDir(dataHome).filePath(QStringLiteral("recently-used.xbel"));
+    return QDir(dataHome()).filePath(QStringLiteral("recently-used.xbel"));
 }
 
 namespace {
@@ -24,6 +23,7 @@ namespace {
 // The newest of the three stamps a bookmark carries. `visited` is the last
 // open, `modified` the last change to the entry, `added` the first time; a
 // reader wants the last time the file mattered, which is the latest of them.
+// GLib writes microseconds; the milliseconds Qt keeps order two opens in a second.
 qint64 stampOf(const QXmlStreamAttributes &attributes)
 {
     qint64 latest = 0;
@@ -33,49 +33,97 @@ qint64 stampOf(const QXmlStreamAttributes &attributes)
             continue;
         const QDateTime when = QDateTime::fromString(value, Qt::ISODateWithMs);
         if (when.isValid())
-            latest = std::max(latest, when.toSecsSinceEpoch());
+            latest = std::max(latest, when.toMSecsSinceEpoch());
     }
     return latest;
 }
 
 } // namespace
 
-bool recentlyUsed(QVector<RecentEntry> *entries, QString *error)
+bool recentlyUsed(QVector<RecentEntry> *entries, QStringList *skipped, QString *error,
+                  int limit)
 {
     entries->clear();
-    QFile file(recentlyUsedPath());
-    if (!file.exists())
+    const QString path = recentlyUsedPath();
+    QFile file(path);
+    const PathState opened = openToRead(&file, {}, error);
+    if (opened == PathState::Missing)
         return true;
-    if (!file.open(QIODevice::ReadOnly)) {
-        if (error)
-            *error = QStringLiteral("%1: %2").arg(file.fileName(), file.errorString());
+    if (opened != PathState::Present)
         return false;
-    }
+    // Zero bytes is a list nothing has written yet, the same as no file.
+    if (file.size() == 0)
+        return true;
+    QVector<RecentEntry> listed;
     QXmlStreamReader xml(&file);
+    bool rooted = false;
     while (!xml.atEnd()) {
-        if (xml.readNext() != QXmlStreamReader::StartElement
-            || xml.name() != QLatin1String("bookmark"))
+        if (xml.readNext() != QXmlStreamReader::StartElement)
+            continue;
+        // GLib's bookmark parser takes an `xbel` document and no other.
+        if (!rooted && xml.name() != QLatin1String("xbel")) {
+            xml.raiseError(QStringLiteral("Unexpected tag '%1', tag 'xbel' expected")
+                               .arg(xml.name()));
+            break;
+        }
+        rooted = true;
+        if (xml.name() != QLatin1String("bookmark"))
             continue;
         const QUrl href(xml.attributes().value(QLatin1String("href")).toString());
         // Local files only: the list also names the documents a browser
-        // fetched, and a path this program cannot stand in is not a row.
-        if (!href.isLocalFile())
+        // fetched.
+        const QString local = localFileOf(href);
+        if (local.isEmpty())
             continue;
-        const QString path = href.toLocalFile();
-        if (!QFileInfo::exists(path))
-            continue;
-        entries->append({path, stampOf(xml.attributes())});
+        listed.append({local, stampOf(xml.attributes())});
     }
     if (xml.hasError()) {
         if (error)
-            *error = QStringLiteral("%1: %2").arg(file.fileName(), xml.errorString());
+            *error = QStringLiteral("%1: %2").arg(spelled(path), xml.errorString());
         return false;
     }
-    std::sort(entries->begin(), entries->end(), [](const RecentEntry &a, const RecentEntry &b) {
-        if (a.when != b.when)
-            return a.when > b.when;
-        return a.path < b.path;
-    });
+    std::stable_sort(listed.begin(), listed.end(),
+                     [](const RecentEntry &a, const RecentEntry &b) { return a.when > b.when; });
+
+    // Ordered first and looked at after, so an entry past the limit costs
+    // nothing. Each file once, under the path a row names it by, at its
+    // newest stamp, and each note once, for the file as far as it resolves.
+    QSet<QString> seen;
+    QSet<QString> noted;
+    const auto note = [&](const QString &file, const QString &why) {
+        if (skipped && !noted.contains(file)) {
+            noted.insert(file);
+            skipped->append(why);
+        }
+    };
+    for (const RecentEntry &entry : std::as_const(listed)) {
+        if (limit > 0 && entries->size() >= limit)
+            break;
+        QString why;
+        PathState state = PathState::Missing;
+        // A file no path here can spell is left out, whether the href or a
+        // link on the way names it, as a URL that is not a local file is.
+        bool unnameable = false;
+        QString resolved = realPath(entry.path, &why, &state, &unnameable);
+        if (unnameable)
+            continue;
+        // The file as far as it resolves, so two spellings of one are one note.
+        const QString file = resolved.isEmpty() ? physicalPath(entry.path) : resolved;
+        if (!resolved.isEmpty() && (state = storageState(resolved, &why)) != PathState::Present)
+            resolved.clear();
+        // A file where a directory above it should be is gone, as for a row.
+        if (resolved.isEmpty()) {
+            const bool gone = state == PathState::Missing
+                || (state == PathState::Unknown && leadsNowhere(entry.path));
+            if (!gone)
+                note(file, why);
+            continue;
+        }
+        if (seen.contains(resolved))
+            continue;
+        seen.insert(resolved);
+        entries->append({resolved, entry.when});
+    }
     return true;
 }
 

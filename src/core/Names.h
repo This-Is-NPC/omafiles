@@ -2,10 +2,19 @@
 
 #include <QString>
 #include <QStringList>
+#include <QVector>
 
 namespace omafiles {
 
 struct Root;
+class Store;
+
+/// What a walk could not cover: the path it is about, empty where it is about
+/// the whole list, and the sentence that says so.
+struct Gap {
+    QString path;
+    QString said;
+};
 
 // What is on the disk, as opposed to what you marked.
 //
@@ -31,16 +40,23 @@ struct Root;
 /// has to be a name a filesystem will take -- see `normalizeRootId`.
 QString namesCachePath(const QString &rootId);
 
+/// Whether a list of one path to a line can hold `relative`: not where it holds
+/// a newline.
+bool listable(const QString &relative);
+
 /// Replaces one root's list. `relatives` is every path under the root, written
 /// relative to it; it is sorted and de-duplicated here, so a caller hands over
-/// whatever its walk produced.
+/// whatever its walk produced. `gaps` is what that walk could not cover, one
+/// sentence each, kept in the list so an answer out of it can say it is short.
 ///
-/// A name holding a newline is left out and counted in `dropped`: the file is
-/// one path to a line, and there is no escape in it that would still let a
-/// reader `grep` the thing. Such a name is legal on every Unix and is vanishing
-/// rare; the alternative is a format nobody can read with the tools they have.
-bool writeNames(const QString &rootId, const QStringList &relatives, int *dropped,
-                QString *error);
+/// A name not `listable` is left out, counted in `dropped`, and becomes a
+/// gap of its own: the file is one path to a line, and there is no escape in it
+/// that would still let a reader `grep` the thing.
+///
+/// A gap is a line starting with `/`, which no relative path can, then its path
+/// percent-encoded, a space, and the sentence.
+bool writeNames(const QString &rootId, const QStringList &relatives, QVector<Gap> gaps,
+                int *dropped, QString *error);
 
 /// One root's list, as absolute paths under where the root is mounted now.
 ///
@@ -48,14 +64,20 @@ bool writeNames(const QString &rootId, const QStringList &relatives, int *droppe
 /// answer is calculated rather than stored, the way everything else here is.
 /// A root nothing has swept yet is not a failure: `paths` comes back empty,
 /// `ageSeconds` negative, and the caller says so rather than answering out of
-/// a list that does not exist.
-bool readNames(const Root &root, QStringList *paths, qint64 *ageSeconds, QString *error);
+/// a list that does not exist. `gaps`, where asked for, is what the sweep that
+/// built the list could not cover -- see `writeNames`. Where `rows` is given, a
+/// path that names none of them and is one `foldedName` from one is spelled as
+/// its directory stores it now, so a file another program re-cased since the
+/// sweep keeps its row; no other path is looked at.
+bool readNames(const Root &root, QStringList *paths, qint64 *ageSeconds, QString *error,
+               QVector<Gap> *gaps = nullptr, const Store *rows = nullptr);
 
-/// Whether a root has a list at all, without reading it.
-bool hasNames(const QString &rootId);
+/// An age, `ageSeconds` for one, in the spelling `ls --since` accepts.
+QString spelledDuration(qint64 seconds);
 
-/// Drops one root's list. For `roots rm`: a cache for a root nobody declares is
-/// a file nothing will ever read again.
-void forgetNames(const QString &rootId);
+/// Drops one root's list: for `roots rm`, a cache for a root nobody declares is
+/// a file nothing will ever read again, and for `roots add`, one left behind is
+/// not the new root's. False with the system's reason where it stays.
+bool forgetNames(const QString &rootId, QString *error);
 
 } // namespace omafiles

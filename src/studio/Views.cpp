@@ -1,11 +1,11 @@
 #include "Views.h"
 
-#include <QDir>
+#include "Paths.h"
+#include "Verb.h"
+
 #include <QFileInfo>
 #include <QPointer>
 #include <QVariantMap>
-
-#include "Verb.h"
 
 namespace omafiles {
 
@@ -14,10 +14,9 @@ Views::Views(QObject *parent)
 {
     reload();
 
-    const QFileInfo info(defaultViewsPath());
-    info.dir().mkpath(QStringLiteral("."));
-    if (info.dir().exists())
-        m_watcher.addPath(info.absolutePath());
+    const QString folder = typedDirectory(defaultViewsPath(), nullptr);
+    if (makePath(folder, nullptr))
+        m_watcher.addPath(folder);
     if (QFileInfo::exists(defaultViewsPath()))
         m_watcher.addPath(defaultViewsPath());
 

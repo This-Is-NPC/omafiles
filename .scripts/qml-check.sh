@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 # Lint the QML, with every warning fatal. Idempotent.
 #
-# This could not be a gate while it printed 296 warnings: 286 of those were
-# unqualified reads of `theme`, `workspace` and `indexModel`, which were context
-# properties -- invisible to the linter by construction, so it could only shrug
-# at every use of them. They are declared singletons now, the two item types are
-# declared rather than registered in code, and what is left is zero. A linter at
-# zero can refuse the next one.
+# `theme`, `workspace` and `indexModel` are declared singletons and the item
+# types are declared rather than registered in code, so the linter sees every
+# use of them and a single warning can fail the gate.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"

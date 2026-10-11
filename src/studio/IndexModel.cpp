@@ -10,7 +10,6 @@
 #include <QPointer>
 
 #include <cerrno>
-#include <cstring>
 #include <functional>
 #include <memory>
 
@@ -57,8 +56,8 @@ public:
     {
         beginResetModel();
         QMap<QString, int> counts;
-        for (const Record &record : m_owner->records()) {
-            if (!statable(record.path, nullptr))
+        for (const Record &record : m_owner->store().records()) {
+            if (rowState(record.path, nullptr) != PathState::Present)
                 continue;
             for (const QString &tag : record.tags)
                 counts[tag] += 1;
@@ -91,10 +90,9 @@ IndexModel::IndexModel(QObject *parent)
     // once, here, so without this a fresh install watches nothing and the
     // window does not follow the index until somebody presses F5. The studio
     // owns this directory as much as the CLI does.
-    const QFileInfo info(m_store.indexPath());
-    info.dir().mkpath(QStringLiteral("."));
-    if (info.dir().exists())
-        m_watcher.addPath(info.absolutePath());
+    const QString folder = typedDirectory(m_store.indexPath(), nullptr);
+    if (makePath(folder, nullptr))
+        m_watcher.addPath(folder);
     if (QFileInfo::exists(m_store.indexPath()))
         m_watcher.addPath(m_store.indexPath());
 
@@ -118,7 +116,11 @@ QAbstractListModel *IndexModel::tagsModel() const
 
 QStringList IndexModel::tagsForPath(const QString &path) const
 {
-    return m_store.get(path).tags;
+    // A row counts where `rowState` says it is the file, as `ls` reads one.
+    const Record row = m_store.get(path);
+    if (row.path.isEmpty() || rowState(path, nullptr) != PathState::Present)
+        return {};
+    return row.tags;
 }
 
 void IndexModel::reload()
@@ -137,7 +139,7 @@ void IndexModel::reload()
     QString waiting;
     for (const Record &record : m_store.records()) {
         QString detail;
-        switch (pathState(record.path, &detail)) {
+        switch (rowState(record.path, &detail)) {
         case PathState::Present:
             ++m_present;
             break;
@@ -466,7 +468,7 @@ void IndexModel::duplicate(const QString &path)
     const QString stem = info.completeBaseName();
     const QString suffix = info.suffix().isEmpty() ? QString()
                                                    : QLatin1Char('.') + info.suffix();
-    const QDir dir(info.absolutePath());
+    const QDir dir(typedDirectory(path, nullptr));
     QString destination;
     for (int n = 1; n < 1000; ++n) {
         const QString tail = n == 1 ? QStringLiteral(" (copy)")
@@ -513,6 +515,15 @@ void IndexModel::renameSet(const QStringList &paths, const QString &pattern)
            QStringLiteral("renamed %1").arg(countOf(paths.size(), QStringLiteral("file"))));
 }
 
+void IndexModel::changeMode(const QStringList &paths, const QString &mode)
+{
+    if (paths.isEmpty() || mode.isEmpty())
+        return;
+    report(QStringList{QStringLiteral("chmod"), mode, QStringLiteral("--")} + paths,
+           QStringLiteral("set %1 on %2").arg(mode, countOf(paths.size(),
+                                                              QStringLiteral("file"))));
+}
+
 void IndexModel::runScript(const QString &script, const QStringList &paths,
                            const QString &directory)
 {
@@ -538,7 +549,7 @@ bool IndexModel::makeFolder(const QString &directory, const QString &name)
     const QString path = QDir(directory).filePath(name);
     if (::mkdir(QFile::encodeName(path).constData(), 0777) != 0) {
         setNotice(QStringLiteral("mkdir: cannot make %1: %2")
-                      .arg(path, QString::fromLocal8Bit(strerror(errno))));
+                      .arg(path, systemReason(errno)));
         return false;
     }
     setNotice(QStringLiteral("made %1").arg(name));
@@ -562,7 +573,7 @@ bool IndexModel::makeLink(const QString &target, const QString &link)
     if (::symlink(QFile::encodeName(target).constData(),
                   QFile::encodeName(link).constData()) != 0) {
         setNotice(QStringLiteral("ln: cannot link %1 to %2: %3")
-                      .arg(link, target, QString::fromLocal8Bit(strerror(errno))));
+                      .arg(link, target, systemReason(errno)));
         return false;
     }
     setNotice(QStringLiteral("linked %1 to %2").arg(at.fileName(), target));

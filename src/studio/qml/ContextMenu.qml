@@ -185,32 +185,11 @@ Item {
                         font.family: Theme.fontFamily
                         font.pixelSize: 11
                     }
-                    // The three things the command palette's list learned and
-                    // this one never did.
-                    //
-                    // Hovering is the whole of what a pointer expects from a
-                    // menu: the entry under it lights up before it is clicked.
-                    // Without it the highlight sat on the first row whatever
-                    // the mouse did, so the menu looked like it was ignoring
-                    // the mouse even where the click landed.
-                    //
-                    // Only where the pointer really moved, which is harder to
-                    // ask than it looks. Walking the cursor with `j` scrolls
-                    // the list, the rows slide under a mouse nobody is
-                    // touching, and Qt re-delivers hover for every one of them
-                    // -- so the naive version has the keyboard and a still
-                    // mouse pulling in opposite directions, and `j` twenty
-                    // times lands somewhere else entirely. The position is
-                    // compared in the menu's own coordinates, where a scroll
-                    // does not move the pointer and a hand does. Every menu on
-                    // the desktop ignores a still pointer, for this reason.
-                    //
-                    // `preventStealing` is the other half. A ListView is a
-                    // Flickable, and a Flickable takes the grab from a child
-                    // the moment a press turns into a drag -- which a real
-                    // mouse does on the way down often enough to matter, and a
-                    // synthesised one never does. That is why the keyboard
-                    // tests never caught this.
+                    // Hover follows the pointer only where it really moved: `j`
+                    // scrolls rows under a still mouse and Qt re-delivers hover
+                    // for each, so the position is compared in the menu's own
+                    // coordinates. `preventStealing` keeps a press that drifts
+                    // into a drag from being taken by the list.
                     MouseArea {
                         anchors.fill: parent
                         hoverEnabled: true
