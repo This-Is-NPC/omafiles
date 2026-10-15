@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Build the Arch package of the committed HEAD into build/arch/pkg. Needs
+# makepkg; not as root. The release's SHA256SUMS, which install.sh checks the
+# package against, is written by the release workflow.
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+out="$root/build/arch"
+rm -rf "$out"
+mkdir -p "$out"/{build,pkg,src,log}
+
+# -d: the runtime dependencies are the target machine's, not the builder's.
+(cd "$root/pkgbuild" && OMAFILES_TREE="$root" BUILDDIR="$out/build" PKGDEST="$out/pkg" \
+  SRCDEST="$out/src" LOGDEST="$out/log" makepkg -f -d --noconfirm)
+
+shopt -s nullglob
+packages=("$out"/pkg/omafiles-[0-9]*.pkg.tar.zst)
+((${#packages[@]})) || { echo "package: makepkg wrote no omafiles package" >&2; exit 1; }
+printf '%s\n' "${packages[@]}"

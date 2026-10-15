@@ -2243,8 +2243,8 @@ def listed_verbs(text):
 def check_one_version(data, workspace):
     """Every place that says a version says the same one.
 
-    The binaries share a generated header; the usage declaration and the CLI
-    reference are literals. release-please
+    The binaries share a generated header; the usage declaration, the CLI
+    reference, the package and the release manifest are literals. release-please
     moves only the lines marked `x-release-please-version`, so every copy has to
     carry the mark and agree with `--version`."""
     spoken = run(data, "--version")
@@ -2254,11 +2254,14 @@ def check_one_version(data, workspace):
 
     copies = {"qmake/version.pri": r"^OMAFILES_VERSION = (\S+) # x-release-please-version$",
               "omafiles.usage.kdl": r'^version "([^"]+)" // x-release-please-version$',
-              "docs/cli.md": r"^- \*\*Version:\*\* (\S+) <!-- x-release-please-version -->$"}
+              "docs/cli.md": r"^- \*\*Version:\*\* (\S+) <!-- x-release-please-version -->$",
+              "pkgbuild/PKGBUILD": r"^pkgver=(\S+) # x-release-please-version$"}
     for path, pattern in copies.items():
         declared = re.search(pattern, (ROOT / path).read_text(), re.M)
         assert declared, f"{path} has no version marked for release-please"
         assert declared.group(1) == version, (path, declared.group(1), version)
+    manifest = json.loads((ROOT / ".release-please-manifest.json").read_text())
+    assert manifest == {".": version}, manifest
 
     # And the help agrees with `--version`, which is the copy a reader sees.
     assert run(data, "--help").stdout.splitlines()[0].split()[-1] == version

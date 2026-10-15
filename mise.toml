@@ -48,3 +48,7 @@ run = "scripts/usage-gen.sh"
 [tasks."local-check"]
 description = "Runs the gate on HEAD and posts the local-check status master requires"
 run = "scripts/local-check"
+
+[tasks.package]
+description = "Builds the Arch package of the committed HEAD into build/arch/pkg"
+run = "scripts/package"

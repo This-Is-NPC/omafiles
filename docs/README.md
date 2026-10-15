@@ -30,6 +30,7 @@ This is every page in the documentation, arranged in the order you're likely to 
 - [Command line](cli.md) — every verb and option for the CLI.
 
 **How-to guides — by task:**
+- [How to install and remove](how-to-install-and-remove.md) — the released package, a given version, updates and removal.
 - [How to tag files](how-to-tag-files.md) — adding, organizing and using tags from the window or CLI.
 - [How to find files](how-to-find-files.md) — filtering by name, type, tag, date and other criteria.
 - [How to save a view](how-to-save-a-view.md) — creating saved views for quick access to folders and queries.
@@ -56,6 +57,7 @@ This is every page in the documentation, arranged in the order you're likely to 
 
 | You want to… | Start with… |
 |---|---|
+| Install or remove omafiles | [How to install and remove](how-to-install-and-remove.md) |
 | Tag a file with a label | [How to tag files](how-to-tag-files.md) |
 | Find files by name or type | [How to find files](how-to-find-files.md) |
 | Save a folder or query for quick access | [How to save a view](how-to-save-a-view.md) |
