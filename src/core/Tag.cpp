@@ -1,22 +1,43 @@
 #include "Tag.h"
 
+#include "Paths.h"
+
 #include <QRegularExpression>
 
 namespace omafiles {
 
 bool isValidTag(const QString &tag)
 {
-    static const QRegularExpression re(QStringLiteral("^[a-z0-9][a-z0-9-]{0,63}$"));
+    static const QRegularExpression re(
+        QRegularExpression::anchoredPattern(QStringLiteral("[a-z0-9][a-z0-9-]{0,63}")));
     return re.match(tag).hasMatch();
+}
+
+QString asciiFolded(const QString &raw)
+{
+    // ASCII only, in the trim and in the fold: Unicode case mapping turns the
+    // Kelvin sign into `k`, a second spelling of a name nobody can see.
+    qsizetype start = 0;
+    qsizetype end = raw.size();
+    while (start < end && (raw.at(start) == u' ' || raw.at(start) == u'\t'))
+        ++start;
+    while (end > start && (raw.at(end - 1) == u' ' || raw.at(end - 1) == u'\t'))
+        --end;
+    QString folded = raw.mid(start, end - start);
+    for (QChar &letter : folded) {
+        if (letter >= u'A' && letter <= u'Z')
+            letter = QChar(letter.unicode() + ('a' - 'A'));
+    }
+    return folded;
 }
 
 QString normalizeTag(const QString &raw, QString *error)
 {
-    const QString tag = raw.trimmed().toLower();
+    const QString tag = asciiFolded(raw);
     if (!isValidTag(tag)) {
         if (error) {
             *error = QStringLiteral("invalid tag: %1 (expected [a-z0-9-]+, no leading '-', max 64)")
-                         .arg(raw);
+                         .arg(spelled(raw));
         }
         return {};
     }

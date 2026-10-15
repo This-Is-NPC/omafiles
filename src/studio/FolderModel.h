@@ -1,11 +1,14 @@
 #pragma once
 
 #include "IndexModel.h"
+#include "DirectoryListing.h"
+#include "DirectoryWork.h"
+#include <QCache>
 #include "Workspace.h"
 
 #include <QAbstractListModel>
 #include <QFileInfo>
-#include <QFileSystemWatcher>
+#include "EntryWatcher.h"
 #include <QtQmlIntegration/qqmlintegration.h>
 #include <QString>
 #include <QTimer>
@@ -21,13 +24,25 @@ class FolderModel : public QAbstractListModel
     QML_ELEMENT
     Q_PROPERTY(omafiles::IndexModel *source READ source WRITE setSource NOTIFY sourceChanged)
     Q_PROPERTY(omafiles::TabState *tab READ tab WRITE setTab NOTIFY tabChanged)
-    Q_PROPERTY(QString directory READ directory WRITE setDirectory NOTIFY directoryChanged)
+    /// The tab's `cwd`, which is the one place a listing's folder is set.
+    Q_PROPERTY(QString directory READ directory NOTIFY directoryChanged)
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY queryChanged)
+    /// See `TabState::criteria`.
+    Q_PROPERTY(QVariantMap criteria READ criteria WRITE setCriteria NOTIFY queryChanged)
     Q_PROPERTY(QString selectedTag READ selectedTag WRITE setSelectedTag NOTIFY selectedTagChanged)
+    Q_PROPERTY(QStringList facets READ facets WRITE setFacets NOTIFY facetsChanged)
+    Q_PROPERTY(bool untagged READ untagged WRITE setUntagged NOTIFY facetsChanged)
+    /// A shell pattern answered across the roots, out of the lists of names;
+    /// see `TabState::pattern`.
+    Q_PROPERTY(QString pattern READ pattern WRITE setPattern NOTIFY patternChanged)
+    /// What the desktop opened lately, instead of a folder; see
+    /// `TabState::recent`.
+    Q_PROPERTY(bool recent READ recent WRITE setRecent NOTIFY recentChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY queryChanged)
     Q_PROPERTY(bool atRoot READ atRoot NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(int count READ rowCount NOTIFY changed)
+    Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(int markedCount READ markedCount NOTIFY markedChanged)
     Q_PROPERTY(int taggedCount READ taggedCount NOTIFY changed)
     Q_PROPERTY(QString sortRole READ sortRole WRITE setSortRole NOTIFY sortChanged)
@@ -42,10 +57,24 @@ public:
         TagsRole,
         MarkedRole,
         SizeTextRole,
-        MtimeTextRole
+        MtimeTextRole,
+        /// How many files a `tag` row leads to, and -1 on every other row. A
+        /// facet without a count is a folder you have to open to find out
+        /// whether it was worth opening.
+        CountRole,
+        OwnerRole,
+        /// Permissions as `ls -l` spells them, `drwxr-xr-x`.
+        ModeRole
     };
 
-    explicit FolderModel(QObject *parent = nullptr);
+    explicit FolderModel(QObject *parent = nullptr,
+                         std::shared_ptr<const DirectoryWork> work = directoryWork());
+    ~FolderModel() override;
+    bool loading() const { return m_loading; }
+    int listingReads() const { return m_listingReads; }
+    int queryEntriesExamined() const { return m_queryEntriesExamined; }
+    int metadataReads() const { return m_metadataReads; }
+    qsizetype directoryIndexCapacity() const { return m_visible.capacity(); }
 
     IndexModel *source() const { return m_index; }
     void setSource(IndexModel *index);
@@ -57,11 +86,23 @@ public:
     TabState *tab() const { return m_tab; }
     void setTab(TabState *tab);
 
-    QString directory() const { return m_directory; }
-    void setDirectory(const QString &path);
+    QString directory() const;
 
     QString filter() const { return m_filter; }
     void setFilter(const QString &text);
+    QVariantMap criteria() const { return m_criteria; }
+    void setCriteria(const QVariantMap &criteria);
+
+    /// The tags this listing has been narrowed by, in a `tags` tab.
+    ///
+    /// Not a place in the tree and not one tag either: the rows are the files
+    /// carrying *all* of them, and the folders above them are the tags that
+    /// still tell those files apart. `#work/#draft` is a question, so its
+    /// answer does not change when it is asked the other way round.
+    QStringList facets() const { return m_facets; }
+    void setFacets(const QStringList &facets);
+    bool untagged() const { return m_untagged; }
+    void setUntagged(bool untagged);
 
     /// The tag this listing is showing, or empty for a directory listing.
     ///
@@ -71,6 +112,10 @@ public:
     /// tag go comes back to the folder you picked it from.
     QString selectedTag() const { return m_selectedTag; }
     void setSelectedTag(const QString &tag);
+    QString pattern() const { return m_pattern; }
+    void setPattern(const QString &pattern);
+    bool recent() const { return m_recent; }
+    void setRecent(bool recent);
 
     bool showHidden() const { return m_showHidden; }
     void setShowHidden(bool show);
@@ -106,21 +151,67 @@ public:
 
     Q_INVOKABLE void goHome();
     Q_INVOKABLE void goUp();
+    /// Walks to where `path` is and lands the cursor on it.
+    ///
+    /// The way out of a tag listing, where the rows come from as many folders
+    /// as they like and none of them is the one the listing is standing in.
+    Q_INVOKABLE void goTo(const QString &path);
     void enter(const QString &path);
     void activate(const QString &path, const QString &kind);
     Q_INVOKABLE void activateRow(int row);
     Q_INVOKABLE void toggleMarkAt(int row);
     Q_INVOKABLE void clearMarks();
     Q_INVOKABLE void markAll();
+    Q_INVOKABLE void invertMarks();
+    /// Marks every row sharing a tag, or a type, with the one at `path`.
+    ///
+    /// The two questions a marked set is usually assembled to ask -- everything
+    /// filed like this one, everything shaped like this one -- and both of them
+    /// are a scan of rows already in memory rather than anything to type.
+    Q_INVOKABLE void markSameTag(const QString &path);
+    Q_INVOKABLE void markSameType(const QString &path);
+    /// Marks every file row from one row to another, either way round, on top
+    /// of what is marked. Shift and a click, the way every list does it.
+    Q_INVOKABLE void markRange(int from, int to);
+    /// Marks `kept` plus `rows`, or `kept` with `rows` toggled against it.
+    /// The rubber band calls it on every move with the marks it started from,
+    /// so a row the band lets go of goes back to what it was.
+    Q_INVOKABLE void markRows(const QList<int> &rows, const QStringList &kept, bool toggle);
+    /// Marks every row whose name matches a shell pattern -- `*.pdf`,
+    /// `draft-?.md` -- on top of what is marked, and says how many that was.
+    Q_INVOKABLE int markMatching(const QString &pattern);
+
+    /// The marked rows, in the order the listing shows them.
+    ///
+    /// The order matters and the set does not have one: marks are a QSet, whose
+    /// order is a hash of the paths, so a caller handing them to `tag add` would
+    /// name the same files in a different order on every run and the receipt
+    /// would not be readable twice.
+    Q_INVOKABLE QStringList markedPaths() const;
+    Q_INVOKABLE bool isMarked(const QString &path) const;
+
+    /// What a command chosen over `path` should act on.
+    ///
+    /// A marked row means the set; an unmarked one means itself, whatever is
+    /// marked elsewhere. This is the rule every file manager with a selection
+    /// keeps, and it lives here rather than in each menu entry so that no entry
+    /// can be written that forgets it -- which is how a delete of one file ends
+    /// up taking forty.
+    Q_INVOKABLE QStringList targetPaths(const QString &path) const;
+
+    /// The tags on one row, as the index has them.
+    Q_INVOKABLE QStringList tagsFor(const QString &path) const;
     Q_INVOKABLE QString pathAt(int row) const;
     Q_INVOKABLE QString kindAt(int row) const;
+    Q_INVOKABLE int previewRow(int from, int direction) const;
     Q_INVOKABLE void reload();
+    Q_INVOKABLE void refreshMetadata(int row);
 
     /// Everything the details panel shows about one row, in one read. Empty map
     /// for a row that is not there, so QML can test it with a single truthiness
     /// check instead of guarding every field.
     Q_INVOKABLE QVariantMap entryAt(int row) const;
-    int rowForPath(const QString &path) const;
+    Q_INVOKABLE int rowForPath(const QString &path) const;
 
     /// The row the cursor belongs on after the list is rebuilt.
     ///
@@ -132,16 +223,26 @@ public:
     /// the cursor back on the folder you walked out of rather than on `..`.
     Q_INVOKABLE void rememberCursor(int row);
     Q_INVOKABLE int cursorRow() const;
+    /// Where the cursor belongs once the list next shows `path` -- a row that
+    /// is not there yet. A rename and a new folder both know the name before
+    /// the rebuild that lists it, and without this the rebuild would find the
+    /// old name gone and put the cursor at the top.
+    Q_INVOKABLE void pointCursorAt(const QString &path);
 
 signals:
     void sourceChanged();
     void tabChanged();
     void directoryChanged();
     void selectedTagChanged();
+    void facetsChanged();
+    void patternChanged();
+    void recentChanged();
     void queryChanged();
     void changed();
+    void metadataChanged();
     void markedChanged();
     void sortChanged();
+    void loadingChanged();
 
 private:
     struct Entry {
@@ -151,38 +252,97 @@ private:
         QString type;
         QString tags;
         bool tagged = false;
+        /// The name is a symlink; `path` is the link's own.
+        bool link = false;
+        /// Files under a facet row; -1 where the row is not one.
+        int count = -1;
         qint64 size = 0;
-        qint64 mtime = 0;
+        qint64 mtime = 0;           // milliseconds, so a sort orders within a second
         QString sizeText;
         QString mtimeText;
+        QString owner;
+        QString mode;
     };
 
+    struct DirectoryResult {
+        std::shared_ptr<const DirectoryListing> listing;
+        QVector<int> visible;
+        int rangeSize = -1;
+        bool parent = false;
+        int tagged = 0;
+        int examined = 0;
+    };
+    int directoryIndex(int row) const;
+    Entry rowAt(int row, bool metadata = false) const;
+    static Entry describeFile(const QFileInfo &info, const QString &name, const QStringList &tags);
+    static bool accepts(const Entry &row, const QVariantMap &criteria);
+    static bool lessThan(const Entry &a, const Entry &b, const QString &role, bool ascending);
+    void startDirectoryQuery();
+    void cancelDirectoryQuery();
+    void setLoading(bool loading);
     bool validRow(int row) const;
     void rebuild();
-    void listDirectory();
     void listTag();
+    /// The tags that still divide the files under `m_facets`, and those files.
+    void listFacets();
+    /// Out of the lists of names `sweep` writes rather than by walking the
+    /// disk: the complement of the vocabulary -- what carries no tag at all --
+    /// or every name fitting `m_pattern`, whichever the tab is asking.
+    void listNames();
+    /// What the desktop opened lately, in its order, out of its own list.
+    void listRecent();
+    /// Whether this listing answers a tag question rather than a folder one.
+    /// Read off the tab and not stored, so the two cannot drift apart.
+    bool browsingFacets() const;
     /// One row, off whatever the system says about the file. `name` is what the
     /// row is called, which is the directory entry in a folder and the last
     /// component of the path in a tag listing.
     Entry describe(const QFileInfo &info, const QString &name) const;
     void applySort(QVector<Entry> *rows) const;
+    /// Whether a row passes every criterion. `..` and the tags read as folders
+    /// are ways to move, not files, so they always pass.
+    bool admits(const Entry &row) const;
     void watch();
     void marksChanged();
 
+    const std::shared_ptr<const DirectoryWork> m_work;
     IndexModel *m_index = nullptr;
     TabState *m_tab = nullptr;
-    QString m_directory;
     QString m_filter;
+    QVariantMap m_criteria;
     QString m_selectedTag;
+    QString m_pattern;
+    bool m_recent = false;
+    QStringList m_facets;
+    bool m_untagged = false;
     bool m_showHidden = false;
     QString m_sortRole = QStringLiteral("name");
     bool m_sortAscending = true;
     QString m_error;
     QVector<Entry> m_rows;
+    bool m_directoryMode = false;
+    bool m_loading = false;
+    bool m_scanNeeded = true;
+    int m_directoryTagged = 0;
+    int m_listingReads = 0;
+    int m_queryEntriesExamined = 0;
+    QString m_previousNeedle;
+    bool m_previousNameOnly = false;
+    bool m_previousHidden = false;
+    bool m_previousAscending = true;
+    mutable int m_metadataReads = 0;
+    std::shared_ptr<const DirectoryListing> m_listing;
+    std::shared_ptr<std::atomic_bool> m_cancellation;
+    QVector<int> m_visible;
+    int m_rangeSize = -1;
+    bool m_rangeParent = false;
+    mutable QCache<int, Entry> m_metadata{128};
+    QTimer m_query;
     /// The folder on screen, watched so it stays the folder on disk. One
     /// directory and never a tree: an inotify watch is a per-user resource, and
     /// what a list has to be honest about is the list.
-    QFileSystemWatcher m_watcher;
+    EntryWatcher m_watcher;
+    QString m_watched;
     /// Coalesces the watcher. A single copy or save is several filesystem
     /// events, and the list wants the state after them, once.
     QTimer m_settle;

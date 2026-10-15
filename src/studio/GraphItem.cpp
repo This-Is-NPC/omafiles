@@ -115,9 +115,9 @@ void GraphItem::rebuild()
     QHash<QString, int> tagDegree;
 
     QVector<Record> live;
-    const QVector<Record> records = m_index->records();
+    const QVector<Record> records = m_index->store().records();
     for (const Record &record : records) {
-        if (!statable(record.path, nullptr))
+        if (rowState(record.path, nullptr) != PathState::Present)
             continue;
         live.append(record);
         for (const QString &tag : record.tags)

@@ -57,6 +57,7 @@ FocusableControl {
         id: captionText
         anchors.centerIn: parent
         text: chip.label
+        textFormat: Text.PlainText
         color: Theme.foreground
         // Dimmed at rest so a quiet row reads as one line of text with one word
         // lit, rather than as six equal buttons.

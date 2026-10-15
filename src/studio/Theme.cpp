@@ -1,10 +1,10 @@
 #include "Theme.h"
 
-#include <QDir>
+#include "Paths.h"
+
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
-#include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QTextStream>
 
@@ -15,11 +15,7 @@ namespace {
 
 QString currentThemePath()
 {
-    const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    QString state = env.value(QStringLiteral("XDG_STATE_HOME"));
-    if (state.isEmpty())
-        state = QDir::homePath() + QStringLiteral("/.local/state");
-    return state + QStringLiteral("/omarchy/current/theme");
+    return stateHome() + QStringLiteral("/omarchy/current/theme");
 }
 
 // The hyprland configs that carry the corner rounding, most specific first.
@@ -27,12 +23,9 @@ QString currentThemePath()
 // side of the desktop.
 QStringList roundingPaths()
 {
-    const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    QString config = env.value(QStringLiteral("XDG_CONFIG_HOME"));
-    if (config.isEmpty())
-        config = QDir::homePath() + QStringLiteral("/.config");
-    QString omarchy = env.value(QStringLiteral("OMARCHY_PATH"));
-    if (omarchy.isEmpty())
+    const QString config = configHome();
+    QString omarchy;
+    if (!nameFromBytes(qgetenv("OMARCHY_PATH"), &omarchy) || omarchy.isEmpty())
         omarchy = QStringLiteral("/usr/share/omarchy");
     return {config + QStringLiteral("/hypr/looknfeel.lua"),
             omarchy + QStringLiteral("/default/hypr/looknfeel.lua")};
@@ -132,9 +125,9 @@ void Theme::watch()
     const QString colours = m_themePath + QStringLiteral("/colors.toml");
     if (QFile::exists(colours))
         m_watcher.addPath(colours);
-    const QFileInfo pointer(m_themePath);
-    if (pointer.dir().exists())
-        m_watcher.addPath(pointer.absolutePath());
+    const QString pointer = typedDirectory(m_themePath, nullptr);
+    if (QFileInfo(pointer).isDir())
+        m_watcher.addPath(pointer);
     for (const QString &looknfeel : std::as_const(m_roundingPaths)) {
         if (QFile::exists(looknfeel))
             m_watcher.addPath(looknfeel);

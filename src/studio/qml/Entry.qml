@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import "Focus.js" as Focus
 import omafiles
 
 // The one text box in the window. The path bar and the filter bar are both
@@ -12,15 +13,23 @@ import omafiles
 Rectangle {
     id: box
 
+    readonly property Item focusTarget: entry
     property alias text: entry.text
+    property Item nextFocus: null
+    property Item previousFocus: null
     property string lead: ""
     property string placeholder: ""
     signal accepted(string text)
     signal cancelled
 
-    function focusEntry() {
+    // Everything selected, or the first `upTo` characters: a rename offers the
+    // stem and leaves the extension, which is the part nobody meant to retype.
+    function focusEntry(upTo) {
         entry.forceActiveFocus()
-        entry.selectAll()
+        if (upTo === undefined || upTo < 0 || upTo >= entry.text.length)
+            entry.selectAll()
+        else
+            entry.select(0, upTo)
     }
 
     implicitHeight: 26
@@ -46,6 +55,10 @@ Rectangle {
 
     TextInput {
         id: entry
+        activeFocusOnTab: true
+        Keys.onTabPressed: function (event) { Focus.move(event, box.nextFocus, box.previousFocus) }
+        Keys.onBacktabPressed: function (event) { Focus.move(event, box.previousFocus) }
+        persistentSelection: true
         anchors.fill: parent
         anchors.leftMargin: box.lead === "" ? 9 : leadMark.width + 15
         anchors.rightMargin: 9

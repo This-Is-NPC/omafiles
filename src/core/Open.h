@@ -5,10 +5,20 @@
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
+#include <QVector>
 
 #include <functional>
 
 namespace omafiles {
+
+/// The directories `PATH` names, or glibc's `execvp` default where it is unset.
+/// An entry that is not UTF-8 is skipped: it names no directory here.
+QStringList executableDirs();
+/// The user and system XDG data directories, in desktop search order.
+QStringList desktopDataDirs();
+/// `name` as a runnable regular file on `PATH`, the way `execvp` finds it, or
+/// empty.
+QString findExecutable(const QString &name);
 
 struct OpenPlan {
     QString program;
@@ -28,33 +38,94 @@ struct OpenPlan {
 bool planOpen(const QString &path, OpenPlan *plan, QString *error,
               PathState *state = nullptr);
 
+/// One application the desktop would let a file be opened with.
+struct OpenApp {
+    /// The absolute path of the `.desktop` entry, which is what launches it and
+    /// what names it: two applications can share a `Name`, and the entry cannot
+    /// be shared.
+    QString desktopFile;
+    QString name;
+};
+
 /// One request to hand a path to somebody else's program.
+///
+/// `path` is the file for every kind but `Terminal` and `Script`, where it is
+/// the directory the program is to start in. `application` is the `.desktop`
+/// entry `OpenWith` picked, or the script `Script` runs, and empty for every
+/// other kind. `arguments` is what a script is handed: the paths it is about.
 struct OpenRequest {
-    enum Kind { Open, Share };
+    enum Kind { Open, Share, Terminal, Editor, OpenWith, Script, SetDirectoryDefault };
     Kind kind = Open;
+    QString path;
+    QString application;
+    QStringList arguments;
+};
+
+/// One program of the person's own, kept where the views are kept.
+///
+/// `$XDG_CONFIG_HOME/omafiles/scripts/` holds them, one executable each, and
+/// the name is the file name: what the menu says and what they are found by.
+/// A script is run with the paths it was chosen over as its arguments and the
+/// folder they are in as its working directory -- the two facts a shell
+/// script wants and nothing it has to parse.
+struct UserScript {
+    QString name;
     QString path;
 };
 
+QString scriptsDirectory();
+/// Every executable in the scripts directory, by name. Read on every call:
+/// a script dropped into the folder is there the next time the menu opens.
+QVector<UserScript> userScripts();
+bool runUserScript(const QString &script, const QStringList &paths, const QString &directory,
+                   QString *error);
+
 /// The one door out of omafiles.
 ///
-/// `openLocalPath` and `shareLocalPath` are the only two calls that start a
-/// program of the desktop's choosing, and both of them go through here. It is a
-/// seam so that a caller can be handed the request as a value instead of a
-/// running browser -- which is what the studio test suite does, before `main`,
-/// for all of its cases at once.
+/// `openLocalPath`, `shareLocalPath`, `openTerminalIn` and `openInEditor` are
+/// the only calls that start a program of the desktop's choosing, and all of
+/// them go through here. It is a seam so that a caller can be handed the request
+/// as a value instead of a running browser -- which is what the studio test
+/// suite does, before `main`, for all of its cases at once.
 ///
-/// One function and not two, so there is no way to redirect `open` and leave
-/// `share` pointed at the desktop. A test that steers around the call by hand
-/// only protects the cases that remember to.
+/// One function and not four, so there is no way to redirect `open` and leave
+/// the other three pointed at the desktop. A test that steers around the call by
+/// hand only protects the cases that remember to.
 using Launcher = std::function<bool(const OpenRequest &request, QString *error)>;
 
 /// Installs `launcher` and returns the one it replaced, so a caller can put back
 /// what it found. An empty `launcher` restores the desktop.
 Launcher setLauncher(Launcher launcher);
 
+bool setDirectoryDefault(QString *error);
+
 bool openLocalPath(const QString &path, QString *error);
 bool canShareLocalSend();
 bool shareLocalPath(const QString &path, QString *error);
+
+/// Whether there is a terminal on this machine to open a folder in, and an
+/// editor to hand a file to. Asked before the entry is drawn rather than after
+/// it is chosen: a menu item that can only ever fail is worse than no item.
+bool canOpenTerminal();
+bool canOpenInEditor();
+bool openTerminalIn(const QString &directory, QString *error);
+bool openInEditor(const QString &path, QString *error);
+
+/// Every application registered for what `path` is, the default one first.
+///
+/// The desktop's own answer, read where the desktop keeps it: the association
+/// lists in `mimeapps.list` and the `mimeinfo.cache` each applications
+/// directory carries. Not `gio mime`, whose output is prose with translated
+/// labels in it -- a list parsed out of that is a list that empties itself on a
+/// machine running in another language.
+QVector<OpenApp> applicationsFor(const QString &path);
+
+/// Whether an application can be started by its entry at all, which is `gio`
+/// being installed -- the same glib2 `trash` already needs.
+bool canOpenWithApp();
+bool openWithApp(const QString &path, const QString &desktopFile, QString *error);
+
+/// The plan as a command line somebody can paste.
 QString formatOpenPlan(const OpenPlan &plan);
 
 } // namespace omafiles

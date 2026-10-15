@@ -10,12 +10,12 @@ import omafiles
 // of the panel is that you do not have to widen a column, switch to the details
 // view, or open the file to read it.
 //
-// Nothing here takes the keyboard. It is a readout, and a Tab stop that only
-// ever reports is a Tab stop in the way of the next one.
+// Readouts do not take Tab; permission bits and tag actions do.
 Item {
     id: details
 
     property var entry: ({})
+    signal tagActivated(string tag)
     readonly property bool has: entry && entry.path !== undefined
 
     implicitHeight: body.implicitHeight
@@ -120,6 +120,40 @@ Item {
                 font.pixelSize: 11
             }
 
+            // The two facts a permissions dialog exists for, read and set here
+            // instead: whose it is, and what they and everyone else may do.
+            // Yours is `you`, and only somebody else's names the user and
+            // the group -- the question the line answers is whether it is
+            // yours, and a name you would have to recognise as your own is
+            // a slower way of saying so.
+            Label { quiet: true; text: "owner"; visible: ownerValue.visible }
+            Label {
+                id: ownerValue
+                width: body.width - 58
+                visible: details.has && details.entry.owner !== ""
+                text: !details.has ? ""
+                    : details.entry.mine ? "you"
+                    : details.entry.owner + " · " + details.entry.group
+                font.pixelSize: 11
+            }
+
+            // A click on a bit runs `chmod` on the row. Greyed where the row is
+            // not yours, since only the owner or root may; and on a link, whose
+            // bits are the target's and which `chmod` refuses to change through.
+            Label { quiet: true; text: "mode"; visible: modeValue.visible }
+            ModeBits {
+                id: modeValue
+                objectName: "detailsMode"
+                visible: details.has && details.entry.mode !== ""
+                value: details.has && details.entry.permissions !== undefined
+                       ? details.entry.permissions : 0
+                editable: details.has && details.entry.mine === true
+                          && details.entry.link !== true
+                onToggled: function (value) {
+                    IndexModel.changeMode([details.entry.path], modeValue.octalOf(value))
+                }
+            }
+
             Label { quiet: true; text: "marked"; visible: markValue.visible }
             Label {
                 id: markValue
@@ -150,8 +184,12 @@ Item {
 
                 Repeater {
                     model: details.has ? details.entry.tags : []
-                    Rectangle {
+                    FocusableControl {
                         id: tagChip
+                        objectName: "detailsTagChip"
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Edit tag " + tagChip.modelData
+                        onActivated: details.tagActivated(tagChip.modelData)
                         required property string modelData
                         height: 18
                         width: mark.implicitWidth + 10

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Push gate — installed by `mise run hooks:install`.
-# Execs `.scripts/verify.sh`, same definition of green as pre-commit.
+# Execs `scripts/check.sh`, same definition of green as pre-commit.
 # Skips when only deletions are pushed. Bypass: `git push --no-verify`.
 set -uo pipefail
 
@@ -26,18 +26,18 @@ if [ "$publishing" -eq 0 ]; then
   exit 0
 fi
 
-if [ ! -x ".scripts/verify.sh" ]; then
-  echo "pre-push: PUSH REFUSED — .scripts/verify.sh is missing or not executable." >&2
+if [ ! -x "scripts/check.sh" ]; then
+  echo "pre-push: PUSH REFUSED — scripts/check.sh is missing or not executable." >&2
   exit 1
 fi
 
-echo "pre-push: running \`.scripts/verify.sh\` — the push depends on it."
+echo "pre-push: running \`scripts/check.sh\` — the push depends on it."
 started=$SECONDS
-.scripts/verify.sh
+scripts/check.sh
 status=$?
 elapsed=$((SECONDS - started))
 if [ "$status" -ne 0 ]; then
-  echo "pre-push: PUSH REFUSED — the gate failed in ${elapsed}s. Reproduce with: .scripts/verify.sh" >&2
+  echo "pre-push: PUSH REFUSED — the gate failed in ${elapsed}s. Reproduce with: scripts/check.sh" >&2
   exit 1
 fi
 echo "pre-push: the gate passed in ${elapsed}s — push cleared."

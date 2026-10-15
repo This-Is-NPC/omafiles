@@ -1,25 +1,134 @@
 #include "Workspace.h"
 
-#include <QDir>
+#include "Paths.h"
+
 #include <QFileInfo>
+#include <QSettings>
 
 namespace omafiles {
+namespace {
+QString statePath()
+{
+    return stateHome() + QStringLiteral("/omafiles/studio.conf");
+}
+
+const QString kColumnsKey = QStringLiteral("details/columns");
+
+// Resolved by the kernel where it will, and otherwise kept as typed: a folder
+// that is gone or shut is still where the tab is standing.
+QString standingPath(const QString &path)
+{
+    const QString typed = path.isEmpty() ? homeDirectory() : path;
+    const QString real = realPath(typed, nullptr);
+    return real.isEmpty() ? anchoredPath(typed) : real;
+}
+} // namespace
 
 TabState::TabState(QString kind, QObject *parent)
     : QObject(parent)
     , m_kind(std::move(kind))
-    , m_cwd(QDir::homePath())
+    , m_cwd(standingPath(homeDirectory()))
 {
 }
 
 QString TabState::title() const
 {
+    if (m_kind == QLatin1String("trash"))
+        return QStringLiteral("Trash");
     if (m_kind == QLatin1String("graph"))
         return QStringLiteral("Graph");
+    if (m_kind == QLatin1String("tags")) {
+        if (m_untagged)
+            return QStringLiteral("(no tag)");
+        if (m_facets.isEmpty())
+            return QStringLiteral("Tags");
+        // Sorted, not in the order they were walked. The two orders name the
+        // same files, and a title that changed with the route taken to it would
+        // make one question look like two.
+        QStringList sorted = m_facets;
+        sorted.sort();
+        return QStringLiteral("#") + sorted.join(QStringLiteral("/#"));
+    }
+    if (m_recent)
+        return QStringLiteral("(recent)");
+    if (!m_pattern.isEmpty())
+        return m_pattern;
     if (!m_selectedTag.isEmpty())
         return QStringLiteral("#") + m_selectedTag;
     const QString name = QFileInfo(m_cwd).fileName();
     return name.isEmpty() ? m_cwd : name;
+}
+
+void TabState::setPattern(const QString &pattern)
+{
+    if (m_pattern == pattern)
+        return;
+    m_pattern = pattern;
+    setMarked({});                           // the listing changed under them
+    emit patternChanged();
+    emit titleChanged();
+}
+
+void TabState::setRecent(bool recent)
+{
+    if (m_recent == recent)
+        return;
+    m_recent = recent;
+    setMarked({});
+    emit recentChanged();
+    emit titleChanged();
+}
+
+// Marks end with the listing they were made in, for the reason `setCwd` gives:
+// a mark you cannot see is one a destructive command would still act on.
+void TabState::setFacets(const QStringList &facets)
+{
+    if (m_facets == facets)
+        return;
+    m_facets = facets;
+    setMarked({});
+    // Walking into a tag is walking out of the complement: a file that carries
+    // `#work` is not one of the files carrying nothing, so the two can never be
+    // on at once.
+    m_untagged = false;
+    emit facetsChanged();
+    emit titleChanged();
+}
+
+void TabState::setUntagged(bool untagged)
+{
+    if (m_untagged == untagged)
+        return;
+    m_untagged = untagged;
+    setMarked({});                           // the listing changed under them
+    if (untagged)
+        m_facets.clear();
+    emit facetsChanged();
+    emit titleChanged();
+}
+
+// Walking into a tag you are already under is not a move, and the listing
+// would not change: the same files answer `#work` and `#work/#work`.
+void TabState::enterFacet(const QString &tag)
+{
+    if (tag.isEmpty() || m_facets.contains(tag))
+        return;
+    setFacets(m_facets + QStringList{tag});
+}
+
+void TabState::leaveFacet()
+{
+    // Out of the complement is back to the vocabulary, the same one step up
+    // that leaving a tag is.
+    if (m_untagged) {
+        setUntagged(false);
+        return;
+    }
+    if (m_facets.isEmpty())
+        return;
+    QStringList rest = m_facets;
+    rest.removeLast();
+    setFacets(rest);
 }
 
 void TabState::setSelectedTag(const QString &tag)
@@ -44,9 +153,10 @@ void TabState::setSelectedNode(const QString &id)
 // every file manager with a selection treats walking into another directory.
 void TabState::setCwd(const QString &path)
 {
-    if (m_cwd == path)
+    const QString next = standingPath(path);
+    if (next.isEmpty() || m_cwd == next)
         return;
-    m_cwd = path;
+    m_cwd = next;
     setMarked({});
     emit cwdChanged();
     emit titleChanged();
@@ -75,6 +185,24 @@ void TabState::setFilter(const QString &text)
         return;
     m_filter = text;
     emit filterChanged();
+}
+
+void TabState::setCriteria(const QVariantMap &criteria)
+{
+    if (m_criteria == criteria)
+        return;
+    m_criteria = criteria;
+    emit criteriaChanged();
+}
+
+void TabState::toggleCriterion(const QString &key, const QVariant &value)
+{
+    QVariantMap next = m_criteria;
+    if (next.value(key) == value)
+        next.remove(key);
+    else
+        next.insert(key, value);
+    setCriteria(next);
 }
 
 void TabState::setViewMode(const QString &mode)
@@ -173,6 +301,14 @@ void TabState::toggleSortDirection()
     emit sortChanged();
 }
 
+void TabState::setLocation(const QString &directory, const QString &cursor)
+{
+    setCursorPath(cursor);
+    setShowHidden(QFileInfo(cursor).fileName().startsWith(QLatin1Char('.')));
+    if (!directory.isEmpty())
+        setCwd(directory);
+}
+
 PaneState::PaneState(const QString &kind, QObject *parent)
     : QObject(parent)
 {
@@ -209,9 +345,10 @@ void PaneState::setCurrentIndex(int index)
     emit currentChanged();
 }
 
-TabState *PaneState::addTab(const QString &kind)
+TabState *PaneState::addTab(const QString &kind, const QString &directory, const QString &cursor)
 {
     auto *tab = new TabState(kind, this);
+    tab->setLocation(directory, cursor);
     m_tabs.append(tab);
     m_current = m_tabs.size() - 1;
     emit tabsChanged();
@@ -227,13 +364,11 @@ void PaneState::closeTab(int index)
         return;
     TabState *tab = m_tabs.takeAt(index);
     tab->deleteLater();
-    const int before = m_current;
     if (m_current >= m_tabs.size())
         m_current = m_tabs.size() - 1;
     emit tabsChanged();
     // The tab under the cursor is a different object now even when the index
     // did not move, so the view has to be told either way.
-    Q_UNUSED(before)
     emit currentChanged();
 }
 
@@ -251,6 +386,56 @@ Workspace::Workspace(QObject *parent)
     : QObject(parent)
 {
     adopt(new PaneState(QStringLiteral("files"), this), 0);
+
+    const QSettings state(statePath(), QSettings::IniFormat);
+    const QStringList fields = columnFields();
+    if (!state.contains(kColumnsKey)) {
+        m_columns = {QStringLiteral("tags"), QStringLiteral("type"), QStringLiteral("size"),
+                     QStringLiteral("mtime")};
+        return;
+    }
+    // A hand-edited file may name a field twice or one that does not exist.
+    for (const QString &field : state.value(kColumnsKey).toStringList()) {
+        if (fields.contains(field) && !m_columns.contains(field))
+            m_columns.append(field);
+    }
+}
+
+QStringList Workspace::columnFields()
+{
+    return {QStringLiteral("tags"), QStringLiteral("type"), QStringLiteral("size"),
+            QStringLiteral("mtime"), QStringLiteral("owner"), QStringLiteral("mode")};
+}
+
+void Workspace::setColumns(const QStringList &columns)
+{
+    if (m_columns == columns)
+        return;
+    m_columns = columns;
+    QSettings state(statePath(), QSettings::IniFormat);
+    state.setValue(kColumnsKey, m_columns);
+    emit columnsChanged();
+}
+
+// A column switched on joins at the right end.
+void Workspace::toggleColumn(const QString &field)
+{
+    if (!columnFields().contains(field))
+        return;
+    QStringList next = m_columns;
+    if (!next.removeOne(field))
+        next.append(field);
+    setColumns(next);
+}
+
+void Workspace::moveColumn(const QString &field, int delta)
+{
+    const int from = m_columns.indexOf(field);
+    if (from < 0)
+        return;
+    QStringList next = m_columns;
+    next.move(from, qBound(0, from + delta, int(next.size()) - 1));
+    setColumns(next);
 }
 
 // Every pane reports its current tab upward, so `currentTab` is correct no
@@ -283,6 +468,12 @@ PaneState *Workspace::paneAtIndex(int index) const
     return m_panes.at(index);
 }
 
+TabState *Workspace::tabAtIndex(int paneIndex, int tabIndex) const
+{
+    PaneState *pane = paneAtIndex(paneIndex);
+    return pane ? pane->tabList().value(tabIndex) : nullptr;
+}
+
 void Workspace::setFocusedPane(int index)
 {
     if (index < 0 || index >= m_panes.size() || index == m_focused)
@@ -311,6 +502,99 @@ void Workspace::addTabIn(int paneIndex, const QString &kind)
     m_panes.at(paneIndex)->addTab(kind);
     setFocusedPane(paneIndex);
     emit currentTabChanged();
+}
+
+void Workspace::openTabIn(int paneIndex, const QString &kind, const QString &directory)
+{
+    if (paneIndex < 0 || paneIndex >= m_panes.size())
+        return;
+    m_panes.at(paneIndex)->addTab(kind, directory);
+    setFocusedPane(paneIndex);
+    emit currentTabChanged();
+}
+
+void Workspace::splitWith(const QString &kind, const QString &directory)
+{
+    splitRight(kind);
+    PaneState *pane = paneAtIndex(m_focused);
+    TabState *tab = pane ? pane->current() : nullptr;
+    if (tab && !directory.isEmpty()) {
+        tab->setCwd(directory);
+        emit currentTabChanged();
+    }
+}
+
+namespace {
+
+// Everything a tab is showing, minus the marks.
+//
+// The marks name a set somebody assembled by hand to act on, and a second copy
+// of it in a second tab is a second chance to act on it by accident.
+void copyView(const TabState &from, TabState *to)
+{
+    to->setCwd(from.cwd());
+    to->setFacets(from.facets());
+    to->setUntagged(from.untagged());
+    to->setSelectedTag(from.selectedTag());
+    to->setFilter(from.filter());
+    to->setCriteria(from.criteria());
+    to->setViewMode(from.viewMode());
+    to->setShowHidden(from.showHidden());
+    to->setSortRole(from.sortRole());
+    to->setSortAscending(from.sortAscending());
+}
+
+} // namespace
+
+void Workspace::duplicateTab(int paneIndex, int tabIndex)
+{
+    PaneState *pane = paneAtIndex(paneIndex);
+    if (!pane)
+        return;
+    TabState *from = pane->tabList().value(tabIndex);
+    if (!from)
+        return;
+    if (TabState *tab = pane->addTab(from->kind()))
+        copyView(*from, tab);
+    setFocusedPane(paneIndex);
+    emit currentTabChanged();
+}
+
+// Backwards, so that closing one does not renumber the ones still to close.
+void Workspace::closeTabsAfter(int paneIndex, int tabIndex)
+{
+    PaneState *pane = paneAtIndex(paneIndex);
+    if (!pane || tabIndex < 0)
+        return;
+    for (int i = pane->tabCount() - 1; i > tabIndex; --i)
+        pane->closeTab(i);
+}
+
+// Made again in the other pane and then closed here, rather than handed over: a
+// `TabState` is a child of the pane that owns it. The pane it leaves has to keep
+// a tab -- `closeTab` refuses the last one -- so a pane showing only this tab
+// keeps it, and the entry that offers this is drawn only where it can be taken.
+void Workspace::moveTabToOtherPane(int paneIndex, int tabIndex)
+{
+    PaneState *pane = paneAtIndex(paneIndex);
+    PaneState *destination = otherPane(paneIndex);
+    if (!pane || !destination || pane->tabCount() < 2)
+        return;
+    TabState *from = pane->tabList().value(tabIndex);
+    if (!from)
+        return;
+    if (TabState *tab = destination->addTab(from->kind()))
+        copyView(*from, tab);
+    pane->closeTab(tabIndex);
+    setFocusedPane(m_panes.indexOf(destination));
+    emit currentTabChanged();
+}
+
+PaneState *Workspace::otherPane(int paneIndex) const
+{
+    if (m_panes.size() < 2 || paneIndex < 0 || paneIndex >= m_panes.size())
+        return nullptr;
+    return m_panes.at((paneIndex + 1) % m_panes.size());
 }
 
 void Workspace::closeTab(int paneIndex, int tabIndex)

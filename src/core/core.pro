@@ -16,7 +16,12 @@ HEADERS += \
     Store.h \
     Xattr.h \
     Paths.h \
-    Open.h
+    Roots.h \
+    Names.h \
+    View.h \
+    Open.h \
+    Recent.h \
+    Glob.h
 
 SOURCES += \
     Tag.cpp \
@@ -24,4 +29,15 @@ SOURCES += \
     Store.cpp \
     Xattr.cpp \
     Paths.cpp \
-    Open.cpp
+    Roots.cpp \
+    Names.cpp \
+    View.cpp \
+    Open.cpp \
+    Recent.cpp \
+    Glob.cpp
+
+HEADERS += Trash.h
+SOURCES += Trash.cpp
+
+HEADERS += CpuBudget.h
+SOURCES += CpuBudget.cpp

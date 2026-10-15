@@ -3,19 +3,14 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import omafiles
 
-// A heading in the details table, which is also the control that sorts by it.
+// A heading in the details table: a click sorts by it, a right-click asks for
+// the column menu.
 //
-// Every heading is flush left, `size` included, and so is every cell under it.
-// The convention is the other way -- a numeric column and its heading both go
-// right, so the digits line up on their units -- but here that reads as one
-// column out of five refusing to start where the rest do, and a table you
-// notice the alignment of is a table arguing with the names in it.
+// Every heading is flush left, `size` included, and so is every cell under it,
+// so no one column starts somewhere the rest do not.
 //
-// Not a Tab stop. The five fields already have five chips at the top of the
-// pane and two keys (`s` and `S`), all reachable from the keyboard; putting the
-// headings in the ring as well would add five more stops that do exactly what
-// the five before them did. A heading is the mouse's way in, and the arrow on
-// it is how both ways say which field is in charge.
+// Not a Tab stop: sorting has its chips and `s` / `S`, and the column menu is in
+// the command palette.
 Item {
     id: head
 
@@ -24,6 +19,7 @@ Item {
     property string sortRole: ""
     property bool ascending: true
     signal picked
+    signal menuAsked(real x, real y)
 
     readonly property bool active: head.role !== "" && head.role === head.sortRole
 
@@ -53,5 +49,9 @@ Item {
     TapHandler {
         enabled: head.role !== ""
         onTapped: head.picked()
+    }
+    TapHandler {
+        acceptedButtons: Qt.RightButton
+        onTapped: function (point) { head.menuAsked(point.position.x, point.position.y) }
     }
 }

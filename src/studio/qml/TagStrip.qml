@@ -22,6 +22,7 @@ Item {
     objectName: "tagStrip"
 
     property var tags: []
+    signal activated(string tag)
     /// The widest this is allowed to be. The row decides it, because the row is
     /// what has to give up the space.
     property real limit: 240
@@ -172,6 +173,7 @@ Item {
             border.color: Theme.fill(Theme.accent, 0.35)
             Accessible.role: Accessible.StaticText
             Accessible.name: "+" + strip.hiddenCount + " more tags"
+            TapHandler { onTapped: strip.activated("") }
 
 
             Text {
@@ -191,6 +193,7 @@ Item {
 
             Rectangle {
                 id: chip
+                objectName: "tagChip"
                 required property int index
                 required property string modelData
                 readonly property bool shown: strip.hiddenCount === 0
@@ -203,6 +206,9 @@ Item {
                 border.width: 1
                 border.color: Theme.fill(Theme.accent, 0.35)
                 opacity: shown ? 1 : 0
+                Accessible.role: Accessible.Button
+                Accessible.name: "Edit tag " + chip.modelData
+                TapHandler { enabled: chip.shown; onTapped: strip.activated(chip.modelData) }
 
                 Text {
                     id: mark
@@ -229,6 +235,7 @@ Item {
             border.color: Theme.fill(Theme.accent, 0.35)
             Accessible.role: Accessible.StaticText
             Accessible.name: "+" + strip.hiddenCount + " more tags"
+            TapHandler { onTapped: strip.activated("") }
 
 
             Text {

@@ -6,13 +6,37 @@ Tag files and list them by tag.
 
 Exit codes: 0, the run did what was asked; 1, a refusal, a usage error, or an answer the run could not finish; 2, a path that is not there; 3, the index could not be read or written.
 
-That index is one jsonl file, `$XDG_DATA_HOME/omafiles/index.jsonl`, or `~/.local/share/omafiles/index.jsonl` where the variable is unset, and a writer holds `index.jsonl.lock` beside it from before its read until after its commit -- git's discipline for its own index. Readers take no lock and never wait for one. A second writer waits five seconds for the first, then says `store: cannot lock` and exits 3 rather than committing over a copy that went stale while it waited. A line that will not parse is exit 3 as well, from every verb including the ones that only read: `store: malformed jsonl at <index>:<line>` names the line, and no verb here repairs it, because a rebuild guessing at a line it cannot read would be inventing rows. Edit that line, or delete it. `open` and `completions` do not open the index -- one launches a file, the other prints a shell script -- so a malformed line is not theirs to name. A verb that can refuse a named path by looking at the filesystem does that before it opens the index, so a missing path is still exit 2 even when the jsonl would not parse; the same verb handed a path that is there opens the index and then names the line. `__complete` loads the index for tags, and a store it cannot parse is no opinion -- empty stdout, exit 1 -- so the shell falls back to filenames rather than offering `store: malformed jsonl` as a candidate. The tags have a second copy on the files themselves, so emptying the file entirely and running `reindex` over the trees it covered writes back every row whose file still carries its `user.omafiles.tags`.
+A stdout that cannot be written is `<verb>: write error`, `omafiles: write error` where no verb was named, and exit 1, after the work as well as before it: a write that committed stands, and only its receipt was lost. That is coreutils' `close_stdout` -- `mv -v a b >/dev/full` moves the file and exits 1.
 
-The third reading of 1 is the one with no obvious home. When the system will not describe a path -- a directory somebody chmod'd shut, an unmounted share, an unplugged drive -- `ls`, `tags` and `recent` skip that row, name it on stderr and exit 1, because a list one row short is not the answer that was asked for. /usr/bin/ls exits 2 and find exits 1 over a directory that will not open; neither of them reports an empty one. `--quiet` takes the note away and never the status. A verb handed such a path answers the same way whatever the path is to it: an operand of `rm`, `trash`, `mv`, `cp`, `open` or any `tag` verb, the `[dir]` that `ls`, `tags`, `verify`, `reindex` or `prune` is scoped to, the parent directory `mv` and `cp` are asked to land a file in, or the dump `import` and `batch` read. Each says what the system said and exits 1, because 2 is a path that is not there and this is a path nobody may look at -- /usr/bin/rm exits 1 over the same file. A list holding one of each reports the missing path, that being the settled answer. What `prune` does with a row it stepped over is the other case and not this one: its output is a receipt for what it dropped, it dropped everything it decided to drop, and such a row is reported with the run still complete.
+A flag that takes a value takes it as the next word or attached with `=`, `--tag=work`, the way GNU `getopt_long`, git and clap all do; the attached form is for the long flags only. `--tag`, `--any` and `--ext` may be given more than once and each adds one -- except `--tag` on `has`, whose one tag is the question; every other flag that takes a value, and that one, is refused when given twice, rather than the second silently replacing the first. A lone `-` is an operand, never a flag: standard input where a verb reads a file, POSIX Utility Syntax Guideline 13. A value given empty is still given: it reaches the verb's own check rather than reading as the flag left out, so `tag cp --from ''` is a path that is not there. A refusal names what was typed on one line: an empty value or operand as `''`, as coreutils `ls ''` does, one with a space at an end between single quotes, and a control character -- C0, DEL and C1 -- or a byte that is not UTF-8 as `\xHH`, with a tab `\t`, a newline `\n` and a backslash doubled, so `x<CR>` is `x\x0d`. A global is one word, spelled whole: `-jn` and `--json=1` before the verb are refused as flags, never read as a verb.
 
-A tag is `[a-z0-9][a-z0-9-]{0,63}` -- lower case letters, digits and hyphens, no leading hyphen, 64 characters at most. What is typed is trimmed and folded to lower case before anything else sees it, so `Work`, `WORK` and ` work ` are three spellings of the one tag `work`, and `work` is what the row holds, what `tags` prints, what completion offers and what `ls --tag Work` matches. A word no folding turns into that shape is refused rather than bent into one: `--tag 'my tag'`, `--tag under_score` and an `import` whose dump holds `Bad Tag` each name the word and exit 1. The rule holds wherever a tag is typed or read -- `ls`, `has`, every `tag` verb, and the dumps `import` merges.
+`OMAFILES_JSON`, `OMAFILES_DRY_RUN` and `OMAFILES_YES` stand in for `--json`, `--dry-run` and `--yes`. `1`, `true`, `yes` and `on` are on, and `0`, `false`, `no`, `off` and an empty value are off, in any case. Anything else is refused before any verb runs, naming the variable, exit 1 -- git's `git_env_bool` refuses one the same way -- because `OMAFILES_DRY_RUN=ture` read as off would write.
 
-A symlink is the link it is to the verbs that act on a name, and its target to the verbs that read through it. `rm`, `trash` and `mv` act on the name, the way POSIX `unlink()` and `rename(2)` do, so a link pointing nowhere is a path they act on and a destination they will not write over. `cp` copies the bytes at the far end, and a `user.*` xattr cannot be set on a symlink at all, so `cp` and every `tag` verb mean the file the link points at and nothing else. Handed one that dangles they say the target is not there, naming both ends, and exit 2 -- rather than `path missing` about the link, which is false of a name `ls -l` lists and `rm` removes.
+The window's internal OMAFILES_STUDIO_JOURNAL=1 protocol wraps --json operation receipts (except dry runs) as result and journal. The journal contains scoped beforeRows/afterRows, base64 beforeValues/afterValues of on-disk tags, and an error string. Before-state is captured under the index writer lock. Other values preserve ordinary receipts. This transports completed work to the window; it does not persist history.
+
+Only `ENOENT` is a path that is not there. `a/b` where `a` is a file says the system's `Not a directory` and exits 1, the way coreutils does: the name was never asked about, because the system stopped at `a`. The same rule reads the files this program keeps: an index, a declarations file, a view file, a list of names, a sweep receipt or the desktop's recent list that is not there is one nothing has written yet, and one that is there and will not open -- a directory chmod'd shut -- is said, with the system's reason, and never read as empty. The index, the declarations and the views are exit 3 (`store: cannot read`, `roots: cannot read`, `views: cannot read`); the rest are exit 1. A kept file that is not a regular file is refused at once and never read, at the same exit status: a fifo says `is not a regular file`, and a directory says the system's own `Is a directory`. An operand or a `[dir]` the system refuses, or that is not there, is said with the verb first: `rm: a/b: Permission denied`, `ls: path missing: x`. The file `batch` or `import` is named may be a fifo, so `batch <(…)` works, and one that is not there is `batch: cannot read nosuch: No such file or directory`, exit 2. A stdin that is a directory, or closed, is `cannot read stdin: <reason>`, exit 1, and so is any operand, `[dir]` included, that reaches a closed stdin -- `/dev/stdin`, `/dev/fd/0`, `/proc/self/fd/0` -- as `-` does.
+
+A path here is text and a filename is bytes. An argument, a `batch` line, or the bytes that decide a base directory -- an `$XDG_*_HOME`, or `$HOME` for each of those that is unset or relative -- that are not valid UTF-8 cannot be spelled as text without turning into U+FFFD, which is the name of some other file -- so it is refused, named with each such byte written `\xHH`, exit 1, and nothing runs. A `batch` line holding a NUL is refused the same way. A directory entry with such a name is reported the same way by the verbs that walk, and an entry in the desktop's recent list with one is left out of `recent --desktop`. A name may begin with U+FEFF, which is valid UTF-8 like any other character -- a row stored under a root and a root's `--check` included; only a byte order mark at the very start of an `import` dump or a `batch` file is skipped, as Python's `utf-8-sig` reads a file and RFC 8259 8.1 allows. One that begins a later line of a dump, or any line of the index, the declarations or the views, is refused with the line named: this program never writes one there, and Qt's JSON parser would skip it without a word. Anywhere else it is text.
+
+Text output is one path to a line, and a newline in a name is printed as it is, so such a name reads as two lines there; a script that can meet one reads `--json`.
+
+The current directory is an input the way `$HOME` is: one that was deleted, or whose bytes are not valid UTF-8, is refused before any verb runs -- with the system's reason, or each such byte written `\xHH` -- exit 1, because a relative path and every defaulted `[dir]` are found through it. git refuses to run from a directory it cannot read for the same reason. A relative `$XDG_*_HOME` is ignored and the default under `$HOME` is used, as the XDG Base Directory spec requires; where that default is used, a `$HOME` that is unset or relative is refused before any verb runs, `HOME is not set` or `HOME is not an absolute path`, exit 1, because a base directory that moves with the current directory is no base.
+
+A command offered to paste -- the line `open --dry-run` prints, and the `omafiles tag clear -- <path>` that `verify`, `reindex` and the `tag` verbs name -- quotes each word a shell would split or expand, the way git's `sq_quote` and Python's `shlex.quote` do, with a control character as `$'\xHH'` between the quotes, coreutils' shell-escape style, so the command stays one line. The names a removal asks about are quoted the same way, as `rm -i` quotes one.
+
+That index is one jsonl file, `$XDG_DATA_HOME/omafiles/index.jsonl`, or `~/.local/share/omafiles/index.jsonl` where the variable is unset, and a writer holds `index.jsonl.lock` beside it from before its read until after its commit -- git's discipline for its own index. A write that changes no row still takes the lock, because what it would change is decided under it, and then leaves the file as it was, the way git rewrites its index only when an entry changed: a `tag add` of a tag every path already holds rewrites nothing, and makes no index where there was none. Its receipt is the same rule: `--dry-run` prints the paths a run would change and `--json` the rows it changed -- a row, or the file's own copy of its tags -- so a path that already held what was asked is in neither. Readers take no lock and never wait for one. A second writer waits five seconds for the first, then says `store: cannot lock <index>: another writer holds it` and exits 3 rather than committing over a copy that went stale while it waited. A lock file the system will not let it make -- a directory nobody may write, a read-only mount -- is the same exit 3 with the system's reason instead, and it does not wait. An index that is there and may not be written -- a chmod 444 -- is found when the lock is taken, `store: cannot write <index>: Permission denied`, exit 3, before any file is touched. Every failed write of a file this program keeps names the system's own reason, `No space left on device` for a full disk. A lock file that names no process -- one some other program left there -- is exit 3 too once the five seconds are up, `a lock file is there that no omafiles wrote: <path>`, because no writer will ever give it back; Qt's `QLockFile`, which this uses, takes one older than thirty seconds as stale and replaces it. A line that will not parse is exit 3 as well, from every verb including the ones that only read: `store: malformed jsonl at <index>:<line>` names the line, and no verb here repairs it. A blank line is no row and is skipped. A line is malformed too when it holds what this program never writes: a tag not already in the tag shape -- `Bad Tag`, `UPPER`, an empty one -- a path holding a NUL or a lone surrogate, a path under no root that is not absolute or not clean (`//a/b/`), or a path under a root that is not a clean relative path inside it (`../x`). So is a row whose `tags` is missing or empty, out of order, or holding a tag twice -- the index writes a row's tags sorted and each once, and deletes a row that has none -- and a line that begins with a byte order mark. A key given twice keeps its last value, as jq, Python's `json` and `JSON.parse` read one and RFC 8259 leaves to the reader, and whitespace between the tokens is read as JSON reads it. So are two lines for one path, and the second is the one named: nothing says which of them is the row, because a rebuild guessing at a line it cannot read would be inventing rows. Edit that line, or delete it. `open`, `chmod` and `completions` do not open the index -- one launches a file, one changes a mode, the other prints a shell script -- and nor do `view`, `roots ls`, `roots add` and `sweep --status`, which read and write files of their own, so a malformed line is not theirs to name. The declarations are read by every verb but `completions`, `open` and `chmod` included, because they decide whether a path is on storage that is here -- see `roots`. A verb that can refuse a named path by looking at the filesystem does that before it opens the index, so a missing path is still exit 2 even when the jsonl would not parse; the same verb handed a path that is there opens the index and then names the line. `__complete` loads the index for tags, and a store it cannot parse is no opinion -- empty stdout, exit 1 -- so the shell falls back to filenames rather than offering `store: malformed jsonl` as a candidate. The tags have a second copy on the files themselves, so emptying the file entirely and running `reindex` over the trees it covered writes back every row whose file still carries its `user.omafiles.tags`.
+
+The third reading of 1 is the one with no obvious home. When the system will not describe a path -- a directory somebody chmod'd shut, an unmounted share, an unplugged drive -- `ls`, `tags` and `recent` skip that row, name it on stderr and exit 1, because a list one row short is not the answer that was asked for. /usr/bin/ls exits 2 and find exits 1 over a directory that will not open; neither of them reports an empty one. `--quiet` takes the note away and never the status. A verb handed such a path answers the same way whatever the path is to it: an operand of `rm`, `trash`, `mv`, `cp`, `chmod`, `open` or any `tag` verb, the `[dir]` that `ls`, `tags`, `verify`, `reindex` or `prune` is scoped to, the parent directory `mv` and `cp` are asked to land a file in, or the dump `import` and `batch` read. Each says what the system said and exits 1, because 2 is a path that is not there and this is a path nobody may look at -- /usr/bin/rm exits 1 over the same file. A list holding one of each reports the missing path, that being the settled answer. What `prune` does with a row it stepped over is the other case and not this one: its output is a receipt for what it dropped, it dropped everything it decided to drop, and such a row is reported with the run still complete.
+
+A tag is `[a-z0-9][a-z0-9-]{0,63}` -- lower case letters, digits and hyphens, no leading hyphen, 64 characters at most. What is typed is trimmed of spaces and tabs and its ASCII letters folded to lower case before anything else sees it, so `Work`, `WORK` and ` work ` are three spellings of the one tag `work`, and `work` is what the row holds, what `tags` prints, what completion offers and what `ls --tag Work` matches. A word no folding turns into that shape is refused rather than bent into one: `--tag 'my tag'`, `--tag under_score` and an `import` whose dump holds `Bad Tag` each name the word and exit 1. Only ASCII is folded: Unicode's case mapping reads the Kelvin sign U+212A as `k`, a second spelling of a tag that nobody could see, so it is refused like any other word outside the shape. The rule holds wherever a tag is typed or read -- `ls`, `has`, every `tag` verb, and the dumps `import` merges.
+
+A symlink is the link it is to the verbs that act on a name, and its target to the verbs that read through it. `rm`, `trash` and `mv` act on the name, the way POSIX `unlink()` and `rename(2)` do, so a link pointing nowhere is a path they act on and a destination they will not write over. `cp` copies the bytes at the far end, and a `user.*` xattr cannot be set on a symlink at all, so `cp` and every `tag` verb mean the file the link points at and nothing else. The file's own copy is read and written with `lgetxattr` and `lsetxattr`, so nothing is ever written through a link that has taken a resolved path's place. Handed one that dangles they say the target is not there, naming every link on the way to the end that is missing, and exit 2 -- rather than `path missing` about the link, which is false of a name `ls -l` lists and `rm` removes. `chmod` is neither: a link handed to it is refused, because chmod(2) would change the target and the name is what was pointed at.
+
+A path is resolved by the kernel as typed and never cleaned as text: `L/../x`, with `L` a symlink, is `x` beside the directory `L` leads to, POSIX pathname resolution. On a directory that folds case -- vfat, exfat, a casefold ext4 or tmpfs -- an operand spelled in another case, or by another name the directory resolves to the same file -- a vfat or exfat 8.3 short name such as `LONGFI~1.TXT`, a trailing dot, another Unicode normalization, or a full case fold such as `strasse` for `straße` on a casefold directory -- is the name the directory stores, told by the file's device and inode, the answer Darwin's realpath(3), Windows' GetFinalPathNameByHandle and Samba's mangled names give, so the rows follow the file whatever spelling it was typed in, and a hard link, which the directory lists, is a name of its own; a row or a declared root stored in the old case or the old normalization of a name another program re-cased there is that file's, and that directory's: every verb finds it by either spelling, `verify` and `prune` count it present, the next write of the index stores the row in the spelling the directory holds even where no tag changed, and `sweep` stores the root's; two rows that meet there are one, with the tags of both; and a row spelled in another case at the free destination of an `mv` or a `cp` names that destination, so landing there drops it as a stale row, where an entry of that directory shows it folds. That holds for the directory part of an `mv` or `cp` destination, for a symlink operand spelled through `L/..`, and for each hop a dangling link is named at alike: every one is named where the kernel looks for it. A link that leads nowhere is named hop by hop wherever it sits in a path -- `D2/x: D2 is a symlink to D, which is a symlink to …, which is not there` -- and so is the file `batch` or `import` is named. A path that `stat` reaches and `realpath` cannot name -- `/dev/stdin` fed by a pipe, a `/proc/<pid>/fd` link to a socket or a deleted file -- is `<path> is a pipe with no name on a filesystem`, or a socket, or a file, exit 1: it is there, and it has no path to store.
+
+A path that resolves through a symlink to a name that is not valid UTF-8, the file `batch` or `import` is named included, is refused, exit 1 -- `<path>: leads to <name>, which is not valid UTF-8`, each such byte written `\xHH` -- because the name it leads to could only be spelled as some other file. A walk that meets such a link names it: `reindex` says `it was not reindexed` and exits 1, `verify` reports it `unreadable`, and `sweep` counts it under `unreadable`.
+
+The files omafiles keeps -- the ones `rm` names -- are written by the verbs that keep them and by nothing else, as git leaves `.git` to itself: each is rewritten by renaming a new file over it, which would take a tag written there with it. So every `tag` verb that writes, `tag cp --from` included, refuses one it is handed, by any name, a hard link too, in the words `rm` uses -- `tag add: refusing <path>: omafiles keeps it`, exit 1 -- and a `batch` line that does takes the run back with nothing written; a dump row naming one is a row `import` refuses, naming its line; and a walk -- `reindex`, `sweep`, `verify`, `ls --untagged`, `ls --name` -- passes one by without a word, and a link to one with it.
 
 A dry run makes every refusal this program decides for itself -- a directory handed to `rm`, a `gio` that is not installed, a destination that already exists or whose parent directory does not, a folder asked to cross a filesystem. It does not guess at the system's own answers: whether a filesystem will take a `user.*` xattr write can only be found out by making the write, so `reindex --dry-run` over a file nobody may write prints the path and exits 0 where the real run exits 1. A dry run takes no write lock either: it commits nothing, so it runs wherever `ls` runs, including against an index directory nobody may write.
 
@@ -22,9 +46,9 @@ A dry run makes every refusal this program decides for itself -- a directory han
 ## Global Flags
 - **`-j --json`** — JSON on stdout.
 
-  One document per run and nothing else on stdout. An answer with nothing in it is `[]`, or an object holding an empty array, rather than no output at all. `export` is the exception in both directions: on its own it writes jsonl, one row to a line, which is many documents and not one, and `--json` is what turns it into the single array `import` also reads.
+  One document per run and nothing else on stdout. An answer with nothing in it is `[]`, or an object holding an empty array, rather than no output at all. `export` is the exception in both directions: on its own it writes jsonl, one row to a line, which is many documents and not one, and `--json` is what turns it into the single array `import` also reads. Its rows are the index's own lines, so a row under a declared root is `root` and a `path` relative to it -- see `export`.
 
-  A row is `path`, `tags` and `tagged`: the absolute path, its tags folded and sorted, and when the path was last tagged, in Unix seconds -- what `recent` sorts on and `--since` measures from. `tagged` is left out of a row that has none, which is a row written before the index recorded one and the untagged paths `ls --untagged` reports. A row whose `tags` is empty is what a `tag clear`, or a `tag rm` that took the last one, prints: the receipt for a row that is now gone.
+  A row is `path`, `tags` and `tagged`: the absolute path -- under a declared root too, whatever form the index stores it in -- its tags folded and sorted, and when its tags last changed, in Unix seconds -- what `recent` sorts on and `--since` measures from. Every writer restamps a row exactly when its tags change: a `tag rm` that took a tag away, a `tag merge` that renamed one and a tag write that took in one the file carried all restamp it, and a `tag rm` that named a tag the row never had does not. `sweep` and `reindex --from-xattr` keep the same rule: a row whose tags they change is restamped, and one left as it was keeps its stamp. `tagged` is left out of a row that carries no tagged stamp -- one `import` merged from a dump that gave none, until its tags next change -- and of the untagged paths `ls --untagged` reports. `import` never stamps with the wall clock: a dump restores tags made elsewhere, so a merged row keeps the newer of the dump's stamp and its own. A row whose `tags` is empty is what a `tag clear`, or a `tag rm` that took the last one, prints, and `batch` for a row one of its lines took away or a value one emptied: the receipt for a row that is now gone, or for a file with no row whose own value it emptied.
 
   The shapes, by verb:
 
@@ -33,10 +57,15 @@ A dry run makes every refusal this program decides for itself -- a directory han
   - `tags` -- an array of `tag` and `count`
   - `has` -- `path`, `tag` and `has`, the last a boolean saying what the exit status says
   - `mv`, `cp` -- `from`, `to` and `rows`, the rows the move or the copy left behind
-  - `rm`, `trash` -- one `removed` array of paths
+  - `rm`, `trash` -- one `removed` array of paths: each operand, then the rows under it, sorted -- the order the text prints them in
+  - `chmod` -- one `modes` array of `path`, `old` and `new`, each mode four octal digits
   - `prune` -- one `dropped` array of paths
+  - `sweep` -- `trees`, `adopted`, `merged`, `gone` and `unreadable`, each an array of paths, and `skipped`, `listed` and `unlistable`, counts, every key whatever it found; `--status` instead gives `at`, `seconds`, `trees` and one number per count, and `at` and `seconds` are `null` where it has never run, the way `roots ls` says `here` is `null`
+  - `roots ls` -- an array of `id`, `path`, `mount`, `check` and `here`
+  - `roots add` -- `id` and `path`; `roots rm` -- `id` and `rows`, the rows it carried; `roots migrate` -- `rooted` and `absolute`, counts
+  - `view ls` -- an array of `name`, `dir` and `tags`; `view add` -- `name`
   - `verify` -- one `problems` array of `problem`, `path` and `detail`
-  - `open` -- an array of `program`, `arguments`, `mime` and `desktop`, one per path
+  - `open` -- an array of `program`, `arguments`, `mime` and `desktop`, one per path; a `mime` `xdg-mime` could not name is empty and said on stderr
 
   `completions` is the one verb with no shape to take, and refuses the flag.
 
@@ -58,11 +87,19 @@ A dry run makes every refusal this program decides for itself -- a directory han
 
 List tagged paths.
 
-`--ext` asks about files. A directory named `notes.bak` carries a suffix the way any other name does, and `--ext bak` does not offer it -- with `--untagged` either, so the two paths give the same answer. A leading dot is optional and the comparison is folded, so `--ext md`, `--ext MD` and `--ext .PDF` are each read as the suffix without its dot, in lower case.
+`--ext` asks about files, and a suffix is what follows the last dot of a name -- leading dots name the file rather than begin a suffix, as Python's `os.path.splitext` reads them -- `.bashrc` and `..d` have none, and `.a.b` has `b`: `--ext gz` matches `a.tar.gz` and `--ext tar.gz` is refused, as is an empty value or one holding `*` or `/`, naming what was typed. A directory named `notes.bak` carries a suffix the way any other name does, and `--ext bak` does not offer it -- with `--untagged` either, so the two paths give the same answer. A folder is told as `--type` tells one, through a link, and a path whose kind cannot be read is left out as `--type` leaves it. A leading dot is optional and the comparison is folded, so `--ext md`, `--ext MD` and `--ext .PDF` are each read as the suffix without its dot, in lower case. That lower case is Unicode's, so `--ext ÉPUB` matches `livre.épub`, where a tag folds ASCII only. Nothing else is taken off, as `fd -e` takes nothing off: `--ext ' md'` matches `x. md` and not `y.md`.
 
 A row whose file is gone is left out rather than listed as a path that is not there. `verify` reports it as `missing` and `prune` drops the row.
 
-`--untagged` walks the disk, and it says what it could not walk rather than passing over it. Three things it cannot: a directory nobody may open, an entry the system will not describe -- a directory readable but not searchable lists its names and refuses to stat any of them -- and a name that is not valid UTF-8, which no path here can spell and which is printed with its name mangled. None of the three is listed, nor anything under it. Each is named on stderr and exits 1, because a list one row short is not the answer that was asked for; `--quiet` takes the note away and leaves the status. `verify` reports all three as `unreadable` or `xattr-unreadable` and `reindex` names them as well; a chmod or a mount settles the first two, a rename the third.
+A row for `[dir]` itself is in its scope: `ls --tag t d` lists `d` when `d` carries `t`, and `tags d` counts it, the way `find d` lists its starting point. The walks, `--untagged` and `--name` alone, list what is under it.
+
+`--since` asks when the row was tagged, and a row that carries no tagged stamp cannot answer: those are counted on stderr and left out, and the run exits 0, because the answer is narrower rather than shorter -- the rows are there, only undated.
+
+`--untagged` walks the disk the way `find` does, and lists every entry by the name it has: a symlink is listed as itself and not followed, into a folder or out of the tree, and a fifo or a socket is listed like any file. A link carries no tags of its own -- a tag on one is on the file it leads to -- so it is always untagged. `--name` walks the same way.
+
+The listings answer from the index, as `tags`, `has`, `json` and `tag ls` do: `--untagged` is a path with no row, the question `--cached` answers too, since what has no tag has no row. A file whose own value carries tags the index has never heard of -- what `verify` calls `unindexed` -- is untagged to all of them until `sweep` or `reindex` adopts it, and a tag write on it starts from those tags.
+
+`--untagged` says what it could not walk rather than passing over it. Three things it cannot: a directory nobody may open, an entry the system will not describe -- a directory readable but not searchable lists its names and refuses to stat any of them -- and a name that is not valid UTF-8, which no path here can spell and which is printed with its name mangled. None of the three is listed, nor anything under it. Each is named on stderr with the system's reason -- `<dir> is unreadable; nothing under it was listed: Permission denied` -- and exits 1, because a list one row short is not the answer that was asked for; `--quiet` takes the note away and leaves the status. `verify` reports all three as `unreadable` and `reindex` names them as well; a chmod or a mount settles the first two, a rename the third. An answer out of the index lists no directory, it stats the rows under `[dir]`, so it asks of `[dir]` only that it may be searched: one with `x` and no `r` answers whole, and one nobody may search is said the same way and exits 1. A root declared inside the tree that is away is listed, since its directory is an entry of the tree above it, and not entered: it is named on stderr and the run exits 1.
 
 ### Arguments
 - **`[dir]`** — Restrict to this directory
@@ -70,21 +107,62 @@ A row whose file is gone is left out rather than listed as a path that is not th
 ### Flags
 - **`-t --tag <tag>`** — AND this tag
 - **`--any <tag>`** — OR this tag
-- **`--untagged`** — Files and folders carrying no tags under [dir], or the current directory
+- **`--untagged`** — Files and folders with no index row under [dir]; without one, the current directory, or with --cached every declared root
+- **`--cached`** — Answer `--untagged` out of the list `sweep` built, without walking the disk.
+
+  `--untagged` is the one listing here that cannot come out of the index: the index holds rows that carry a tag, and what has no tag has no row, so the only way to answer exactly is to walk the tree on every question. That is seconds, every time, for a question somebody wants to ask from a panel. This answers it out of a sorted list of names -- the thing `locate` has answered out of for thirty years -- and half a million paths is about thirty megabytes of it.
+
+  The list is a cache in the strict sense and it is written down here so nobody mistakes it for the index. The index is what you marked: it has human authorship, a mirror in each file's own xattr, and it is the thing to back up. The list is what is on the disk: it is derived, it lives in `$XDG_CACHE_HOME/omafiles/names`, one file per root named by the root's id and holding paths relative to it, and deleting the whole directory costs one `sweep` and no information. No verb refuses to run without it.
+
+  It is as old as the last sweep, and the run says so rather than letting a caller assume otherwise: `ls: from a list of names built 3h ago`. Nothing here stats a path on the way out either -- that would be the walk again -- so a file deleted since the sweep is still listed, unless `--type`, `--changed-within` or `--ext` asks about it, which has to look -- `--ext` stats to tell a folder, as `--type` tells one. A name the list holds in the case or normalization a folding directory had before another program respelled it is looked up where a row is one such fold from it, so a tagged file is not listed as untagged and `--name` carries its tags in the spelling the directory holds now; no other name is looked at. Plain `--untagged` walks the disk and is exact; this one is instant and dated, and the two are offered rather than one pretending to be the other.
+
+  It answers under declared roots and nowhere else, because that is the unit a list is kept for. A `[dir]` under no declared root is refused by name, with plain `--untagged` named as the way to ask it. With no `[dir]` it answers every declared root. A `[dir]` answer reads the list of the root holding it and of every root declared inside it, and each path counts under its own root's list alone: a nested root's own directory belongs to the tree above it, and a nested root that is away is a gap. Only a gap inside `[dir]`, or at `[dir]` itself, is reported, and one that names no path is reported for every `[dir]`. A root that is declared and not here, and a root nothing has swept yet, are each said on stderr and the run exits 1, the way every short answer here does -- and so is a list the sweep could not build whole: a directory it could not open, an entry it could not describe, a name that is not valid UTF-8, and a name holding a newline, which a list of one path to a line cannot hold, are kept in the list as what it lacks, and every answer out of it names them and exits 1, as the walk would have. A line of the list that is not valid UTF-8, not a clean path inside the root, `.`, or a path an earlier line already lists, is refused, exit 1, naming `omafiles sweep` as what rebuilds the list, and so is a list that will not read; `--quiet` keeps either, because each is an error and not a note. A blank line is a line `sweep` never wrote, and is refused the same way. A list whose timestamp is in the future is read as new, not missing.
+
+  Refused except beside `--untagged`, or `--name` asked alone: every other listing is the index, which is one file read whole, and there is nothing a cache could make faster about it.
 - **`--ext <ext>`** — Filter by extension
-- **`--since <duration>`** — Tagged in the last duration, e.g. 7d
+- **`--name <glob>`** — Only names fitting a shell pattern, like `*.pdf` or `invoice-??.*`.
+
+  Folded, so `*.PDF` and `*.pdf` are one question, and matched against the name alone -- the folders above it are what `[dir]` is for. A pattern holding `/` can never match a name, so it is refused, where GNU `find -name` warns.
+
+  Alone, it is a question about the disk, the way `--untagged` is: a name has nothing to do with whether a file was filed, and the index only knows the files that were, so `ls --name '*.pdf' ~/docs` walks the tree and lists every file that fits, one path to a line, and under `--json` each as its row, tags included, exactly as `--untagged` walks it -- and says what it could not walk in the same words. `--cached` answers it out of the list `sweep` built instead, instantly and as old as that sweep, under the declared roots and nowhere else; the note it prints and the refusals it makes are `--cached`'s own. Beside `--tag`, `--any` or `--since` it narrows the rows those chose, and no walk is made.
+- **`--since <duration>`** — Tagged in the last duration, e.g. `7d`.
+
+  A duration too large to count back from now, `99999999999999999999d`, is refused as an invalid duration, exit 1: it names a point in time, where `recent`'s count is a limit.
+- **`--type <kind>`** — Only `dir` (or `d`) or `file` (or `f`), the spellings of `fd --type` and `find -type`.
+
+  A `file` is anything that is not a folder -- a fifo and a dangling link included -- and a link to a folder is a folder, so the answer is the one the window's Type column gives for the same row. The kind of file is `--ext`'s question.
+
+  A path whose kind the system will not describe -- a link that loops, or leads into a directory shut to you -- is not listed, is named on stderr, and the run exits 1, because the list is then short; one gone since `sweep` built the list `--cached` answers from is simply not listed.
+
+  **Choices:** `dir`, `file`, `d`, `f`
+- **`--changed-within <duration>`** — Modified in the last duration, e.g. `7d`, in the spelling `--since` takes.
+
+  The file's own modification time, as `fd --changed-within` and `find -mtime` read it. That is not `--since`, which asks when the row was tagged: renaming a tag touches no file, and editing a file changes no tag. The two combine, so `--since 7d --changed-within 1d` is what was filed this week and written today. The time is read through a link, and a link that leads nowhere gives its own, GNU `find -L`'s rule, as `--type` reads its kind.
+
+  A path whose time cannot be read is left out as `--type` leaves one whose kind cannot.
 
 ## `omafiles tags`
 
-- **Usage:** `omafiles tags [dir]`
+- **Usage:** `omafiles tags [-t --tag <tag>] [dir]`
 - **Effect:** read-only
 
 List the tag vocabulary.
 
 One tag per line, sorted: the tag, a tab, and the number of rows carrying it. Under `--json` an array of `tag` and `count`. Scoped to `[dir]` it counts only the rows under it.
 
+`--tag` scopes it to a set of tags instead of to a tree, and the two combine: `tags --tag work` is the vocabulary that appears beside `work`, counted over the rows carrying it. Repeated, the tags are ANDed, the way `ls` ands them -- `tags --tag work --tag draft` is what still divides the files carrying both. The tags asked after are left out of the answer, because they are the scope rather than a division of it and each of them is on every row by construction.
+
+It is the listing the window walks when it reads tags as folders, and there it also hides a tag that every row of the scope carries: entering one would open onto the same list. That is a rule about what is worth walking into, and this verb is asked what is there, so it prints those.
+
+A row whose file is gone -- including one whose directory is now a file, the rule `prune` and `verify` keep -- is not counted, and says nothing. A `[dir]` nobody may search is said on stderr and exits 1; one that may be searched and not read is counted whole, since the rows are stat'ed and the directory never listed.
+
+A tag scope that is not a valid tag is a usage error, the way it is for `ls`.
+
 ### Arguments
 - **`[dir]`**
+
+### Flags
+- **`-t --tag <tag>`** — AND this tag, and count what appears beside it
 
 ## `omafiles tag`
 
@@ -99,7 +177,13 @@ Mutate or inspect tags on paths
 
 Add tags to paths.
 
-The tags are written to the index row and mirrored onto the file's own `user.omafiles.tags` where the filesystem takes it. A filesystem that refuses the mirror -- no `user.*` namespace, a read-only mount, a chmod 444 -- is reported on stderr and the run still exits 0: the row is the record, and a refused mirror must not make every `tag add` on such a filesystem fail. It is reported as a note and not as an error, so `--quiet` takes it away: a run that exits 0 has nothing to say through the channel `--quiet` is documented to leave alone. `reindex` exits 1 for the identical refusal, because what it promises is that the index and the files agree about the tree it walked, and `--quiet` keeps that one.
+The tags are written to the index row and mirrored onto the file's own `user.omafiles.tags` where the filesystem takes it. A filesystem that refuses the mirror -- a read-only mount, a chmod 444 -- is reported on stderr and the run still exits 0: the row is the record, and a refused mirror must not make every `tag add` on such a filesystem fail. One with no `user.*` namespace -- vfat, exfat -- holds no copy and never can, so the row is the only record there and nothing is said, as `cp -a` leaves such a target without; so does a fifo, a socket or a device file, as xattr(7) allows a `user.*` value only on a regular file or a directory. It is reported as a note and not as an error, so `--quiet` takes it away: a run that exits 0 has nothing to say through the channel `--quiet` is documented to leave alone. `reindex` exits 1 for the identical refusal, because what it promises is that the index and the files agree about the tree it walked, and `--quiet` keeps that one.
+
+Every tag write starts from the index row united with the valid tags the file's own value carries, and then does what it was asked: `tag add --tag z` on a file with no row carrying `foo,bar` leaves `bar,foo,z`, and on one whose row holds `old` while the file carries `old,extra` -- what `verify` calls `xattr-differs` -- it leaves `extra,old,z` on both, where writing the row over the file would have lost `extra`. `tag rm --tag extra` still removes it, on purpose. That is `sweep`'s rule -- the index only ever learns more -- and the xattr is a second copy of the tags, not something to write over. `tag add`, `tag rm`, `tag cp` (both ends), `tag clear`, `tag merge` and `import` all start this way, and so does the row `mv` and `cp` land for a file that has one; `reindex` is the one verb that lets one side win outright, because somebody pointed it at a tree knowing which. The row is restamped exactly when its tags change, so a tag the file brought in is a change; a `batch` that takes a tag away and puts it back changed nothing, and the row keeps the stamp it was read with. The value is split at its commas before it is read as text, so a word that is not UTF-8 is one word that is not a tag and the words beside it are still adopted. A value that also holds a word that is not a tag is left as it is by every verb but `tag clear`, the one licensed to drop it, because writing the valid tags back would delete that word: the verb says so, naming the `tag clear` that drops it -- and the row with it, where there is one, which the hint says -- and exits 1 only where the file's value was all it promised -- a path no row records either before the run or after it, such as a `tag rm` that took the last valid tag. Where the value's valid tags already are the ones to write there is nothing to refuse and nothing is said -- `tag rm --tag zz` on a file carrying only `Bad W` exits 0 -- except on a tree `reindex` walked, which still disagrees while the other words are there. A value that already holds exactly what would be written is not written again, so a read-only file whose copy is already right is no refusal either. A dry run says so too, since that refusal is this program's own. A value the system will not show -- a file whose mode forbids reading it -- is not a value that is not there: nothing is written, the path is named with the system's reason, and the run exits 1, row or no row, because taking it for none would let the write destroy it. Within one run -- a `batch`, or a file named twice -- a path an earlier write settled starts from its row alone, since its own copy is rewritten from that row once the commit lands.
+
+A tag taken off a row while the file refused the write stays on the file, and the next write, which starts from the row and the file together, brings it back. `reindex`, or making the file writable and removing it again, settles it. So does a tag taken off a file whose value also holds a word that is not a tag, since that value is left as it is: the next write, or `sweep`, adopts it back, and `tag clear` is the repair.
+
+A real write prints nothing in text mode, the way coreutils does; `--dry-run` prints the paths it would change, and `--json` the rows it changed -- a path whose row and copy already held the tags is in neither.
 
 ### Arguments
 - **`<path>…`**
@@ -125,7 +209,9 @@ Remove tags from paths
 - **Usage:** `omafiles tag ls <path>`
 - **Effect:** read-only
 
-Print tags on one path
+Print tags on one path.
+
+The tags its index row holds. A file whose own value carries tags and that has no row -- `unindexed` to `verify` -- prints nothing until `sweep` or `reindex` adopts it; a tag write on it starts from those tags, the rule `tag add` gives.
 
 ### Arguments
 - **`<path>`**
@@ -137,7 +223,9 @@ Print tags on one path
 
 Drop every tag on paths.
 
-The index row goes and so does the file's own `user.omafiles.tags`. On a path that has a row the run exits 0 whatever the filesystem says about that second write, for the reason `tag add` gives: the row is the record, and a refused mirror must not make every clear fail. That one is a note, so `--quiet` takes it away. On a path with no row there is no record to be, so a removal the filesystem refuses is a drop that did not happen -- the value is still on the file, `verify` goes on reporting it as `xattr-invalid`, and the run exits 1 rather than claiming otherwise. That one is why the run exits 1, so it is an error and `--quiet` keeps it. A chmod or a mount is what settles it.
+The index row goes and so does the file's own `user.omafiles.tags`. On a path that has a row the run exits 0 whatever the filesystem says about that second write, for the reason `tag add` gives: the row is the record, and a refused mirror must not make every clear fail. That one is a note, so `--quiet` takes it away. On a path with no row there is no record to be, so a removal the filesystem refuses is a drop that did not happen -- the value is still on the file, `verify` goes on reporting it as `xattr-invalid`, and the run exits 1 rather than claiming otherwise. That one is why the run exits 1, so it is an error and `--quiet` keeps it. A chmod or a mount is what settles it. A file with no value to drop has nothing to refuse: the kernel asks for permission before it looks, so a file nobody may write says `Permission denied` to a removal it would have had nothing to remove for, and that answer is not taken as a refusal -- `tag clear` on a file carrying no value exits 0, and so on a filesystem with no `user.*` namespace, which holds no value to drop.
+
+A path with no row whose file carries a value is a drop too, and is printed as one: the path under `--dry-run`, and a row with empty `tags` under `--json`, stamped with the moment of the drop as every tag write is -- a value no tag can be read out of included, since this is the verb licensed to drop that one. The receipt is printed after the file's copy is written, and a drop the filesystem refused on such a path is not in it: the run exits 1 and `--json` prints `[]`. A value of no bytes is no value, since writing no tags removes the attribute, and `,` is a value no tag can be read out of. A value the system will not show is refused before anything is written, exit 1: a drop nothing can see is one nothing can report.
 
 ### Arguments
 - **`<path>…`**
@@ -147,7 +235,9 @@ The index row goes and so does the file's own `user.omafiles.tags`. On a path th
 - **Usage:** `omafiles tag cp <--from <path>> <path>…`
 - **Effect:** modifies state
 
-Add one path's tags onto others
+Add one path's tags onto others.
+
+The tags of `--from` -- its row and the valid tags its file carries -- are added to each path's own, the way `tag add` adds, not written over them. A `--from` with no tags is refused, exit 1: copying nothing cannot mean clearing the destination. A destination that is `--from` itself, by any spelling or through a hard link, is refused and nothing is written, exit 1, as coreutils `cp a a` is refused as the same file: one device and one inode is one file.
 
 ### Arguments
 - **`<path>…`**
@@ -158,14 +248,29 @@ Add one path's tags onto others
 ## `omafiles tag merge`
 
 - **Usage:** `omafiles tag merge <from> <to>`
-- **Aliases:** `rename`
 - **Effect:** modifies state
 
-Rename a tag across the index
+Rename a tag across the index.
+
+Every row holding `<from>` holds `<to>` instead, and is restamped, since its tags changed; each file's own copy is rewritten to match, starting, as every tag write does, from the row plus the valid tags the file carries, and a value holding a word that is not a tag is left as it is with a note. A row whose file is gone has nothing to rewrite and `verify` calls it `missing`; one nobody may look at, one whose value the system will not show, one under a root that is away, or one whose path a symlink now leads through, which nothing writes through, is renamed in its row and gets a note naming it, exit 0, the rule `tag add` keeps for a mirror it could not write. Only rows are read: a file whose own copy holds `<from>` and whose row does not, which `verify` already calls `xattr-differs`, keeps its copy as it is, and a `sweep` adds `<from>` back to the row, the union it always takes. A `<from>` no row carries changes nothing, says nothing and exits 0. It takes exactly two tags, and two spellings of one tag -- `tag merge a A` -- are refused, exit 1, as `mv a a` is: that would rewrite every row and file it names and change nothing.
 
 ### Arguments
 - **`<from>`**
 - **`<to>`**
+
+## `omafiles tag rename`
+
+- **Usage:** `omafiles tag rename <ARGS>…`
+- **Effect:** modifies state
+
+Rename a tag on selected paths or across the index.
+
+With paths, rename only on those files that carry the source tag. Each edit starts from the index plus valid tags carried by the file, uses the same resolution, refusals, stamps and xattr writes as tag add and tag rm, and settles the selected set in one index commit. A selected file without the source tag is left untouched. Missing or unreadable operands refuse the set before its index commit. Without paths, this is the same collection-wide operation as tag merge. Both tag operands follow the normal tag normalization and validation rules; renaming a tag onto itself is refused.
+
+### Arguments
+- **`<from>`**
+- **`<to>`**
+- **`[path]…`**
 
 ## `omafiles has`
 
@@ -184,13 +289,24 @@ Exit 0 if the path has the tag, 1 if it does not.
 
 ## `omafiles recent`
 
-- **Usage:** `omafiles recent [n]`
+- **Usage:** `omafiles recent [--desktop] [n]`
 - **Effect:** read-only
 
-List recently tagged paths, newest first
+List recently tagged paths, newest first.
+
+`[n]` is a count of one or more, read as coreutils `head -n` reads one: leading blanks and a `+` are taken, anything after the digits is refused, and a count wider than the program can hold is the widest.
+
+A row that carries no tagged stamp cannot be placed in that order: those are counted on stderr and left out, and the run exits 0, because the answer is narrower rather than shorter.
+
+The rows are ordered by the stamps the index holds and only then looked for on disk, down to `[n]`: a row whose file is gone, or has a file where a directory above it should be, is left out and the next one takes its place. A row the system will not describe is named on stderr and the run exits 1 where it would have been in the answer; one below the `[n]` asked for costs nothing.
 
 ### Arguments
 - **`[n]`** — How many paths; 20 by default
+
+### Flags
+- **`--desktop`** — What the desktop opened lately instead, newest first.
+
+  Read from `$XDG_DATA_HOME/recently-used.xbel`, the bookmark file every GTK file chooser and most editors write to, so it is the same list the desktop's own `Recent` shows -- and it is the desktop's, not this program's: nothing here writes to it, and a machine nothing has opened anything on answers with nothing. Local files that are still there, and no others: the list also names what a browser fetched, and a path this program cannot stand in is not a row. `file://localhost/…` is local, as RFC 8089 says. An entry whose link now dangles is left out, because the file that was opened is gone. Each is resolved the way `json` resolves a path -- `..`, `//` and symlinks included -- so a file opened under three spellings is one entry, at its newest stamp. A bookmark's stamp is the newest of its `added`, `modified` and `visited`, wherever in the file it sits, a `<folder>` included. The entries are ordered first and looked at after, as for `recent` itself, so one below `[n]` that nobody may look at costs nothing. An href whose path holds an escaped `/`, `%2F`, is skipped, as GLib's `g_filename_from_uri` refuses one; so is one holding a `?` or a `#`, which begins a query or a fragment that GLib and Qt drop, so the entry would name another file -- `%3F` and `%23` spell those characters in a name. Entries are ordered to the millisecond, of the microseconds GLib writes. A list of zero bytes is one nothing has written yet, the same as no list; any other list that will not parse, or whose root element is not `xbel`, is exit 1. The text is one path to a line; under `--json` each is the row the index has for it, tags included, in the same array of rows every listing prints, the way `ls --name` carries tags across an answer the index did not choose.
 
 ## `omafiles json`
 
@@ -209,11 +325,13 @@ Dump one path's index row as JSON
 
 Open paths with the program the desktop would use.
 
-Every operand is resolved before any of them is launched, and one that is not there refuses the whole list: a launched program cannot be un-launched, so `open` keeps the rule `rm` and `trash` keep rather than a third one. Every path that is not there is named, not just the first. A missing opener is named once instead, because it is the same answer for every path in the list.
+Every operand is resolved before any of them is launched, and one that is not there refuses the whole list: a launched program cannot be un-launched, so `open` keeps the rule `rm` and `trash` keep rather than a third one. Every path that is not there is named, not just the first, and all of them before the opener is asked about. A missing opener is named once instead, because it is the same answer for every path in the list. Two spellings of one path are one operand.
 
-What it launches is the desktop's own answer, asked in the desktop's own way: `xdg-mime query filetype` for the type, `xdg-mime query default` for the entry registered against it, and then `xdg-open` on the path. Two branches off that. Where the entry both asks for a terminal and names one of the usual editors, and `omarchy-launch-editor` is installed, that is run instead, so a text file opens in a window rather than in a terminal that is not there. Where `xdg-open` is not installed at all, `gio open` stands in for it. Where neither is installed, nothing in the list is opened and the run exits 1.
+What it launches is the desktop's own answer, asked in the desktop's own way: `xdg-mime query filetype` for the type, `xdg-mime query default` for the entry registered against it, and then `xdg-open` on the path. Two branches off that. Where the entry both asks for a terminal and its `Exec` starts one of the usual terminal editors -- nvim, vim, vi, hx, helix, emacs, emacsclient, nano, micro, known by the program's file name, past an `env` wrapper with its options and assignments, never by the desktop id -- and `omarchy-launch-editor` is installed, that is run instead, so a text file opens in a window rather than in a terminal that is not there. Where `xdg-open` is not installed at all, `gio open` stands in for it. Where neither is installed, nothing in the list is opened and the run exits 1.
 
-`--dry-run` launches nothing and prints the command line it would have run, one path to a line -- which is how to see which of the three a given file takes. Under `--json` a dry run prints what the real run prints: an array of `program`, `arguments`, `mime` and `desktop`, one per path.
+It hands each path to that program and does not wait for it, so exit 0 says the program was started, not that the file opened: what the program says after that is its own, on the stderr it shares, and its exit status is not read. One that cannot be started at all is named and the run exits 1. Waiting would not answer the question either -- a generic `xdg-open`, on a desktop it has no helper for, returns only when the application it started exits, and macOS `open` waits only when `-W` asks it to -- so there is no `--wait`.
+
+`--dry-run` launches nothing and prints the command line it would have run, one path to a line -- which is how to see which of the three a given file takes, quoted to paste. Under `--json` a dry run prints what the real run prints: an array of `program`, `arguments`, `mime` and `desktop`, one per path.
 
 ### Arguments
 - **`<path>…`**
@@ -225,9 +343,9 @@ What it launches is the desktop's own answer, asked in the desktop's own way: `x
 
 gio trash + drop index rows.
 
-`gio` comes with glib2 and is what puts a file in the desktop's wastebasket rather than reimplementing it here. Whether it is installed is settled once, before the question is asked and before anything is trashed, and so is whether every operand is there -- every operand that is not, and not just the first, the way coreutils `rm` names each one it cannot remove. One operand the run cannot handle refuses the whole run rather than doing part of it -- which parts company with coreutils `rm`, whose analogue trashes the operands it can and reports the one it cannot. The stricter rule is the right one here because the question asks about the set: doing part of a set you consented to as a whole is worse than doing none of it and saying why. `--yes` skips the question, not the checks, and `--dry-run` makes the same refusals.
+`gio` comes with glib2 and is what puts a file in the desktop's wastebasket rather than reimplementing it here. A `gio` on PATH that cannot be run is named with the system's reason. `/` is refused, exit 1, as coreutils `--preserve-root` does by default, and an operand whose last component is `.` or `..` the same way, as POSIX `rm` requires, and a file omafiles keeps, as `rm` refuses one. The directory of a declared root that is here is refused, and so is one holding it, naming the root and `omafiles roots rm --id <id>`, the rule `mv` keeps: trashed, the declaration would name a root that is away for good. An operand inside another operand is part of it, the way two spellings of one path are one operand: `trash z z/y/f` is `trash z`, and `removed` lists `z` and then the rows under it. Whether it is installed is settled once, before the question is asked and before anything is trashed, and so is whether every operand is there -- every operand that is not, and not just the first, the way coreutils `rm` names each one it cannot remove. One operand the run cannot handle refuses the whole run rather than doing part of it -- which parts company with coreutils `rm`, whose analogue trashes the operands it can and reports the one it cannot. The stricter rule is the right one here because the question asks about the set: doing part of a set you consented to as a whole is worse than doing none of it and saying why. `--yes` skips the question, not the checks, and `--dry-run` makes the same refusals. A dry run asks no question, because it removes nothing, so it needs no terminal: from a script it exits 0 where the real run, with no `--yes` and no terminal to ask on, refuses.
 
-A failure the checks cannot foresee is a different matter -- a filesystem with no trash directory of its own and none that can be made. Every remaining operand is still tried, each failure is reported on its own line, the rows of everything that did go are dropped from the index, and the run exits 1.
+A failure the checks cannot foresee is a different matter -- a filesystem with no trash directory of its own and none that can be made. Every remaining operand is still tried, each failure is reported on its own line, the rows of everything that did go are dropped from the index, and the run exits 1. What went is what `gio trash` says went: its exit status is trusted the way `rm` trusts `unlink()`, so a row drops where `gio` exits 0 and stays, with `gio`'s own reason, where it does not.
 
 ### Arguments
 - **`<path>…`**
@@ -239,31 +357,37 @@ A failure the checks cannot foresee is a different matter -- a filesystem with n
 
 Delete files + drop index rows.
 
-Every operand is checked before any of them is acted on: a path that is not there, and a directory, which `rm` does not take. Every operand that fails one of those checks is named and not just the first, the way coreutils `rm` names each one it cannot remove: `rm a.txt no1 no2` reports both missing paths, and `rm dirA nosuch` reports the directory as well as the missing path. One operand the run cannot handle refuses the whole run rather than doing part of it -- so `rm a.txt somedir b.txt` removes neither file. This parts company with coreutils `rm`, which unlinks the operands it can and reports the one it cannot, exit 1. The stricter rule is the right one here because the question asks about the set: you consented to three removals, and carrying out two of them because the third could not be done is worse than carrying out none and saying why. `--yes` skips the question, not the checks, and `--dry-run` makes the same refusals.
+Every operand is checked before any of them is acted on: a path that is not there, and a directory, which `rm` does not take. `/` is refused, exit 1, as coreutils `--preserve-root` does by default, and an operand whose last component is `.` or `..` the same way, as POSIX `rm` requires. So is an operand that is or holds a file omafiles keeps -- the index and its lock, `roots.jsonl`, `views.jsonl`, a root's list of names, the sweep receipt -- `rm: refusing <path>: omafiles keeps it`, or `…: it holds <file>, which omafiles keeps`, or `…: it is where omafiles keeps <file>` for a directory that will hold one not made yet; in a directory that folds case, told by a name it holds, a name one case apart from a kept file not made yet is that file, nothing done, as git leaves `.git` alone; `trash`, `mv` and `cp` refuse one the same way, at either end. A file is told by its device and inode, as coreutils `same_file` tells one, so a hard link to the index, or its directory reached through a bind mount, is refused as the index is. Every operand that fails one of those checks is named and not just the first, the way coreutils `rm` names each one it cannot remove: `rm a.txt no1 no2` reports both missing paths, and `rm dirA nosuch` reports the directory as well as the missing path. One operand the run cannot handle refuses the whole run rather than doing part of it -- so `rm a.txt somedir b.txt` removes neither file. This parts company with coreutils `rm`, which unlinks the operands it can and reports the one it cannot, exit 1. The stricter rule is the right one here because the question asks about the set: you consented to three removals, and carrying out two of them because the third could not be done is worse than carrying out none and saying why. `--yes` skips the question, not the checks, and `--dry-run` makes the same refusals. A dry run asks no question, because it removes nothing, so it needs no terminal: from a script it exits 0 where the real run, with no `--yes` and no terminal to ask on, refuses.
 
-A failure the checks cannot foresee is a different matter -- a permission denied at unlink time, say -- and there this does what coreutils does. Every remaining operand is still tried, each failure is reported on its own line, the rows of everything that did go are dropped from the index, and the run exits 1.
+A failure the checks cannot foresee is a different matter -- a permission denied at unlink time, say -- and there this does what coreutils does. Every remaining operand is still tried, each failure is reported on its own line, the rows of everything that did go are dropped from the index, and the run exits 1. An index that cannot be written once the files are gone -- a full disk -- is exit 3, and a removal cannot be taken back: the rows stay, said on stderr, for `prune`, here and in `trash`.
 
 ### Arguments
 - **`<path>…`**
 
 ## `omafiles mv`
 
-- **Usage:** `omafiles mv <old> <new>`
+- **Usage:** `omafiles mv [FLAGS] <old> <new>`
 - **Effect:** modifies state
 
 mv + rewrite the index path.
 
-A destination that already exists is refused rather than overwritten, which is where this parts company with coreutils `mv`: a clobbered file takes its index row and its tags with it, and nothing here can put them back. A dangling symlink counts as something being there. Move it out of the way, or `rm` it, first.
+An occupied destination is refused unless a conflict flag is given. `-f/--force` replaces the entry, `-n/--no-clobber` skips it successfully without a receipt, `-i/--interactive` asks on a terminal (a nonterminal refuses), and `--keep-both` picks `name (1).ext`, then the next free number. The last decision flag wins. `-n` before the verb is global dry-run; after `cp` or `mv` it is no-clobber. Use `--dry-run` anywhere for a preview. `-b/--backup` replaces and retains the old entry at `name.~1~`, then the next free number; it cannot accompany skip or keep-both. This implements numbered GNU backups; backup methods, VERSION_CONTROL and suffix options are not supported. `-T/--no-target-directory` treats the destination as the exact entry instead of a containing directory. A dangling symlink is occupied. Replacement moves the entry aside, never writes through a link, and restores it if copying, moving or committing fails. Tags follow each file; the incoming file never inherits displaced tags. Replacing oneself, a folder with a file, a file with a folder, or a nonempty folder is refused. Folder merging and recursive copying are not provided. Conflict flags cannot accompany pattern renaming. See docs/conflicts.md for the window and Undo. A row the index still holds at a destination that is free, or under it, is a row whose file is gone: landing there drops it, naming on stderr the tags it held, rather than hand them to what arrives. A dry run says it would drop them; a rename of a set that does not land drops nothing. A symlink standing where a tagged file was holds none of its tags: moving it drops the row at its name, naming the tags on stderr, as landing on a stale row does.
 
-A folder is renamed and never copied, so it cannot cross a filesystem: `mv dir /mnt/elsewhere` is refused, in a dry run as well as for real, rather than half done. A single file can cross -- the rename falls back to a copy and a delete for one. To move a folder across filesystems, move it with something else, then `reindex` the tree it landed in and `prune` the one it left.
+A folder is renamed and never copied, so it cannot cross a filesystem: `mv dir /mnt/elsewhere` is refused, in a dry run as well as for real, rather than half done. Another mount of the same filesystem, a bind mount included, is another filesystem here, because rename(2) answers EXDEV between any two mounts. A single file can cross -- the rename falls back to a copy and a delete for one. A fifo, a socket or a device cannot cross either, because only a regular file is copied, as `cp` takes only one: refused in a dry run as well, `is not a regular file`, exit 1. To move a folder across filesystems, move it with something else, then `reindex` the tree it landed in and `prune` the one it left.
 
-A symlink is not a folder, whatever it points at. It is moved as the link it is -- `readlink`, `symlink`, `unlink` -- so it crosses a filesystem whether it points at a file, at a directory or at nothing, and arrives a link with the same target written in it. The refusal above is about the tree a folder holds, and a link holds none of it.
+A symlink is not a folder, whatever it points at. It is moved as the link it is -- `readlink`, `symlink`, `unlink` -- so it crosses a filesystem whether it points at a file, at a directory or at nothing, and arrives a link with the same target written in it. The refusal above is about the tree a folder holds, and a link holds none of it. Spelled with a trailing slash, `ld/`, a link to a directory is the directory: POSIX resolves a path that ends in `/` through the link, so `mv ld/ x` moves the folder `ld` leads to, the rule `chmod ldir/` keeps.
 
-What a file loses by crossing is the one place this falls short of coreutils `mv` rather than diverging from it on purpose: the copy carries the bytes, the permissions and the tags, and it does not carry the modification time or any other `user.*` xattr. Both arrive as the copy made them -- the mtime is now, and a `user.foo` somebody else wrote is gone. A rename within one filesystem keeps everything, because nothing is copied. When those matter, move the file with coreutils `mv` and then `reindex` where it landed and `prune` where it was.
+What a file loses by crossing is the one place this falls short of coreutils `mv` rather than diverging from it on purpose: the copy carries the bytes, the file's own `user.omafiles.tags` value exactly as the rename would have -- tags that are not valid included, and with no row needed -- and the whole mode, setuid, setgid and sticky included, and it does not carry the modification time or any other `user.*` xattr. Both arrive as the copy made them -- the mtime is now, and a `user.foo` somebody else wrote is gone. A rename within one filesystem keeps everything, because nothing is copied. When those matter, move the file with coreutils `mv` and then `reindex` where it landed and `prune` where it was. The row that lands is the file's row united with the valid tags its value carries -- the rule every tag write keeps -- restamped where the value brought a tag in, so a tag only the value held is not lost where the destination holds no value; a file with no row still lands with none. A value the source will not show refuses the move, in a dry run too, and in a rename of a set refuses that rename alone; so does one the destination refuses where no row records the tags, rather than delete their only copy with the source; where a row does, that refusal is a note, the rule `tag add` keeps. A filesystem with no `user.*` namespace -- vfat, exfat -- holds no copy, so there the row is the only record: a file crossing off one takes its row's tags as its value, and one crossing onto one arrives without a value, silently, as `cp -a` leaves one, as long as a row records the tags.
 
-A destination whose parent directory is not there is refused in a dry run as well, along with the two above: a dry run makes every refusal this program decides for itself.
+On a directory that folds case, a change of case alone, `mv IMG.JPG img.jpg`, is a rename of a file or a folder, as macOS and Windows allow one: rename(2) of a file onto another name of itself changes nothing, so it goes by a free name beside it.
 
-Every row under a folder follows the folder, including a row for a file the system will not describe -- one under a directory somebody chmod'd shut, or one pointing at a link that dangles. The rename carried the file and the new path is the old one rewritten, so there is nothing to look up and no row is dropped.
+The directory of a declared root that is here is refused, and so is one holding it, naming the root and `omafiles roots rm --id <id>`, because moving a root is `roots rm` and then `roots add` where it went, as the files omafiles keeps are left to the verbs that keep them. One that is away is refused as a tree holding it is, for its rows are not the tree's.
+
+An index that cannot be written once the file has moved -- a full disk -- is exit 3, and the file is moved back where its rows still are, every rename of a set with it, said on stderr; nothing is printed on stdout.
+
+A destination whose parent directory is not there is refused in a dry run as well, along with the two above: a dry run makes every refusal this program decides for itself. So is a destination ending in `/` that is not an existing directory, for a source that is not one: `Not a directory`, exit 1, as rename(2) and coreutils `mv` refuse it. A source operand whose last component is `.` or `..` is refused, exit 1, as POSIX `rm` refuses one, and so is `/`, as coreutils `--preserve-root`; `mv` over a set refuses the same operands, and a file omafiles keeps, as `rm` refuses one. A mount point -- a folder or a file something is mounted on, a bind mount included -- is refused, alone or in a set made by `--replace` or `--pattern`, in a dry run as well: `Device or resource busy; it is a mount point`, exit 1, as rename(2) answers EBUSY for one. A destination is a directory like any other, so `mv c ..` moves `c` into the parent, as coreutils does, and `cp c ..` copies it there.
+
+Every row under a folder follows the folder, including a row for a file the system will not describe -- one under a directory somebody chmod'd shut, or one pointing at a link that dangles. The rename carried the file and the new path is the old one rewritten, so there is nothing to look up and no row is dropped. The rows under a path go with it, here and in `rm` and `trash`, only where it is a folder: a row under a name that is now a plain file stays where it is, for `prune`.
 
 A dry run prints what the real run prints -- the destination, and under --json the same object of `from`, `to` and `rows` -- so a preview can be read by whatever reads the result.
 
@@ -271,22 +395,74 @@ A dry run prints what the real run prints -- the destination, and under --json t
 - **`<old>`**
 - **`<new>`**
 
+### Flags
+- **`--replace <text>`** — Rename a set by rule: the text to find in each name.
+
+  With any of `--replace`, `--with` or `--pattern` on the line, `mv` takes any number of paths and renames each in the folder it is in, rather than moving one path to another. `--replace` and `--with` go together and rewrite the name -- every occurrence, case as typed, and `--with ''` deletes the text. `--pattern` then builds a name out of what is left, from four tokens: `{name}` the whole of it, `{stem}` and `{ext}` its two halves -- the extension with its dot, and nothing where there is none; leading dots are a hidden file and not an extension, as for `ls --ext`: `..d` has none -- and `{n}` the operand's place in the set, counted from one and padded to the width of the count. Only a word in braces is a token: an unknown one is refused, and a lone `{` or `}` is a literal brace. So `mv --pattern '{stem}-{n}{ext}' -- *.jpg` numbers the pictures in the order the shell handed them over.
+
+  Every destination is settled before any rename is made: a name already taken refuses the whole set, in the words `mv <old> <new>` uses, and so do two operands landing on one name, as `two of them would both become <name>`. A name held by an operand that is itself about to move is no exception -- do that in two passes -- because a rename whose result depended on the order of the operands would be a rename you could not read. The renames run children before their parents -- `find -depth` order, the order perl `rename` and `mmv` are fed -- so a folder and a name inside it may both be operands in any order, and the plan printed, by `--dry-run` too, is the plan carried out. An operand whose name the rule leaves alone is left alone and not reported. Two spellings of one path are one operand, so a file named twice is renamed once and `{n}` counts distinct paths.
+
+  It prints one rename to a line, the old path, a tab, and the new one; under `--json` an array of the `from`, `to`, `rows` object `mv <old> <new>` answers in, one per rename. A rename the filesystem refuses part way is named on stderr, the rest of the set is still tried, and every row of what did move is rewritten -- exit 1 for the refusal, with the index still agreeing with the disk.
+- **`--with <text>`** — What to put in its place; '' deletes it
+- **`--pattern <template>`** — Build each name from {name}, {stem}, {ext} and {n}
+- **`-f --force`** — Replace an occupied destination entry safely
+- **`-n --no-clobber`** — Skip an occupied destination successfully, without a receipt
+- **`-i --interactive`** — Ask before replacing; requires a terminal on conflict
+- **`--keep-both`** — Keep the existing file and number the incoming name
+- **`-b --backup`** — Replace and retain the old entry as name.~N~
+- **`-T --no-target-directory`** — Treat the destination as an exact entry
+
 ## `omafiles cp`
 
-- **Usage:** `omafiles cp <old> <new>`
+- **Usage:** `omafiles cp [FLAGS] <old> <new>`
 - **Effect:** modifies state
 
 cp file and tags.
 
-A destination that already exists is refused rather than overwritten, which is where this parts company with coreutils `cp`: a clobbered file takes its index row and its tags with it, and nothing here can put them back. A dangling symlink counts as something being there. Move it out of the way, or `rm` it, first.
+An occupied destination is refused unless a conflict flag is given. `-f/--force` replaces the entry, `-n/--no-clobber` skips it successfully without a receipt, `-i/--interactive` asks on a terminal (a nonterminal refuses), and `--keep-both` picks `name (1).ext`, then the next free number. The last decision flag wins. `-n` before the verb is global dry-run; after `cp` or `mv` it is no-clobber. Use `--dry-run` anywhere for a preview. `-b/--backup` replaces and retains the old entry at `name.~1~`, then the next free number; it cannot accompany skip or keep-both. This implements numbered GNU backups; backup methods, VERSION_CONTROL and suffix options are not supported. `-T/--no-target-directory` treats the destination as the exact entry instead of a containing directory. A dangling symlink is occupied. Replacement moves the entry aside, never writes through a link, and restores it if copying, moving or committing fails. Tags follow each file; the incoming file never inherits displaced tags. Replacing oneself, a folder with a file, a file with a folder, or a nonempty folder is refused. Folder merging and recursive copying are not provided. Conflict flags cannot accompany pattern renaming. See docs/conflicts.md for the window and Undo. A row the index still holds at a destination that is free, or under it, is a row whose file is gone: landing there drops it, naming on stderr the tags it held, rather than hand them to what arrives.
 
-A destination whose parent directory is not there, and a directory handed in as the source, are both refused in a dry run as well as for real.
+The copy carries the bytes, the source's own `user.omafiles.tags` value exactly as it stands, and the source's mode less the umask and less setuid, setgid and sticky, as coreutils `cp` does without `-p`; the source's row, where it has one, is copied with it, united with the valid tags the source's value carries, as for `mv`. The tags are written before the mode, so a read-only file copies with its tags. A value the source will not show refuses the copy, in a dry run too, and so does one the copy refuses where no row records the tags; where a row does, that refusal is a note, the rule `tag add` keeps. On a filesystem with no `user.*` namespace -- vfat, exfat -- the row is the only record, as for `mv`: a copy off one takes the row's tags as its value, and a copy onto one arrives without one, silently, where a row records the tags.
 
-A dry run prints what the real run prints -- the destination, and under --json the same object of `from`, `to` and `rows`.
+An index that cannot be written once the copy is made -- a full disk -- is exit 3, and the copy is removed again, said on stderr.
+
+A destination whose parent directory is not there, a destination ending in `/` that is not a directory, as for `mv`, a source that is not a regular file -- a directory, a fifo, a socket, a device -- and a file omafiles keeps, at either end, as `rm` refuses one, are refused in a dry run as well as for real.
+
+A dry run prints what the real run prints -- the destination, and under --json the same receipt: a `from`, `to`, `rows` object, or a displacement/incoming array when a backup is retained.
 
 ### Arguments
 - **`<old>`**
 - **`<new>`**
+
+### Flags
+- **`-f --force`** — Replace an occupied destination entry safely
+- **`-n --no-clobber`** — Skip an occupied destination successfully, without a receipt
+- **`-i --interactive`** — Ask before replacing; requires a terminal on conflict
+- **`--keep-both`** — Keep the existing file and number the incoming name
+- **`-b --backup`** — Replace and retain the old entry as name.~N~
+- **`-T --no-target-directory`** — Treat the destination as an exact entry
+
+## `omafiles chmod`
+
+- **Usage:** `omafiles chmod <mode> <path>…`
+- **Effect:** modifies state
+
+Change read, write and execute for the owner, the group and others. Nothing else.
+
+The mode is octal -- `644`, `0755`, and any leading zeros past those, `00644`, as coreutils takes them -- or coreutils' symbolic clauses over `u`, `g`, `o` and `a`, with `+`, `-` or `=` and `r`, `w` and `x`, comma separated: `u+x`, `go-w`, `a=r,u+w`. A clause names who it is for. `+x` alone is refused rather than read the way coreutils reads it, through the umask, because a mode whose meaning depends on the shell it was typed in is not one anybody reviewed. `X` and the copy forms like `g=u` are not taken.
+
+setuid, setgid and sticky are never set or cleared here. A mode that asks for one -- `4755`, `u+s`, `o+t` -- is refused, and whatever the file already carries passes through: `chmod 644` on a setuid file leaves it setuid, which parts company with coreutils, whose `chmod 644` clears it on a file. Those bits are a security decision, and one that belongs to `/usr/bin/chmod` typed on purpose. The system has the last word even so: it drops setgid when the owner is not in the file's group, and the receipt prints the mode the file has afterwards, not the one asked for.
+
+Ownership is never changed; there is no `chown` here. Nor is it recursive: a folder's own mode changes and nothing under it does, which is why a folder holding a file omafiles keeps is not refused.
+
+A symlink operand is refused by its name, whatever it leads to -- a file, nothing, another link, or itself. chmod(2) follows a link, so the mode that would change is not that of the name that was handed in; name the file it leads to instead. `ldir/`, with a trailing slash, is not the link: POSIX resolves a trailing slash through it, so it names the directory the link leads to, and that directory's mode changes. The change itself is made with `AT_SYMLINK_NOFOLLOW`, so a link swapped in after the check is refused by the system rather than followed.
+
+Every operand is checked before any is changed -- a path that is not there, exit 2; one nobody may look at, a symlink, and a file omafiles keeps, as `rm` refuses one, exit 1 -- and each that fails is named, not just the first, the rule `rm` and `trash` keep. Whether you may change a mode at all is the system's to say, the owner's or root's, so it is asked by trying: a refusal there, `Operation not permitted` on somebody else's file or a read-only filesystem, is reported for that path, every other operand is still changed, and the run exits 1, as coreutils does. `--dry-run` makes the checks and does not guess at that answer: over a file that is not yours it prints the change and exits 0.
+
+One line per path the run got through: the old mode, a tab, the new, a tab, the path. Modes are four octal digits, special bits included, and the path is last so a tab in a name cannot move them -- but a newline in a name still ends the line, so a script that can meet one reads `--json`. A mode that stayed the same is still a line. Two operands naming one path, `a` and `./a`, are one path and one line, and each old mode is read just before its own change, so a second name for the same file -- a hard link -- reports the mode the first change left. Under --json one object holding a `modes` array of `path`, `old` and `new`. The index and the tags are not touched, so it takes no lock.
+
+### Arguments
+- **`<mode>`** — Octal like 644, or clauses like u+x,go-w
+- **`<path>…`**
 
 ## `omafiles prune`
 
@@ -297,8 +473,14 @@ Drop index rows whose path is gone.
 
 It prints the paths it dropped, one per line, or under --json an object holding one `dropped` array of them. A row it stepped over -- a path the system will not describe, one the run cannot stat -- is named on stderr; a file the owner can still describe, including mode 000, stays in the index with no stderr. The run is still complete, because the receipt is for what it dropped and it dropped everything it decided to.
 
+A row whose directory is now a file is gone too: the system's `Not a directory` means nothing can be at that path while the file stands there, which is why coreutils `rm -f` reads it as a missing name.
+
+A `[dir]` that is gone from the disk is still a scope where the index holds rows at it or under it -- the tree another program's `mv` left -- matched against the index as `git rm -r --cached` matches a gone directory, so `prune` of where a file was drops its row. A gone `[dir]` with no rows is `path missing`, exit 2, as any operand.
+
+It asks before it drops anything, on a terminal, and refuses off one unless `--yes` answers for it. Declining exits 1 with nothing dropped, as apt's abort does: the run did not do what was asked. A dry run drops nothing and so asks nothing: `-n prune` runs off a terminal and exits 0.
+
 ### Arguments
-- **`[dir]`** — Tree to scope the drop to; defaults to the current directory
+- **`[dir]`** — Tree to scope the drop to, here or gone; defaults to the current directory
 
 ### Flags
 - **`--all`** — The whole index, not just one tree
@@ -310,9 +492,13 @@ It prints the paths it dropped, one per line, or under --json an object holding 
 
 Rebuild index rows from a tree.
 
-It prints the rows it wrote, one path per line, or under --json one array of them -- `path` and `tags`, and `tagged` where the row carries a date, the shape `export` and `ls` use. No row says anything about the file's own copy, and none can: the rows are printed when the index commits and the file's copy is written after that, on purpose, because a file claiming tags no row records is the disagreement `verify` exists to shout about. A mirror the filesystem refused is the run's answer instead -- named on stderr, and exit 1, and `--quiet` keeps it because that is an error and not a note -- so a consumer reads the array with the exit status rather than instead of it.
+It prints the rows it changed, one path per line, or under --json one array of them -- `path` and `tags`, and `tagged` where the row carries a date, the shape `export` and `ls` use. A row whose tags stay as they were is one it changed too where it rewrote the file's copy: plain `reindex` rewrites that copy from the row, and `--from-xattr` a value in a spelling it never writes -- but not where that copy holds a word that is not a tag, which it leaves as it is. The file's copy is written after the index commits, on purpose, because a file claiming tags no row records is the disagreement `verify` exists to shout about, and a copy the filesystem refused changed nothing, so its row is not printed. That refusal is the run's answer instead -- named on stderr, and exit 1, and `--quiet` keeps it because that is an error and not a note -- so a consumer reads the array with the exit status rather than instead of it. The same goes for a file whose value holds a word that is not a tag, `good,Bad Tag`: its valid tags are adopted or kept in the row, the value is left as it is -- only `tag clear` may rewrite it, and that is the command named -- and the run exits 1, because the tree it walked still disagrees. Every path it walks is one it promised, so a copy another line of the same `batch` queued for it counts too.
 
-A name that is not valid UTF-8 is a path no index row can hold, so it is named on stderr with its name mangled and the run exits 1 for the same reason: it walked away from a path it was asked to rebuild. A rename is the repair.
+A name that is not valid UTF-8 is a path no index row can hold, so it is named on stderr with its name mangled and the run exits 1 for the same reason: it walked away from a path it was asked to rebuild. A rename is the repair. A directory it could not open and an entry the system would not describe are named and exit 1 the same way; a chmod or a mount is the repair there. A `[dir]` it cannot open at all is refused before anything is read, as `sweep` refuses one, so inside a `batch` it takes the whole run back.
+
+A symlink in the tree is read as the file it leads to, because a tag on a link is on that file -- the rule every `tag` verb keeps. A file reached by a link and by its own name is one row, and a link leading out of the tree, or to nothing, adds no row. Two hard links in the tree whose rows hold different tags are one file with one copy, which cannot mirror both: plain `reindex` names them, writes neither copy and exits 1, run after run -- tag the file by one name, or let `--from-xattr` give each name the file's own tags.
+
+A file on a filesystem with no `user.*` namespace -- vfat, exfat -- holds no copy and cannot, so its row is the only record and neither form tries to write or adopt one, exit 0, as `cp -a` leaves such a target without.
 
 ### Arguments
 - **`[dir]`** — Tree to walk; defaults to the current directory
@@ -320,7 +506,182 @@ A name that is not valid UTF-8 is a path no index row can hold, so it is named o
 ### Flags
 - **`--from-xattr`** — Prefer xattr over the index on conflict, unless the file has nothing to say.
 
-  An empty xattr, or one no tag can be read out of, is read as a value the filesystem dropped rather than as tags somebody cleared: the index row is left alone, the path is named on stderr, and the run exits 1 because it walked away from a path it was asked to rebuild. Plain `reindex` is the repair -- it writes the row back over the file's copy.
+  An empty xattr, or one no tag can be read out of, is not taken at its word: the index row is left alone, the path is named on stderr, and the run exits 1 because it walked away from a path it was asked to rebuild. For an empty one -- almost always a value the filesystem dropped rather than tags somebody cleared -- plain `reindex` is the repair: it writes the row back over the file's copy. For one no tag can be read out of, `tag clear` is, and the message names it.
+
+## `omafiles sweep`
+
+- **Usage:** `omafiles sweep [--status] [dir]`
+- **Effect:** modifies state
+
+The run you do not watch.
+
+It is the routine as a verb. Whatever ends up firing it -- a timer, a hook, you at a prompt on a Friday -- runs this one command, so there is one implementation and one thing to read the behaviour of, and a schedule is three lines of configuration rather than a second program.
+
+Two rules make it safe to leave alone.
+
+It only ever makes the index know more. Row and file are merged both ways -- the row keeps every tag it holds and gains every tag the file carries, and the file's own `user.omafiles.tags` gains whatever the row holds and it does not -- and nothing is ever removed from either. That is what brings a file back on its own after something else moved, copied or restored it: the tags travelled with it in the xattr, and this is what reads them home. It is also where this parts company with `reindex`, which lets one side win outright and so has to be pointed at a tree by somebody who knows which side is right. A file carrying a value that holds a word that is not a tag is the one thing it will not rewrite -- the rule every verb but `tag clear` keeps -- because writing the salvaged tags back would delete the rest of that value, and a verb that may not remove a tag may not remove one that way either. `verify` goes on reporting it and `tag clear` is the verb licensed to drop it. Such a value is not counted as `skipped`: its valid tags still join the row, and only the file's copy is left as it is, said on stderr where it lacks a tag the row holds. A file on a filesystem with no `user.*` namespace holds no copy, so the other half of the union is not attempted there and nothing is said about it.
+
+And it never drops a row. A row whose file is gone is counted, said on stderr, and left exactly where it is -- `prune` is the verb for that, it asks before it acts, and it stays a decision a person makes. Dropping rows is the one thing an unwatched run must not do, because a row is sometimes the only copy of those tags on the machine.
+
+What it sweeps, with no `[dir]`, is every declared root that is here; a root whose `--check` or mount point nobody may look at is counted under `unreadable`, said on stderr, and the rest are still swept -- `roots ls` is already the list of trees this machine keeps tags on, and a run nobody is watching cannot take its scope from where it happened to be started. A machine that has declared no roots has no such list, so it asks for a directory instead of assuming the current one. Roots nested inside one another are each swept once: a root this run sweeps on its own is left out of the tree above it, and `sweep <dir>` alone still covers every root inside `<dir>` that is here, each as a pass of its own that builds its list of names; one inside it that is away is the walk's to report.
+
+One tree is one hold of the index lock: it locks, walks that tree, commits, and gives the lock back before the next one. The window writes through this same CLI, so a sweep that held the index across every root would surface as `store: cannot lock` in somebody's row menu. And a lock another writer holds, it does not wait for at all: it says which trees it left, and exits 0. That is not a failure -- it is a run that stepped aside, and the next one does the same work over the same trees. Only another writer is stepped aside for: an index that will not parse, or a lock file the system will not let it make, is exit 3 as for every writer, because the next run will meet it too. A routine that mailed you an exit 3 every time you tagged a file in the window is a routine you would turn off.
+
+It exits 0 whatever it counted, for the same reason. That is about what the walk finds: a `[dir]` it is handed that will not open, or that lies under a root that is away, is an operand refused, exit 1, the global rule for a path nobody may look at. A file nobody may read and a row whose file is gone are findings, not failures of the run, and a status that is nonzero every week over the same chmod is a status nobody reads. `verify` is the verb that exits 1 over a finding.
+
+The walk reads a symlink as the file it leads to, the way `reindex` does. A directory it could not open and an entry the system would not describe are counted under `unreadable` and said on stderr, and a name that is not valid UTF-8 is said as well; none of them changes the exit status.
+
+It builds the list of names `ls --untagged --cached` answers out of, for every tree it sweeps that is exactly a declared root -- the walk is the expensive half of this verb and two things want it, so it is done once. That list is written outside the store entirely: a different file, in a different directory, under no lock, which is what makes a long walk affordable at all. A tree that is not a root gets none, because a list is per root and a walk of one folder inside one cannot produce it. The list holds what plain `ls --untagged` would walk -- every entry by its own name, a link as itself -- and what this walk could not cover, so an answer out of it can say it is short.
+
+It prints the paths it changed, one per line, and says what it did on stderr, every count whatever it found -- `sweep: adopted 3, merged 1, gone 2, unreadable 0, skipped 0, listed 0, unlistable 0`. A file's own copy that is not written is said on stderr and not counted as `merged`: nothing changed. A run that finds every root away still prints every count and writes its receipt. A declared root that is away is named, `sweep: root <id> is declared and not here; it was not swept`, and the exit stays 0. A directory the list of names or the receipt cannot be made in is named with the system's reason. Under `--json` an object of `trees`, `adopted`, `merged`, `gone` and `unreadable`, each an array of paths, and `skipped`, `listed` and `unlistable`, counts of the rows it could not judge -- rows under a root that is away or cannot be checked, whether it is inside a swept tree or one of the roots it left, rows under a directory nobody may open, each root or directory named on stderr, and paths that went between the walk and the write -- the paths it wrote to a list of names, and the names that list's one-path-to-a-line format cannot hold. A dry run writes no list and counts the one it would write. Every key is there whatever it found, `trees` empty when no root was here. `--quiet` takes the stderr away and leaves the paths, which is the shape to run it in unattended.
+
+### Arguments
+- **`[dir]`** — Tree to sweep; defaults to every declared root that is here
+
+### Flags
+- **`--status`** — Print the last run's receipt and sweep nothing.
+
+  One fact to a line, tab separated, the shape `tags` and `roots ls` print in: when it last ran and how long it took, a `tree` line per tree it swept, and the counts, `unlistable` among them. `never` where it has not run. Under `--json` the same as an object of those keys and no others, whatever else the file holds, and where it has not run `at` and `seconds` are `null` beside empty `trees` and zero counts. A receipt that does not hold numbers where the numbers go -- or holds a count that is not a whole number from 0 to 2^63-1, a stamp no clock can print, or a tree that is not an absolute path in its clean form -- is not a receipt: it says so and exits 1, and the next sweep writes a new one.
+
+  The receipt is one file, `$XDG_STATE_HOME/omafiles/sweep.json` or `~/.local/state/omafiles/sweep.json`. State rather than data: it records that something happened, nothing reads it back into a decision, and deleting it costs only the answer to when this last ran. A dry run does not write one, and neither does a run that stepped aside with nothing swept. One the run cannot write is a note on stderr, exit 0: until one lands, this answers about the run before.
+
+## `omafiles view`
+
+- **Usage:** `omafiles view <SUBCOMMAND>`
+
+Save a way of asking, by name.
+
+A folder, a tag and a query are one thing here, which is why there is one verb and not three: a view is either a place or a set of tags, and both are `ls` with something filled in. Pinning a folder needs no feature of its own -- it is a view with a `dir`. The window lists them in the panel beside the file list and opens one with a keystroke; a tag view opens as a tags tab standing on that query, a folder view as a folder.
+
+They live in one jsonl file, `$XDG_CONFIG_HOME/omafiles/views.jsonl` or `~/.config/omafiles/views.jsonl` -- the shape the index and the roots use, so the same eyes read all three. A line `view add` would not have written is exit 3 from every verb that reads them, naming the line, as a malformed index line is: no usable name, a name an earlier line has in any case, both a `dir` and `tags` or neither, a `dir` that is not absolute or not clean, or tags not in the index's shape.
+
+A view is a folder or a set of tags and never both. Scoping a tag query to a folder is a question the window cannot walk, because a tags tab is not standing anywhere, and a view that means one thing at a prompt and another in a panel is worse than one that says it cannot. `ls --tag work ~/docs` still asks it at a prompt.
+
+The roadmap's example spells a saved search with `--untagged` in it. That one waits: `--untagged` walks the disk on every run, so a view carrying it would take seconds to open every time the panel drew it, and the cache that fixes it is not built yet.
+
+## `omafiles view ls`
+
+- **Usage:** `omafiles view ls`
+- **Effect:** read-only
+
+List the saved views.
+
+One per line: the name, a tab, and the command line it stands for, `omafiles ls …`, each word quoted to paste the way every command offered here is -- so a view is a thing you can read as well as open. Under `--json` an array of `name`, `dir` and `tags`. It takes no arguments, and neither does `roots ls`.
+
+The default subcommand, so `view` alone prints this.
+
+Each subcommand of `view` and `roots` takes its own flags and operands and nothing else: `view add` takes `--name`, `--tag` and one folder; `view rm` `--name` alone; `roots add` `--id`, `--mount`, `--check` and one path; `roots rm` `--id` alone; the two `ls` and `roots migrate` nothing. Anything more is refused before anything runs, `unexpected --tag` or `view rm: takes no arguments`, exit 1, and completion offers from the same table. A word that is none of the subcommands is refused the same way, `view: unknown subcommand <word>`.
+
+## `omafiles view add`
+
+- **Usage:** `omafiles view add <--name <name>> [-t --tag <tag>] [dir]`
+- **Effect:** modifies state
+
+Save a view.
+
+A name already saved is replaced rather than added beside: a panel with two entries reading `boletos` is a panel you have to open both of to tell apart. The comparison folds case, for the same reason.
+
+A name may hold letters, digits, spaces, `-`, `_` and `.`, at most 64 -- it is typed at a prompt and shown in a panel, so it may hold a space where a tag may not, and it may not hold the tab or the newline that would make the file unreadable a line at a time: one that does is refused, the tab written `\t`, and never rewritten into a space. Spaces at its ends are trimmed.
+
+### Arguments
+- **`[dir]`** — A folder to open instead; not with --tag
+
+### Flags
+- **`--name <name>`**
+- **`-t --tag <tag>`** — AND this tag
+
+## `omafiles view rm`
+
+- **Usage:** `omafiles view rm <--name <name>>`
+- **Effect:** modifies state
+
+Forget a view.
+
+Under `--json` it prints the object of `name` that `view add` prints. A dry run prints the name it would forget and forgets nothing.
+
+### Flags
+- **`--name <name>`**
+
+## `omafiles roots`
+
+- **Usage:** `omafiles roots <SUBCOMMAND>`
+
+Declare the trees the index may store rows relative to.
+
+A root buys two things, and both of them are about a disk that is not always here.
+
+A row under a root is written as the root's id and the rest of the way there, so remounting the same storage somewhere else leaves every tag where it was -- and two machines that mount the same NAS at different points are talking about the same rows. A row under no declared root keeps its absolute path, which is what every row was before roots existed and what every row on a machine that declares nothing stays.
+
+And a root that is declared and not here makes its rows `unreachable` rather than missing. Without one, an unmounted tree is `ENOENT` from a `stat`, which is exactly what every file in it having been deleted looks like -- so `prune` drops the rows and, on a filesystem with no `user.*` namespace to mirror them, that was the only copy of those tags on the machine. `prune` and `verify` both step over an unreachable row and say they did; `ls`, `tags` and `recent` leave it out of the answer, say so on stderr, which `--quiet` takes away, and exit 1. The declaration wins over the disk: a row under a root that is away is unreachable even where its path still answers a `stat` -- files left in an unmounted mount point are not the storage. So is a root whose declared directory is now a symlink, or sits under one: a root is a resolved path, and a directory reached through a link is not the one declared. Its rows are left alone, as for a disk in a drawer, until `roots rm` and `roots add` at the new place. A path handed to any verb under such a root is refused, `root <id> is declared and not here`, exit 1, even where something answers at it: every operand; every `[dir]`, the current directory a verb defaults to included, so `verify`, `reindex` and `sweep` refuse one as `prune` does; the folder of `view add`; the path of `roots add`; and the file `batch` or `import` reads. So does a root declared inside a tree: `rm`, `trash` and `mv` of a directory holding a root that is away, or cannot be checked, refuse it -- `<verb>: <dir> holds <root path>: root <id> is declared and not here`, or `<dir> is on the way to <root path>` where the root's own directory is not there to be held, exit 1, nothing done -- because that root's rows are not the tree's to drop or rewrite, and `mv` and `cp` refuse a destination that is such a root for the same reason. A path typed through a root's declared directory is under that root whatever it resolves to, so with that directory replaced by a symlink every operand typed through it is refused; a relative path, or one through any other symlink, finds its root where the kernel resolves it. A walk does not enter such a tree: `ls --untagged`, `ls --name` and `reindex` name it and exit 1, `sweep` names it and keeps its own exit 0 -- whether its directory is there or not, since udisks removes an unplugged disk's mount point and the declaration still names it -- and `verify` names it as not checked, as it does the rows under it, which alone does not make it exit 1. A row `mv` takes out of every root is stored as its absolute path from then on. A root whose `--check` or mount point nobody may look at is neither here nor away, and every row under it is reported with the system's reason the same way.
+
+An id is `[a-z0-9][a-z0-9._-]{0,63}` and is folded to lower case as it is typed, so `Archive` and `archive` are one root and not two. It is a name rather than a path because two things read it and both need it to be one: every index row names its root, so an id holding a `/` is a row nothing can place, and the list of names `sweep` builds is one file per root with the id for a file name. Removing a root drops its list of names with it.
+
+The declarations live in one jsonl file, `$XDG_CONFIG_HOME/omafiles/roots.jsonl` or `~/.config/omafiles/roots.jsonl` -- the same shape as the index, so the same eyes read both. A line that will not parse is exit 3 from every verb, the way a malformed index line is: guessing at which roots are declared would be guessing at which rows may be dropped. So is a declaration `roots add` would not have written -- an id not in the shape above, so no id can name a cache outside the cache directory, a path that is not absolute or not in its clean form, a `--check` that is not a clean path inside the root, a `mount` that is not `true`, or a path an earlier line declares under another id. A path is refused and never cleaned: `x/../w` cleaned as text is `w`, which is not where the kernel goes when `x` is a link. They are read before any path is judged, because they decide whether a path that is not there is gone or on a disk in a drawer -- so a malformed file is exit 3 even for an operand that is not there. The rule that a missing path is settled before anything is read is about the index. `completions` does not read them, because it prints a fixed script.
+
+Whether the storage is here is asked three ways, weakest last. A declared `--check` is the sure one: a name that only exists when the storage does, because an unmounted mount point is usually still an empty directory and its being there proves nothing. Without it, a `--mount` root is here when `/proc/self/mountinfo` has something mounted where it says -- the table util-linux `mountpoint(1)` reads first, which answers for a disk, sshfs, rclone and gvfs alike, and for a bind mount from the same filesystem too; only where the table will not read is it the older test, a device different from the directory above it. And a root that is simply part of the filesystem is here when its directory is, which is the same test as before roots existed.
+
+Roots may nest. A root declared inside another takes the rows under it -- the longest match wins -- so a drive mounted inside a tree that is itself a root keeps its rows its own.
+
+## `omafiles roots ls`
+
+- **Usage:** `omafiles roots ls`
+- **Effect:** read-only
+
+List the declared roots, and whether each is here.
+
+One root per line: the id, a tab, the path, a tab, and `here`, `away`, or `unknown` where the system would not answer the question -- that one with its reason on stderr and exit 1. Under `--json` an array of `id`, `path`, `mount`, `check` and `here`, which is `null` for `unknown`. The last field is the interesting one and it is not in the config file: whether the storage is plugged in is a question about this machine at this moment, and it is what decides whether `prune` may touch the rows under it.
+
+The default subcommand, so `roots` alone prints this.
+
+## `omafiles roots add`
+
+- **Usage:** `omafiles roots add <FLAGS> <path>`
+- **Effect:** modifies state
+
+Declare a root.
+
+The path is resolved, because everything compared against it is: a root declared through a symlink would hold no rows at all. An id already declared, and a path already declared under another id, are both refused rather than added beside. A list of names a root of the same id left behind is removed first; one that will not go refuses the add, exit 3, naming the system's reason.
+
+`--check` names a clean path inside the root, relative to it and with no `..` -- `--check ''` is refused, not taken as no check -- so the declaration survives the storage being mounted somewhere else. It has to be there as the root is declared: the storage is here while you declare it, and a marker missing now is a typo that would read `away` forever -- `mountpoint(1)` asks the storage the same way. It is resolved by the kernel and has to lead inside the root: one that leads out of it, or back to the root itself, answers for other storage and would read `here` always. `--mount` makes no such demand, so a drive that is not plugged in can be declared for an automount to bring later, and `roots ls` shows it `away` at once. A mount point that is not there at all -- udisks makes `/run/media/$USER/<label>` on mounting and removes it on unmounting -- is named as GNU `realpath -m` names it: the part that is here resolved, the rest as plain names, with no `.`, `..` or dangling link among them. `--dry-run` makes every refusal the real run makes, prints what it would declare, and writes nothing.
+
+Nothing is rewritten here. The rows under the new root migrate on the next write that changes a row, because the form a row takes on disk is decided when it is written; `roots migrate` does the whole index at once.
+
+### Arguments
+- **`<path>`**
+
+### Flags
+- **`--id <id>`** — What to call it, and what the index rows name
+- **`--mount`** — It arrives by being mounted, so being an empty directory means it is away
+- **`--check <path>`** — A path inside it, relative to it, that exists only when the storage does
+
+## `omafiles roots rm`
+
+- **Usage:** `omafiles roots rm <--id <id>>`
+- **Effect:** modifies state
+
+Undeclare a root.
+
+The rows stored under it come with it, each rewritten in the form the roots left give it -- its absolute path, or relative to a root declared inside this one -- and it says how many landed each way -- `0 row(s) written back` where none did. That is not a convenience: a row names a declaration, so leaving them behind would leave rows nothing can place and every verb refusing to read the index until the line came back, which is not a state a command should be able to put somebody in.
+
+The index is committed before the declarations are written, so the half-done case is the harmless one -- rows that no longer name the root, beside a declaration nothing references. A list of names that will not go with it is named with the system's reason, exit 3, after the rows and the declarations are written. `--dry-run` counts the rows and writes neither.
+
+Remove a root while its storage is away and the rows are written under the mount point as it stands today, which is a path that is not there. They are still the rows, and declaring the root again puts them back; but the reason to do this is that the storage is gone for good, and the moment to do it is while it is plugged in.
+
+### Flags
+- **`--id <id>`**
+
+## `omafiles roots migrate`
+
+- **Usage:** `omafiles roots migrate`
+- **Effect:** modifies state
+
+Rewrite every index row in the form the roots give it now.
+
+A read and a write of the same rows, which is all a migration is: each one is written under whichever root holds it today, or back as an absolute path where no root does. It prints how many landed each way.
+
+It is never required. A row migrates on its own the next time a write changes any row, so declaring a root and carrying on gets there too; this is the way to get there at once, and the way to see how many rows a declaration actually took in. Undeclaring carries its own rows, so this is not a step before `roots rm` either.
+
+`--dry-run` counts without writing.
 
 ## `omafiles verify`
 
@@ -329,14 +690,20 @@ A name that is not valid UTF-8 is a path no index row can hold, so it is named o
 
 Compare index, disk and xattr. Exit 1 if it found anything, the way `diff` does.
 
-One problem per line: the kind, a tab, the path, then a tab and a detail where there is one. `missing` has no detail, so its lines are two fields wide rather than three carrying an empty one -- a trailing tab on every one of them is whitespace standing in for nothing. Under --json it is an object holding one `problems` array of `problem`, `path` and `detail`, where every problem has all three fields; that is the shape to parse. The text form cannot spell a path holding a tab or a newline -- a tab in a name reads as the separator between fields, a newline ends the line, and nothing escapes either. The detail is the other way about, because what it quotes is the bytes a file's xattr holds and those are anybody's: a tab there is written `\t`, a newline `\n`, and a backslash `\\` so neither of the first two can be forged, and a problem stays one line of at most three fields whatever a file carries. The path is left as it is because it is a path -- cut that field out of a line and it has to still be one that can be handed to a command -- while the detail is prose about it. `--json` escapes both, which is the other half of why it is the shape to parse. Neither form is the bytes themselves: a name, and an xattr value, that is not valid UTF-8 is printed with what cannot be decoded as U+FFFD, in the JSON as well as in the text. The kinds, and what settles each:
+One problem per line: the kind, a tab, the path, then a tab and a detail where there is one. `missing` has no detail, so its line ends at the path: `missing`, a tab, the path, and no tab after it. Under --json it is an object holding one `problems` array of `problem`, `path` and `detail`, where every problem has all three fields; that is the shape to parse. The text form cannot spell a path holding a tab or a newline -- a tab in a name reads as the separator between fields, a newline ends the line, and nothing escapes either. The detail is the other way about, because what it quotes is the bytes a file's xattr holds and those are anybody's -- and so is every message that quotes words off a value, `reindex` and the `tag` verbs included: a tab there is written `\t`, a newline `\n`, every other control character `\xHH`, and a backslash `\\` so none of them can be forged, and a problem stays one line of at most three fields whatever a file carries. The path is left as it is because it is a path -- cut that field out of a line and it has to still be one that can be handed to a command -- while the detail is prose about it. `--json` escapes both, which is the other half of why it is the shape to parse. Because the text detail writes a backslash as `\\`, a name's undecodable byte, `\xHH` elsewhere, reads `\\xHH` there, and the `tag clear` command it names is escaped text rather than a line to paste for a path holding a backslash, a tab or a newline: the command to paste is the one in `--json`. Neither form is the bytes themselves. A name that is not valid UTF-8 is printed with each byte that cannot be decoded written `\xHH`, the rule everywhere here, because U+FFFD would be the name of some other file. An xattr value is spelled the same way, once: a byte of it that is not UTF-8, and a NUL, is written `\xHH` and never as U+FFFD, in the JSON as well as in the text, and a word of such a value holding one is not a tag, while the value's other words are read as ever. In the text a backslash the value holds is `\\`, so the byte and the four characters `\xHH` print apart; the JSON carries the value's text as it is, and there the two read alike. `xattr=` in a detail is the value as it stands, its words in the order and with the repeats the file holds, because the spelling can be the whole difference; `reindex` adopts or writes it sorted and each once. The kinds, and what settles each:
 
-- `missing` -- a row whose file is gone. `prune` drops the row.
+- `missing` -- a row whose file is gone, including one whose directory is now a file, since nothing can be at that path while it stands there, and one where resolving the row's path no longer gives the row back -- its file replaced by a symlink, whether the link leads anywhere or not, or a directory above it now a symlink: a row is the resolved path of a file, a `user.*` xattr cannot sit on a link, and the file the row named is gone. `prune` drops the row, `ls` and `tags` leave it out, a walk that meets the link lists it untagged, no write goes through the link to what it leads to, and `sweep` adopts the target's own tags at its resolved path as it would any file's.
 - `unindexed` -- a file whose own tags the index never heard of. `reindex` adopts them.
-- `xattr-differs` -- row and file disagree. `reindex` writes the row over the file; `reindex --from-xattr` writes the file over the row. Only the second of those can settle it when the file's xattr is readable but not writable -- a chmod 444, a read-only mount, a filesystem with no `user.*` namespace: plain `reindex` reports the refused write and exits 1, run after run, until the permissions change. `verify` cannot tell that case apart on its own, because the only way to find out whether a write would be taken is to make one, and `verify` does not write.
+- `xattr-differs` -- row and file disagree. It compares the value as it is written, so a value holding the row's tags in a spelling this program never writes -- `T,U`, ` t , u `, a trailing tab -- is reported until plain `reindex` writes it the way it writes one; `sweep` leaves it, because the file lacks no tag its row holds. `reindex` writes the row over the file; `reindex --from-xattr` writes the file over the row. Only the second of those can settle it when the file's xattr is readable but not writable -- a chmod 444, a read-only mount: plain `reindex` reports the refused write and exits 1, run after run, until the permissions change. `verify` cannot tell that case apart on its own, because the only way to find out whether a write would be taken is to make one, and `verify` does not write.
 - `xattr-unreadable` -- the file is there and its tags are not readable. A chmod or a mount, not a command here.
-- `xattr-invalid` -- the file carries a value no tag can be read out of, so no rebuild can adopt it and none will delete it. `tag clear` drops the value, and can only do it where the file's xattr is writable: on a chmod 444 or a read-only mount it reports the refused removal and exits 1, run after run, until the permissions change. A file with this problem has no index row, so nothing is recorded that could stand in for the value still on it.
-- `unreadable` -- a path the system will not talk about, and for a directory, one the walk did not go under either, so a file inside it the index has never heard of is not found here. Rows the index already holds under such a directory are reported on their own lines, each unreadable for that same one reason. A chmod or a mount. A name that is not valid UTF-8 is reported under this kind too, and the detail says which of the two it was: no path here can spell such a name, so neither it nor the tree under it was walked, and a rename is what settles that one.
+- `xattr-invalid` -- the file carries a value holding a word that is not a tag, `Has Space!` or `good,Bad Tag`, with an index row beside it or without one. No rebuild can adopt it whole and no verb but `tag clear` will rewrite it, because writing the valid tags back would delete the rest. `tag clear` drops the value, and the row with it where there is one -- the detail names the command to paste, and says `and the row` where it drops one -- and can only do it where the file's xattr is writable: on a chmod 444 or a read-only mount it reports the refused removal, and where no row records the drop it exits 1, run after run, until the permissions change. `,` is such a value; a value of no bytes is no value at all.
+- `unreadable` -- a path the system will not talk about, and for a directory, one the walk did not go under either, its detail `the tree under it was not walked: <reason>`, so a file inside it the index has never heard of is not found here. Rows the index already holds under such a directory are reported on their own lines, each unreadable for that same one reason. A chmod or a mount. A name that is not valid UTF-8 is reported under this kind too, and the detail says which of the two it was: no path here can spell such a name, so neither it nor the tree under it was walked, and a rename is what settles that one.
+
+The walk reads a symlink as the file it leads to, because that is where a tag on it lives: a file reached by a link and by its own name is checked once, and a link leading out of the tree, or to nothing, is not checked.
+
+A file on a filesystem with no `user.*` namespace -- vfat, exfat -- holds no copy and never can, so its row is the only record of its tags, as it is in TMSU, and it is not reported: a check that could never be settled would fail on every such disk forever.
+
+A hard link is two paths to one file. Rows are kept by path, so two names tagged apart are two rows sharing one inode and one xattr, and whichever was written first is `xattr-differs`. TMSU, which also keys by path, has the same property; tag a file by one name. An entry a directory lists and the system will not describe -- a directory readable and not searchable -- is `unreadable`, with what the system said as the detail.
 
 A clean tree prints nothing and exits 0.
 
@@ -352,24 +719,29 @@ Run commands from a file, one store write.
 
 Every line runs against the same index in memory and the commit waits for the last of them, so twenty `tag add` lines cost one read and one write instead of twenty of each. That is also what makes the run atomic: a line that fails returns before anything reached the disk, and the index is left exactly as it was found.
 
-A line that runs to the end and still does not settle everything it was asked to is the other half of that, and it is not a rollback: `reindex` over a file whose xattr the filesystem refuses, or `tag clear` on a path with no row where the removal is refused. Each of those exits 1 on its own, the commit stands -- the rows landed, and a diagnosis about what did not settle is no reason to throw away what did -- and the batch exits 1 in its turn, because the promise a line makes is the same promise inside one. The stderr says which of the two happened: a rollback names the line and says nothing was written. A refused mirror that `tag add` promises nothing about is exit 0 here as it is on its own.
+A line that runs to the end and still does not settle everything it was asked to is the other half of that, and it is not a rollback: `reindex` over a file whose xattr the filesystem refuses, or `tag clear` on a path with no row where the removal is refused. Each of those exits 1 on its own, the commit stands -- the rows landed, and a diagnosis about what did not settle is no reason to throw away what did -- and the batch exits 1 in its turn, because the promise a line makes is the same promise inside one. The stderr says which of the two happened: a rollback names the line and says nothing was written. A refused mirror that `tag add` promises nothing about is exit 0 here as it is on its own. A dry run exits 1 the same way where the refusal is one the program makes for itself -- `reindex` over a value holding a word that is not a tag -- because that is not a guess about the filesystem. Which of the two a path is follows the state the run ends in, not the line that touched it: a `tag clear` after a `tag add` on a file no row recorded before the batch leaves no row after it either, so a removal refused there is exit 1, and a file a `reindex` line walked is promised whichever line queued its copy. A file several lines touch has its xattr written once, after the commit, with the row the commit kept. Two names of one file, hard links, are one file there: a line reads the copy an earlier line queued under the other name, and the file ends with the copy of the line that wrote it last, as the lines run one by one leave it.
 
-A line is a verb, its flags and its operands, split into words the way a shell splits them and no further. Quotes of either kind hold a word together, a backslash escapes the character after it, and a quote nothing closes is refused with the line quoted -- `batch: line 1: unterminated double quote` -- and nothing written. Nothing is expanded: no `$VAR`, no `~`, no globbing. A path is taken as written here as it is everywhere else, so the shell that writes the file is where expansion belongs.
+A line is a verb, its flags and its operands, split into words the way a shell splits them and no further: at spaces and tabs, POSIX's default `IFS` within a line, and nowhere else, so a `\r`, a form feed or a no-break space is part of the word it is in. Quotes of either kind hold a word together, a backslash escapes the character after it, and a quote nothing closes is refused with the line quoted -- `batch: line 1: unterminated double quote` -- and nothing written. Nothing is expanded: no `$VAR`, no `~`, no globbing. A path is taken as written here as it is everywhere else, so the shell that writes the file is where expansion belongs. The file is read as bytes: a line ending `\r\n` loses that one `\r`, and a `\r` anywhere else -- a second one before it, or one ending a last line no newline ends -- is a character of the word it is in, so a file named with one can be named.
 
-A `#` in the first column is a comment, and a blank or whitespace-only line is skipped. Past that first column it is an ordinary character: `tag add --tag t -- c.txt # a note` hands `#`, `a` and `note` to the verb as operands, and the line fails with `path missing` and takes the batch back with it. That parts company with every shell on purpose -- a word is taken as written, so a file really called `#draft.md` is nameable without quoting it, and a rule that ate the rest of a line would eat those paths instead. A comment goes on a line of its own.
+A `#` in the first column is a comment, and a line of nothing but spaces and tabs is skipped. Past that first column it is an ordinary character: `tag add --tag t -- c.txt # a note` hands `#`, `a` and `note` to the verb as operands, and the line fails with `path missing` and takes the batch back with it. That parts company with every shell on purpose -- a word is taken as written, so a file really called `#draft.md` is nameable without quoting it, and a rule that ate the rest of a line would eat those paths instead. A comment goes on a line of its own.
 
-Four things a line cannot be. Each is refused with the line quoted, before it runs, and nothing is written:
+What a line cannot be. Every line is split, checked and parsed -- its verb, its flags and their values, how many operands it has, and every tag it names -- before the first one runs, so a refused line -- an unknown verb or flag, `tag merge one`, `tag add --tag "Bad Tag"`, `import` with no file, `reindex a b` -- on line 2 is refused with the line quoted before line 1 has run, and nothing is written. What only the disk can answer -- a path that is not there -- is found when the line runs, and takes the run back then. The index is read before any line runs, so one that will not parse is exit 3 even where a line names a missing path; the rule that a missing path is settled before the index opens is each verb's on its own. What a line cannot be:
 
 - `batch` itself. One file, one store write; a nested one is a second.
-- `rm`, `mv`, `cp` or `trash`. They change files on disk, and a rolled back index cannot bring a deleted file home; a run that half emptied a directory and then reported that it had written nothing would be lying about the half that mattered.
-- a verb that only reads -- `ls`, `tags`, `has`, `json`, `recent`, `export`, `verify`, `open`, `completions`, `tag ls`. A batch prints nothing until it commits, so a read in the middle of one could only print rows a later line might still take away.
+- `rm`, `mv`, `cp`, `trash` or `chmod`. They change files on disk, and a rolled back index cannot bring a deleted file home or put a mode back; a run that half emptied a directory and then reported that it had written nothing would be lying about the half that mattered.
+- `view add`, `view rm`, `roots add`, `roots rm` or `roots migrate`. Each writes a file of its own, which a rolled back index cannot undo either.
+- `sweep`, `--status` included. It takes the lock one tree at a time and keeps its lists of names and its receipt outside the index, which one commit cannot cover; it is the run you do not watch, and a batch is one you compose.
+- `import` of the file the batch itself was read out of, by any name, told by its device and inode: `-` where the batch came from stdin, or `batch /dev/stdin`, or a stdin redirected from the batch file; `/dev/stdin` or `/proc/self/fd/0` the same. That file was the batch, and holds nothing for the line.
+- a verb that only reads -- `ls`, `tags`, `has`, `json`, `recent`, `export`, `verify`, `open`, `completions`, `tag ls`, `view ls`, `roots ls`, and `view` or `roots` with nothing after it. A batch prints nothing until it commits, so a read in the middle of one could only print rows a later line might still take away.
 - a global flag. `--json`, `--dry-run`, `--yes` and `--quiet` are the batch's own and are typed before it; on a line they are refused rather than applied to it.
 
 Each of those runs on its own.
 
-Everything else is a line, `reindex`, `prune` and `import` included. `prune` asks before it drops a row and a question needs a terminal to ask at: a batch fed from a pipe, a hook or a script has none, so the line refuses and takes the run down with it. `--yes` before the batch answers for every line at once.
+Everything else is a line, `reindex`, `prune` and `import` of a named file included. `prune` asks before it drops a row and a question needs a terminal to ask at: a batch fed from a pipe, a hook or a script has none, so the line refuses and takes the run down with it. `--yes` before the batch answers for every line at once.
 
-Under --json the run prints one array holding every row it wrote, once, after the commit. Once is once per path and not once per line: what is printed is what the index holds when the run ends, so three lines tagging one file are one row rather than the three states they passed through, and a path a later line cleared is no row at all. `--dry-run` prints that same set as paths, one per line. The lines print nothing of their own.
+A file with no line to run -- empty, or only comments and blank lines -- writes nothing: the index is read, so a malformed one is exit 3 as from every verb, but neither locked nor made, and --json prints `[]`.
+
+Under --json the run prints one array holding every row it wrote, once, after the commit. Once is once per path and not once per line: what is printed is what the index holds when the run ends, so three lines tagging one file are one row rather than the three states they passed through. A path the run leaves with no row -- a row a line took away by `tag clear`, a `tag rm` of its last tag or `prune`, or a file with no row whose own value a line emptied -- is that path with empty `tags`, stamped with the moment of the drop, the receipt `tag clear` prints on its own; a path whose row and copy end the run as they began it is in neither receipt, so one a line tagged and a later line cleared, with no row and no value before the run, is not listed -- by any of its names, where two hard links of one file were tagged apart. `--dry-run` prints that same set as paths, one per line. The lines print nothing of their own.
 
 ### Arguments
 - **`[file]`** — Command file; - or omitted reads stdin
@@ -379,7 +751,9 @@ Under --json the run prints one array holding every row it wrote, once, after th
 - **Usage:** `omafiles export`
 - **Effect:** read-only
 
-Dump one index row per line, as jsonl: many documents, which a JSON parser refuses; --json instead dumps them as one array
+Dump one index row per line, as jsonl: many documents, which a JSON parser refuses; --json instead dumps them as one array.
+
+Each row is written in the form the index stores it under the roots declared now, which is the one place output is not an absolute path: a row under a declared root is `root`, its id, and `path` relative to it -- a row under a root declared since it was last written as well, which the file itself still holds as an absolute path until the next write that changes a row, or `roots migrate`. That is what makes a dump portable -- the same disk mounted somewhere else, or on another machine, reads it back onto the same files, because `import` places the row under wherever that root is declared there. Every other verb prints the absolute path.
 
 ## `omafiles import`
 
@@ -392,7 +766,11 @@ Either shape it writes: one JSON object per line, or the single array `--json` g
 
 A merge and not a replacement: the rows the dump does not mention are left alone, so restoring one machine's tags onto another is not a way of losing the second machine's.
 
-A merged tag is written to the row and mirrored onto the file's own `user.omafiles.tags` where there is a file here to take it -- a dump names paths that are not on this machine, which is the point of merging one, and those arrive as rows and nothing else. A filesystem that refuses the mirror is reported on stderr and the run still exits 0, the rule `tag add` keeps: the row is the record, and the note is one `--quiet` takes away. `reindex` exits 1 for the identical refusal, because what it promises is that the index and the files agree about the tree it walked.
+Each row is held to the shape the index holds -- the one check the index's own loader makes -- after its tags are folded: each trimmed and lower-cased, then sorted and each kept once, so `["B","a","a"]` is `a,b`. One that is not is refused, naming its line, exit 1, and nothing is merged -- a row with `tags` empty or missing among them, since no row holds none. A dump's path is a row, and here it counts only where it resolves to itself, the rule `verify` and `prune` read a row by: such a path is stored in the spelling its directories store, and one that a symlink at it or above it now leads somewhere else is stored as the dump gives it, a row that is missing, with nothing written through the link -- git writes nothing beyond a symlink either. Carrying tags to a machine where the same files sit at other paths is what roots are for: `export` writes a row under one as its id and the rest of the way there. One that is not here is stored as the dump gives it, since a dump names paths on other machines; one here that resolves to a name that is not valid UTF-8 is refused, naming its line, the rule for every path. So is a line of a jsonl dump that begins with a byte order mark, and one that is not UTF-8, named with its bytes.
+
+A file that is here starts from its row plus the tags its own value carries, the rule `tag add` keeps, and one whose value the system will not show refuses the whole merge, exit 1.
+
+A merged tag is written to the row and mirrored onto the file's own `user.omafiles.tags` where there is a file here to take it -- a dump names paths that are not on this machine, which is the point of merging one, and those arrive as rows and nothing else, silently. A path the system will not describe -- any answer but ENOENT, a loop of links included -- one under a root that is away, and one a symlink now leads through, is merged without its file's copy, and said on stderr the way a refused mirror is, once however many lines name it. A filesystem that refuses the mirror is reported on stderr and the run still exits 0, the rule `tag add` keeps: the row is the record, and the note is one `--quiet` takes away. `reindex` exits 1 for the identical refusal, because what it promises is that the index and the files agree about the tree it walked.
 
 Under --json it prints one array of the rows it merged: one row per path, as the index holds it once the merge lands, so a dump naming a path on two lines gives one row and not the state in between.
 
@@ -406,9 +784,9 @@ Under --json it prints one array of the rows it merged: one row per path, as the
 
 Print a shell completion script.
 
-The one verb that refuses --json: what it prints is a shell script, which has no JSON shape. An OMAFILES_JSON in the environment is a default rather than a request, and is ignored here instead.
+The one verb that refuses --json: what it prints is a shell script, which has no JSON shape. An OMAFILES_JSON in the environment is a default rather than a request, and a valid one is ignored here instead; one that is not a boolean is refused, exit 1, as it is before every verb.
 
-The script is a shim: it calls `omafiles __complete -- <the words typed so far>` and offers back whatever that prints, so the candidates are the binary's own and a shell that has `omafiles` needs nothing else installed. `__complete` prints one candidate per line and exits 0; it exits 1 having printed nothing where it has no opinion, which is where a path goes, and the shim falls back to the shell's own filename completion there. When it would load the index for tags and that file will not parse, it has no opinion the same way -- empty stdout, exit 1 -- rather than dumping `store: malformed jsonl` as a candidate. The last word handed to it is the one under the cursor and may be empty. It is not a verb to type: the double underscore marks it as the shim's, its output is a protocol rather than an answer, and it is the one thing here `--help` will not describe.
+The script is a shim: it calls `omafiles __complete -- <the words typed so far>` and offers back whatever that prints, so the candidates are the binary's own and a shell that has `omafiles` needs nothing else installed. `__complete` prints every candidate for the position, one per line, and exits 0, and the shell narrows them to what is typed, as `compgen -W`, `compadd` and fish do -- the bash shim case aside, so `-t Wo<Tab>` reaches `work`, since a tag is folded before anything else sees it; it exits 1 having printed nothing where it has no opinion, which is where a path goes, and the shim falls back to the shell's own filename completion there. Where a tag goes and the index holds none it prints nothing and exits 0, because a file name is no answer there either, and so after `--` in the verb's place, which the program refuses. When it would load the index for tags and that file will not parse, it has no opinion the same way -- empty stdout, exit 1 -- rather than dumping `store: malformed jsonl` as a candidate, and so for a base or current directory that cannot be spelled. A roots file that will not parse costs only what is read out of it -- the root ids, and the tags of rows placed under a root -- and the verbs, the flags and the tags of every other row are still offered. The last word handed to it is the one under the cursor and may be empty. Besides the verbs, the subcommands of `tag`, `view` and `roots`, and their flags it offers the index's tags wherever a tag goes, the saved view names after `view rm --name`, and the declared root ids after `roots rm --id`, the way cobra and git complete their own objects; a value typed attached, `--tag=wo`, is offered attached. A global already on the line, in either spelling, is not offered again, and nor is a verb's flag, except the ones that may be given more than once. Every rule is read from the tables the parse refuses by, never kept beside them: which flags the verb and the subcommand take, which may repeat -- so `has` is not offered a second `--tag` -- which two a verb refuses together -- so `--cached` is offered once `--untagged` or `--name` is on the line, and neither it nor `--tag`, `--any` or `--since` beside the other -- and how many operands the verb takes and of what kind. A position past the last operand, one a flag on the line takes the place of (`prune --all`), `chmod`'s mode, `recent`'s count and a value that is a word rather than a path print nothing and exit 0, and `completions` offers its shells; a line holding a flag the verb does not take, or a word in the verb's place that is no verb -- a flag no global is, say -- is already an error, and there it has no opinion. `completions` is not offered once `--json` is on the line. Bash splits a word at `=` and `:`, which are in its `COMP_WORDBREAKS`; the bash shim joins the pieces again, as git's completion reassembles them, and matches the word with its quotes and backslashes undone, as bash-completion dequotes it, so `--tag=wo`, `key=v` and `a:b` complete whole, and `my\ v` and `'my v` both reach a view named `my view`. Readline marks a directory by testing only its own piece of the word, so past a `=` or `:` the script adds the `/` itself, as bash-completion's scp completion does, and `x:y<Tab>` ends `x:y/` where `x:y` is a folder. A path attached to a flag, `--from=a<Tab>`, completes the part after the `=`, as bash-completion's `-s` and git's `--*=*` cases take it, in all three shims. Past `--` every word is an operand. `tag merge` takes two tags; `tag rename` takes two tags followed by optional paths. The bash script turns on filename treatment only where it falls back to file names, as bash-completion's `_filedir` does with `compopt -o filenames`, so a tag named like a folder in the current directory completes without a `/`. The zsh script works sourced, where it calls `compdef`, and installed on `$fpath` as `_omafiles`, where the first Tab runs it -- cobra's guard on `$funcstack`. It is not a verb to type: the double underscore marks it as the shim's, its output is a protocol rather than an answer, and it is the one thing here `--help` will not describe.
 
 ### Arguments
 - **`<shell>`** — bash, zsh or fish

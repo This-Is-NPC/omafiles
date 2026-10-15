@@ -11,7 +11,10 @@ CONFIG  += ordered
 SUBDIRS = \
     src/core \
     src/cli \
-    src/studio
+    src/studio \
+    src/preview \
+    src/archive \
+    src/devices
 
 core.subdir   = src/core
 cli.subdir    = src/cli

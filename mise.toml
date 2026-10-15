@@ -3,36 +3,44 @@ usage = "6.6.0"
 
 [tasks.deps]
 description = "Checks the system Qt/qmake toolchain"
-run = ".scripts/deps.sh"
+run = "scripts/deps.sh"
 
 [tasks.build]
 description = "Builds the CLI and studio"
-run = ".scripts/build.sh"
+run = "scripts/build.sh"
 
 [tasks.studio]
 description = "Builds and opens the studio"
-run = ".scripts/studio.sh"
+run = "scripts/studio.sh"
+
+[tasks.install]
+description = "Builds, then installs the binaries and desktop entry under ~/.local (PREFIX overrides)"
+run = "scripts/install.sh"
+
+[tasks.uninstall]
+description = "Removes what install put under ~/.local (PREFIX overrides)"
+run = "scripts/uninstall.sh"
 
 [tasks.test]
 description = "Builds and runs unit tests and the CLI e2e"
-run = ".scripts/test.sh"
+run = "scripts/test.sh"
 
-[tasks.verify]
-description = "Runs the local gate (docs current, QML clean, then tests)"
-run = ".scripts/verify.sh"
+[tasks.check]
+description = "Runs the local gate (docs current, links resolve, QML clean, pictures current, then tests)"
+run = "scripts/check.sh"
 
 [tasks."hooks:install"]
-description = "Installs versioned git hooks that exec .scripts/verify.sh"
-run = ".scripts/install-hooks.sh"
+description = "Installs versioned git hooks that exec scripts/check.sh"
+run = "scripts/install-hooks.sh"
 
 [tasks.shots]
 description = "Regenerates the docs/img screenshots from the studio, offscreen"
-run = ".scripts/shots.sh"
+run = "scripts/shots.sh"
 
 [tasks.lint]
 description = "Lints the QML with every warning fatal"
-run = ".scripts/qml-check.sh"
+run = "scripts/qml-check.sh"
 
 [tasks."usage:gen"]
 description = "Regenerates docs/cli.md from omafiles.usage.kdl"
-run = ".scripts/usage-gen.sh"
+run = "scripts/usage-gen.sh"

@@ -5,6 +5,7 @@
 #include <QSet>
 #include <QtQmlIntegration/qqmlintegration.h>
 #include <QString>
+#include <QVariantMap>
 #include <QVector>
 
 namespace omafiles {
@@ -27,8 +28,30 @@ class TabState : public QObject
     Q_PROPERTY(QString title READ title NOTIFY titleChanged)
     Q_PROPERTY(QString selectedTag READ selectedTag WRITE setSelectedTag NOTIFY selectedTagChanged)
     Q_PROPERTY(QString selectedNode READ selectedNode WRITE setSelectedNode NOTIFY selectedNodeChanged)
+    /// Resolved as it is set: the kernel's name where it gives one, otherwise
+    /// the path as typed, made absolute.
     Q_PROPERTY(QString cwd READ cwd WRITE setCwd NOTIFY cwdChanged)
+    /// The tags a `tags` tab has walked into, in the order they were walked.
+    ///
+    /// A list and not a set, though the question it asks is one: `#work/#draft`
+    /// and `#draft/#work` name the same files, and the only thing the order is
+    /// for is knowing which one `h` takes back off.
+    Q_PROPERTY(QStringList facets READ facets WRITE setFacets NOTIFY facetsChanged)
+    Q_PROPERTY(bool untagged READ untagged WRITE setUntagged NOTIFY facetsChanged)
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY filterChanged)
+    /// What the rows are narrowed to beside the name filter, each key one
+    /// criterion: `kind` (`dir` or `file`), `type` (a Type column word), `tagged`
+    /// (a bool), `tag`, and `within` (seconds since the file was modified).
+    Q_PROPERTY(QVariantMap criteria READ criteria WRITE setCriteria NOTIFY criteriaChanged)
+    /// A shell pattern a files tab is answering across the roots -- `*.pdf` --
+    /// out of the lists of names `sweep` writes. Empty when the tab is a
+    /// folder. It is not the filter: the filter narrows what is on screen,
+    /// and this decides what is on screen.
+    Q_PROPERTY(QString pattern READ pattern WRITE setPattern NOTIFY patternChanged)
+    /// Whether a files tab is listing what the desktop opened lately, out of
+    /// its recently-used list, instead of a folder. Exclusive with a pattern
+    /// and a tag the way those are with each other: one question per tab.
+    Q_PROPERTY(bool recent READ recent WRITE setRecent NOTIFY recentChanged)
     Q_PROPERTY(QString viewMode READ viewMode WRITE setViewMode NOTIFY viewModeChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
     Q_PROPERTY(QString sortRole READ sortRole WRITE setSortRole NOTIFY sortChanged)
@@ -42,7 +65,29 @@ public:
     QString selectedTag() const { return m_selectedTag; }
     QString selectedNode() const { return m_selectedNode; }
     QString cwd() const { return m_cwd; }
+    QStringList facets() const { return m_facets; }
+    void setFacets(const QStringList &facets);
+    /// Whether a tags tab is standing in the complement of its vocabulary --
+    /// what carries no tag at all.
+    ///
+    /// Not a facet, and it cannot be one: the facets are a query, `#a/#b` is
+    /// `ls --tag a --tag b`, and "has no tag" is not a tag. It is the other
+    /// place the root of a tags tab leads to, so it takes a flag of its own and
+    /// the two are exclusive by construction.
+    bool untagged() const { return m_untagged; }
+    void setUntagged(bool untagged);
+    Q_INVOKABLE void enterFacet(const QString &tag);
+    Q_INVOKABLE void leaveFacet();
     QString filter() const { return m_filter; }
+    QVariantMap criteria() const { return m_criteria; }
+    void setCriteria(const QVariantMap &criteria);
+    /// Sets one criterion, or takes it off when it already holds `value`, so
+    /// one menu entry both applies and removes it.
+    Q_INVOKABLE void toggleCriterion(const QString &key, const QVariant &value);
+    QString pattern() const { return m_pattern; }
+    void setPattern(const QString &pattern);
+    bool recent() const { return m_recent; }
+    void setRecent(bool recent);
     QString viewMode() const { return m_viewMode; }
     bool showHidden() const { return m_showHidden; }
     QString sortRole() const { return m_sortRole; }
@@ -51,6 +96,7 @@ public:
     void setSelectedTag(const QString &tag);
     void setSelectedNode(const QString &id);
     void setCwd(const QString &path);
+    void setLocation(const QString &directory, const QString &cursor);
     void setFilter(const QString &text);
     void setViewMode(const QString &mode);
     void setShowHidden(bool show);
@@ -78,14 +124,18 @@ public:
     Q_INVOKABLE void toggleSortDirection();
     /// Picking a new field starts it the way that field is usually read.
     Q_INVOKABLE static bool ascendingByDefault(const QString &role);
-    static QString validSortRole(const QString &role);
+    Q_INVOKABLE static QString validSortRole(const QString &role);
 
 signals:
     void titleChanged();
     void selectedTagChanged();
     void selectedNodeChanged();
     void cwdChanged();
+    void facetsChanged();
     void filterChanged();
+    void criteriaChanged();
+    void patternChanged();
+    void recentChanged();
     void viewModeChanged();
     void showHiddenChanged();
     void sortChanged();
@@ -96,7 +146,12 @@ private:
     QString m_selectedTag;
     QString m_selectedNode;
     QString m_cwd;
+    QStringList m_facets;
+    bool m_untagged = false;
     QString m_filter;
+    QVariantMap m_criteria;
+    QString m_pattern;
+    bool m_recent = false;
     QString m_viewMode = QStringLiteral("list");
     bool m_showHidden = false;
     QString m_sortRole = QStringLiteral("name");
@@ -136,7 +191,8 @@ public:
     TabState *current() const;
     void setCurrentIndex(int index);
 
-    TabState *addTab(const QString &kind);
+    TabState *addTab(const QString &kind, const QString &directory = {},
+                     const QString &cursor = {});
     void closeTab(int index);
     Q_INVOKABLE void stepTab(int delta);
 
@@ -166,9 +222,20 @@ class Workspace : public QObject
     Q_PROPERTY(int paneCount READ paneCount NOTIFY panesChanged)
     Q_PROPERTY(int focusedPane READ focusedPane WRITE setFocusedPane NOTIFY focusedPaneChanged)
     Q_PROPERTY(omafiles::TabState *currentTab READ currentTab NOTIFY currentTabChanged)
+    /// The details view's columns after the name, in order. One set for the
+    /// window, kept in `$XDG_STATE_HOME/omafiles/studio.conf`.
+    Q_PROPERTY(QStringList columns READ columns NOTIFY columnsChanged)
+    /// Every field a column can show.
+    Q_PROPERTY(QStringList columnFields READ columnFields CONSTANT)
 
 public:
     explicit Workspace(QObject *parent = nullptr);
+
+    QStringList columns() const { return m_columns; }
+    static QStringList columnFields();
+    Q_INVOKABLE void toggleColumn(const QString &field);
+    /// Moves a shown column `delta` places, clamped to the ends.
+    Q_INVOKABLE void moveColumn(const QString &field, int delta);
 
     QQmlListProperty<PaneState> panes();
     int paneCount() const { return m_panes.size(); }
@@ -177,8 +244,27 @@ public:
     TabState *currentTab() const;
 
     Q_INVOKABLE PaneState *paneAtIndex(int index) const;
+    Q_INVOKABLE TabState *tabAtIndex(int paneIndex, int tabIndex) const;
     Q_INVOKABLE void addTab(const QString &kind);
     Q_INVOKABLE void addTabIn(int paneIndex, const QString &kind);
+    /// A new tab already standing somewhere, which is what every `open in a new
+    /// tab` means: made and then walked would show the home folder for a frame
+    /// and put a listing nobody asked for in the history of the new tab.
+    Q_INVOKABLE void openTabIn(int paneIndex, const QString &kind, const QString &directory);
+    /// The same, in a pane that does not exist yet.
+    Q_INVOKABLE void splitWith(const QString &kind, const QString &directory);
+    /// This tab again, beside it: the same folder, tag, view and sort.
+    ///
+    /// The marks are not carried over. They name a set somebody assembled by
+    /// hand to act on, and a second copy of it in a second tab is a second
+    /// chance to act on it by accident.
+    Q_INVOKABLE void duplicateTab(int paneIndex, int tabIndex);
+    Q_INVOKABLE void closeTabsAfter(int paneIndex, int tabIndex);
+    /// Moves a tab to the pane beside it, with everything it was showing.
+    Q_INVOKABLE void moveTabToOtherPane(int paneIndex, int tabIndex);
+    /// The pane a `to the other pane` command means: the next one, wrapping, or
+    /// nothing at all when this is the only pane there is.
+    Q_INVOKABLE PaneState *otherPane(int paneIndex) const;
     Q_INVOKABLE void closeTab(int paneIndex, int tabIndex);
     Q_INVOKABLE void closeCurrentTab();
     Q_INVOKABLE void stepTab(int delta);
@@ -191,15 +277,20 @@ signals:
     void panesChanged();
     void focusedPaneChanged();
     void currentTabChanged();
+    void columnsChanged();
+    void propertiesRequested(const QString &text);
+    void presentationRequested(const QString &startupId);
 
 private:
     static qsizetype paneCountFn(QQmlListProperty<PaneState> *list);
     static PaneState *paneAt(QQmlListProperty<PaneState> *list, qsizetype index);
 
     void adopt(PaneState *pane, int at);
+    void setColumns(const QStringList &columns);
 
     QVector<PaneState *> m_panes;
     int m_focused = 0;
+    QStringList m_columns;
 };
 
 } // namespace omafiles

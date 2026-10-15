@@ -17,11 +17,20 @@ SOURCES += \
     ../src/core/Record.cpp \
     ../src/core/Store.cpp \
     ../src/core/Xattr.cpp \
-    ../src/core/Paths.cpp
+    ../src/core/Paths.cpp \
+    ../src/core/Roots.cpp \
+    ../src/core/View.cpp \
+    ../src/core/Recent.cpp
 
 HEADERS += \
     ../src/core/Tag.h \
     ../src/core/Record.h \
     ../src/core/Store.h \
     ../src/core/Xattr.h \
-    ../src/core/Paths.h
+    ../src/core/Paths.h \
+    ../src/core/Roots.h \
+    ../src/core/View.h \
+    ../src/core/Recent.h
+
+HEADERS += ../src/core/Trash.h
+SOURCES += ../src/core/Trash.cpp
