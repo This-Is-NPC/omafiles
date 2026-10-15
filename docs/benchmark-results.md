@@ -7,7 +7,7 @@ from its separate memory replay.
 
 | | |
 |---|---|
-| Product | `72afc3e` |
+| Product | the studio of `2d8e182` without its status receipt colour fix |
 | Date | 2026-10-15, 06:57–07:08 UTC |
 | CPU | AMD Ryzen AI 5 340, CPUs 0 (A) and 0–1 (B); memory observer on CPU 2 |
 | Kernel | 7.2.5-3-omarchy, x86_64 |
