@@ -82,7 +82,7 @@ Full keyboard controls are documented in the sections above. Pointer actions wor
 
 ## Requirements
 
-- Qt 6: `qt6-base`, `qt6-declarative`, `qt6-pdf`, `qt6-multimedia`
+- Qt 6: `qt6-base`, `qt6-declarative`, `qt6-webengine` (QtPdf), `qt6-multimedia`
 - `libarchive` for archive compression, extraction and previews
 - `kwindowsystem` (KF6) for portal parent-window integration on Wayland and X11
 - `xdg-utils` for `omafiles open`

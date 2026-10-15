@@ -30,5 +30,5 @@ fi
 echo "missing:$missing" >&2
 echo >&2
 echo "on Arch / Omarchy:" >&2
-echo "  sudo pacman -S --needed qt6-base qt6-declarative qt6-pdf qt6-multimedia libarchive glib2 kwindowsystem gcc make" >&2
+echo "  sudo pacman -S --needed qt6-base qt6-declarative qt6-webengine qt6-multimedia libarchive glib2 kwindowsystem gcc make" >&2
 exit 1
