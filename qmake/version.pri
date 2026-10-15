@@ -5,7 +5,7 @@
 # because no source changed, and an incremental build keeps the old version.
 # omafiles.usage.kdl feeds `usage` and stays a literal, so a test asserts that
 # every copy and `omafiles --version` say the same thing.
-OMAFILES_VERSION = 0.1.0 # x-release-please-version
+OMAFILES_VERSION = 0.2.0 # x-release-please-version
 VERSION = $$OMAFILES_VERSION
 
 OMAFILES_VERSION_HEADER = $$OUT_PWD/omafiles_version.h
