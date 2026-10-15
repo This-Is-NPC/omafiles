@@ -9,4 +9,4 @@ if [ -z "${OMAFILES_TEST_ENV:-}" ]; then
 fi
 
 mkdir -p docs
-/usr/bin/python3 "$root/scripts/usage.py" g markdown -f omafiles.usage.kdl --out-file docs/cli.md
+"$root/scripts/usage-markdown.sh" docs/cli.md

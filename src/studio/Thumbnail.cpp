@@ -35,6 +35,7 @@
 #include <QtConcurrentRun>
 #include <fcntl.h>
 #include "EntryWatcher.h"
+#include "omafiles_version.h"
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>

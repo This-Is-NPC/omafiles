@@ -58,6 +58,7 @@
 #include "HelperProcess.h"
 #include "Preview.h"
 #include "../src/preview/Protocol.h"
+#include "omafiles_version.h"
 #include <QPdfWriter>
 #include <signal.h>
 #include <sched.h>

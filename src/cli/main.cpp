@@ -8,6 +8,7 @@
 #include "Store.h"
 #include "Tag.h"
 #include "Xattr.h"
+#include "omafiles_version.h"
 
 #include <QCoreApplication>
 #include <QDateTime>

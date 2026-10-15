@@ -2243,17 +2243,22 @@ def listed_verbs(text):
 def check_one_version(data, workspace):
     """Every place that says a version says the same one.
 
-    The binaries share a compile-time define; the usage declaration feeds
-    docs/cli.md and has to stay a literal, so the two are compared here."""
+    The binaries share a generated header; the usage declaration and the CLI
+    reference are literals. release-please
+    moves only the lines marked `x-release-please-version`, so every copy has to
+    carry the mark and agree with `--version`."""
     spoken = run(data, "--version")
     assert spoken.returncode == 0, spoken.stderr
     version = spoken.stdout.split()[-1]
     assert re.fullmatch(r"\d+\.\d+\.\d+", version), spoken.stdout
 
-    declared = re.search(r'^version "([^"]+)"',
-                         (ROOT / "omafiles.usage.kdl").read_text(), re.M)
-    assert declared, "omafiles.usage.kdl declares no version"
-    assert declared.group(1) == version, (declared.group(1), version)
+    copies = {"qmake/version.pri": r"^OMAFILES_VERSION = (\S+) # x-release-please-version$",
+              "omafiles.usage.kdl": r'^version "([^"]+)" // x-release-please-version$',
+              "docs/cli.md": r"^- \*\*Version:\*\* (\S+) <!-- x-release-please-version -->$"}
+    for path, pattern in copies.items():
+        declared = re.search(pattern, (ROOT / path).read_text(), re.M)
+        assert declared, f"{path} has no version marked for release-please"
+        assert declared.group(1) == version, (path, declared.group(1), version)
 
     # And the help agrees with `--version`, which is the copy a reader sees.
     assert run(data, "--help").stdout.splitlines()[0].split()[-1] == version

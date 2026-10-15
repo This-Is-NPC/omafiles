@@ -4,6 +4,7 @@
 #include "Workspace.h"
 #include "Devices.h"
 #include "Portal.h"
+#include "omafiles_version.h"
 
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
