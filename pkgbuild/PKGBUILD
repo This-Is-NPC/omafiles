@@ -61,14 +61,17 @@ build() {
 
 package() {
   cd "$srcdir/$pkgname-$pkgver"
-  # The binaries need the Qt minor release they were built against or a newer
-  # one (Qt versions its symbols): pacman then brings that Qt along, or refuses,
-  # instead of installing a program that cannot start.
-  local qt dep pinned=()
-  qt="$(pacman -Q qt6-base | awk '{ split($2, v, "."); print v[1] "." v[2] }')"
+  # The binaries need each Qt module at the minor release they were built
+  # against or a newer one (Qt versions its symbols): pacman then brings that
+  # module along, or refuses, instead of installing a program that cannot
+  # start. Each module is pinned to its own version, because they do not move
+  # together: qt6-webengine can trail qt6-base by a release.
+  local dep minor pinned=()
   for dep in "${depends[@]}"; do
     case "$dep" in
-      qt6-*) pinned+=("$dep>=$qt") ;;
+      qt6-*)
+        minor="$(pacman -Q "$dep" | awk '{ split($2, v, "."); print v[1] "." v[2] }')"
+        pinned+=("$dep>=$minor") ;;
       *) pinned+=("$dep") ;;
     esac
   done
