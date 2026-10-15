@@ -306,8 +306,8 @@ bool Store::load(QString *error)
         }
         if (moved) {
             respelled.insert(given);
-            if (!record.root.isEmpty())
-                record.relative = relativeTo(record.path, rootById(record.root)->path);
+            if (const auto root = rootById(record.root); root && !record.root.isEmpty())
+                record.relative = relativeTo(record.path, root->path);
             m_rewrite = true;
         }
         if (meets) {

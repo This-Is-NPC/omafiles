@@ -1,34 +1,18 @@
 # omafiles
 
-Tags on files, CLI + Qt Quick window over the same text index. Nothing is moved,
-renamed or wrapped — the filesystem stays the filesystem.
+Tags on files with a CLI and a Qt Quick window over the same text index. Nothing is moved, renamed or wrapped — the filesystem stays the filesystem.
 
-![the studio](docs/img/studio.png)
-![the graph view](docs/img/graph.png)
+![The studio window](docs/img/01-studio.png)
+
+![The graph view](docs/img/04-graph.png)
 
 ## Install
 
-Not published as an Omarchy default yet. From a checkout:
+Not published as an Omarchy default yet. A pre-built binary is not currently available.
 
-```bash
-mise install
-mise run deps      # Qt 6 + qmake
-mise run build     # build/bin/omafiles and build/bin/omafiles-studio
-mise run studio    # open the window
-```
+To build from source, see [the design page](docs/design.md).
 
-`mise run install` builds and puts both binaries, the desktop entry and the icon
-under `~/.local`, so the window is in the app menu and `omafiles` is a command
-anywhere — no root, and nothing under `/usr` for a package to collide with. Run
-it again to update, `mise run uninstall` to take it back out; the tag index is
-left where it is either way. `PREFIX=/usr/local mise run install` installs for
-everyone instead, building as you and sudoing only the copies.
-
-Released under the MIT license. `pkgbuild/omafiles.desktop` and `pkgbuild/omafiles.svg`
-are the desktop entry and icon. The Arch recipe is in the sibling `omarchy-pkgs` repo
-at `pkgbuilds/omafiles`.
-
-## Shortcuts
+## Start here
 
 - `j` / `k` — move the cursor
 - `l` / `Enter` — open a file or enter a folder
@@ -36,166 +20,69 @@ at `pkgbuilds/omafiles`.
 - `t` — tag panel
 - `v` — saved views
 - `/` — filter the folder
-- `f` — find by name across the declared roots, `*.pdf` and the like, out of
-  the list `sweep` wrote; the status line says how old that list is, and `h`
-  comes back out
-- `F` — narrow what the tab lists: folders or files, the type or a tag of
-  the row under the cursor, tagged or untagged, modified in the last day,
-  week, month or year
-- `Space` — mark the row; `J` / `K` mark it and step; `*` marks by a pattern
-  like `*.pdf`; Shift and a click marks a range
-- `r` / `F2` — rename, which is `mv` with the tags kept; over a marked set it
-  asks for a template instead, `{stem}-{n}{ext}` and the like, and runs
-  `mv --pattern`
-- `n` — new folder; the row menu also makes a link beside a file, or links
-  what is on the clipboard into the folder on screen
-- `Permissions…` in the row menu or at `:` — rwx for owner, group and others
-  over the row or the marked set, shown before it is applied and run as
-  `omafiles chmod`; in the details panel a click on a mode bit does the same
-  for one row. Greyed where the file is not yours or is a link
-- `Ctrl+C` / `Ctrl+X` / `Ctrl+V` — copy, cut and paste files, through the
-  same clipboard Nautilus and Dolphin use, so it works between them and here
-- `:` — commands; among them `Recently opened on the desktop`, which lists
-  what the GNOME recent list holds, the way `omafiles recent --desktop` does
-- `Esc` — back to the list
-- `1` / `2` / `3` — list, details, and icons
-- Details columns: right-click a heading to show or hide tags, type, size,
-  modified, owner and mode, or move the column left or right; `:` has the same
-  entries. Name is always first. Owner and mode headings do not sort. The
-  choice is one for the window, kept in `$XDG_STATE_HOME/omafiles/studio.conf`
-- `m` — menu
-- `Ctrl+L` — edit the path
-- `Tab` — next control (path, chips, tabs)
-- `]` / `[` — next, previous tab
-- Tags tab: a tag is a folder — `l` walks into one and narrows the listing to
-  the files carrying every tag in the path, `h` takes the last one off, `~`
-  takes them all off. `#notes/#work` and `#work/#notes` are the same listing.
-  `(no tag)` at the top is the other direction: what has not been filed at all,
-  out of the list `sweep` wrote, with the age of that list on the status line
-- Graph: `j` / `k` move nodes, `l` open, `Shift+h` / `Shift+j` / `Shift+k` / `Shift+l` pan, `+` / `-` / `=` zoom, `0` reset
-- `Ctrl+\` — split the pane
-- `Ctrl+,` / `Ctrl+.` — resize the split
-- `Ctrl+W` / `Delete` — close the tab
-- `?` — the key map
 
-![The key sheet](docs/img/keys.png)
+## Big ideas
 
-```bash
-omafiles tag add --tag work -- ~/docs/invoice.pdf
-omafiles ls --tag work
-omafiles tags
-```
+**[Browsing](docs/browsing.md)** — folder names load in the background without waiting, with automatic refresh when files are created, deleted or renamed.
 
-A folder, a tag and a query are one thing saved, so there is one verb for all
-three and one list in the panel beside the files:
+**[Tagging](docs/tagging.md)** — mark files with custom labels; the same file can have multiple tags; tags travel with the file in its xattr so other tools moving or copying do not lose them.
 
-```bash
-omafiles view add --name receipts --tag finance --tag invoice
-omafiles view add --name "to file" -- ~/scans
-omafiles view
-```
+**[Preview](docs/preview.md)** — press `i` on a file to see its text, images, PDFs, or archive contents without opening another application.
 
-`v` walks that list and Enter opens whichever kind the row turned out to be — a
-tag view as a tags tab standing on its query, a folder view as a folder. In the
-window, `Save this as a view` in the row menu saves what is on screen.
+**[Thumbnails](docs/thumbnails.md)** — image and video thumbnails from the desktop cache; custom thumbnailers for your own formats.
 
-`F` narrows whatever a tab is listing — a folder, a tag, a view, a `f`
-search — by what each row is, the tags it carries and when the file was last
-written. Every criterion must hold, and so must the `/` filter; each one is a
-chip above the status line that takes it off when clicked, beside `Clear`. The
-date is the file's own, the one `ls --changed-within` reads, and never when it
-was tagged, which is `--since`. Only the rows already listed are narrowed:
-nothing is looked for in the folders below.
+**[Trash](docs/trash.md)** — safe deletion to the desktop's trash; restore from there or erase permanently.
 
-Filters belong to the tab and are not saved into a view. A view names what to
-list, the way `view add` spells it with a folder or `--tag`; how it is being
-looked at right now — the sort, hidden files, `/`, these — is kept by the tab
-that is looking, so opening a view always shows all of it.
+**[Undo](docs/undo.md)** — Ctrl+Z undoes file operations with a history visible in the window.
 
-A disk that is not always plugged in wants a declared root:
+**[Conflicts](docs/conflicts.md)** — when copying or moving would overwrite, choose Replace, Skip, Keep both or apply to the rest of the batch.
 
-```bash
-omafiles roots add --id archive --check .plugged-in -- /mnt/archive
-```
+**[Archives](docs/archives.md)** — compress to zip, tar.gz or tar.zst; extract these and other formats libarchive reads; tags stay with restored files.
 
-Rows under it are stored as the root and the rest of the way there, so remounting
-the same storage somewhere else leaves every tag where it was. And a root that is
-declared and not here makes its rows unreachable rather than missing — which is
-the difference between `prune` doing its job and `prune` throwing away the tags
-of an archive that is sitting in a drawer.
+**[Devices](docs/devices.md)** — list, mount and eject removable drives and phones; root declarations let tags follow storage to a new mount path.
 
-Tags travel with the file in its own xattr, so something else moving, copying or
-restoring a file does not lose them — it only loses the index row. `sweep` reads
-them home:
+**[File chooser](docs/file-chooser.md)** — other applications can ask omafiles to open or save files instead of using their built-in dialogs.
 
-```bash
-omafiles sweep            # every declared root that is here
-omafiles sweep --status   # what the last run found
-```
+**[Drag and drop](docs/drag-and-drop.md)** — copy, cut, move and link files by dragging between the window, other file managers, and the desktop.
 
-It is the routine as a verb rather than a daemon, so there is one thing to read
-the behaviour of and nothing to install to try it. It only ever makes the index
-know more: row and file are merged both ways and nothing is removed from either,
-a row whose file is gone is counted and left where it is — `prune` is still the
-verb that drops one, and it still asks — and a run that finds another writer
-holding the index lock steps aside rather than making the window wait.
+**[Desktop](docs/desktop.md)** — make omafiles the default file manager; integrate with browser "Show in folder" and application file-open requests.
 
-Every tag write keeps what the file carries the same way: `tag add` on a file
-whose xattr holds a tag its row lacks takes that tag into the row rather than
-writing over it. A word in the xattr that is not a tag is left alone by every
-verb but `tag clear`, the one allowed to drop it.
+**[CLI](docs/cli.md)** — the `omafiles` command reads and writes the same index as the window, with or without it open. A symlink is the link itself to `rm`, `trash` and `mv`, and its target to `cp` and the tag verbs.
 
-`sweep` also writes down what it saw, so the one question the index cannot
-answer stops costing a walk:
+## Interface
 
-```bash
-omafiles ls --untagged --cached      # instant, and it tells you how old it is
-omafiles ls --untagged ~/scans       # walks the disk, exact
-```
+![Keys and shortcuts](docs/img/03-keys.png)
 
-That list is a cache and the difference matters: the index is what you marked,
-with a mirror in each file's own xattr and worth backing up; the list is what is
-on the disk, lives in `$XDG_CACHE_HOME/omafiles/names`, and deleting it costs one
-sweep and nothing else. Both answers are offered rather than one pretending to be
-the other.
+Full keyboard controls are documented in the sections above. Pointer actions work the same way: right-click or press-and-hold opens the row menu; drag in the list marks rows; drag files onto a folder to move them on the same device or copy them across devices, or hold Ctrl to copy, Shift to move, or Ctrl+Shift to link (see [Drag and drop](docs/drag-and-drop.md)).
 
-A script of your own goes in `~/.config/omafiles/scripts/`, beside the views,
-executable and named for what it does. The row menu lists it under `Run a
-script`, over the row or the marked set, and runs it with those paths as its
-arguments and their folder as its working directory:
+## What it does not do
 
-```bash
-cat > ~/.config/omafiles/scripts/shrink <<'EOF'
-#!/bin/sh
-for f; do magick "$f" -resize 50% "${f%.*}-small.${f##*.}"; done
-EOF
-chmod +x ~/.config/omafiles/scripts/shrink
-```
+- Tagging does not move, rename or wrap files. Tags live in the file's extended attributes and in the index; the filesystem stays the filesystem.
+- It does not open files itself. Opening hands off to the desktop's configured application; quick preview (`i`) shows a file in place without starting another program.
+- It does not touch file contents. A tag write changes only the extended attribute and the index.
+- It does not overwrite by default. `mv` and `cp` refuse an occupied destination by default; [conflict flags](docs/conflicts.md) make the choice explicit.
+- It does not move files to the Trash itself. Trashing hands them to `gio trash`; omafiles then lists, restores and empties the Trash on its own.
 
-Every verb is in [the command line](docs/cli.md).
+## Known limitations
 
-The list is the folder — a folder shut, one that is missing, and one that is
-genuinely empty are three different answers on the status line. Fifos and dangling
-symlinks are listed; a fifo is not handed to the desktop. `mv` and `cp` refuse to
-write over something already at the destination.
+**Phones need GVfs backends.** Browsing Android phones requires `gvfs-mtp` or `gvfs-afc`; iPhones require `gvfs-afc`. Install the matching package for your phone, unlock it, and permit file access on the phone itself.
 
-Colours come from the current omarchy theme and corner rounding from hyprland's
-`looknfeel.lua`, both live.
+**GVfs FUSE bridge required.** Storage cannot be browsed without GVfs's FUSE bridge (`gvfs`), which must expose a local filesystem path. If a mount succeeds without the bridge, an explicit explanation appears instead of opening an invented path.
 
-Dragging over the list or the grid draws a band and marks every row it
-touches. It starts anywhere but a row's icon and name, which are kept for the
-row, as in Dolphin: past the name, beside a tile, or below the last row. A plain
-drag replaces the marks, `Shift` adds to them and `Ctrl` turns each row it
-crosses over — Dolphin's and Qt's convention (GTK's `Ctrl` only adds). Held at
-the top or bottom edge, the list scrolls; `Esc` before letting go puts the marks
-back as they were.
+## Contributing
+
+[docs/design.md](docs/design.md) is the page for contributors: how omafiles is built, checked and tested.
 
 ## Requirements
 
-- Qt 6: `qt6-base`, `qt6-declarative`
+- Qt 6: `qt6-base`, `qt6-declarative`, `qt6-pdf`, `qt6-multimedia`
+- `libarchive` for archive compression, extraction and previews
+- `kwindowsystem` (KF6) for portal parent-window integration on Wayland and X11
 - `xdg-utils` for `omafiles open`
-- `glib2` for `omafiles trash`
-- `xdg-desktop-portal`
-- [mise](https://mise.jdx.dev/) for the tasks above
+- `glib2` for device monitoring and `omafiles trash`
+- `udisks2` and `gvfs` for removable drives
+- `xdg-desktop-portal` for system integration
 
-`docs/img` is regenerated from the studio itself with `mise run shots`.
+## License
+
+MIT. See [LICENSE](LICENSE) for details.

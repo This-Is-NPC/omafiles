@@ -21,6 +21,7 @@
 #include <QMap>
 #include <QRegularExpression>
 #include <QTextStream>
+#include <QUuid>
 
 #include <algorithm>
 #include <functional>
@@ -159,6 +160,7 @@ struct Takes {
     bool status = false;
     /// `--replace`, `--with` and `--pattern`: `mv` over a set, by rule.
     bool rename = false;
+    bool transfer = false;
     /// `--desktop`: `recent` answered from the desktop's list, not the index.
     bool desktop = false;
     /// `--tag` holds one value here, not a list.
@@ -168,6 +170,7 @@ struct Takes {
     /// How many operands follow the flags; -1 is any number, left to the verb.
     int least = 0;
     int most = -1;
+    int tagOperands = 0;
     Operand first = Operand::Path;
     Operand rest = Operand::Path;
     /// The refusal when the operands number outside `least` and `most`.
@@ -197,6 +200,12 @@ struct Flag {
     bool list = false;
 };
 const Flag kFlags[] = {
+    {QLatin1String("--force"), QLatin1String("-f"), Value::None, &Takes::transfer},
+    {QLatin1String("--no-clobber"), QLatin1String("-n"), Value::None, &Takes::transfer},
+    {QLatin1String("--interactive"), QLatin1String("-i"), Value::None, &Takes::transfer},
+    {QLatin1String("--keep-both"), {}, Value::None, &Takes::transfer},
+    {QLatin1String("--backup"), QLatin1String("-b"), Value::None, &Takes::transfer},
+    {QLatin1String("--no-target-directory"), QLatin1String("-T"), Value::None, &Takes::transfer},
     {QLatin1String("--tag"), QLatin1String("-t"), Value::Tag, &Takes::tag, true},
     {QLatin1String("--any"), {}, Value::Tag, &Takes::lsFlags, true},
     {QLatin1String("--untagged"), {}, Value::None, &Takes::lsFlags},
@@ -292,7 +301,9 @@ Takes takesFor(const QString &verb, const QString &sub = {})
             return {.least = 1, .count = "path required"};
         if (sub == QLatin1String("ls"))
             return {.least = 1, .most = 1, .count = "one path required"};
-        if (sub == QLatin1String("merge") || sub == QLatin1String("rename"))
+        if (sub == QLatin1String("rename"))
+            return {.least = 2, .tagOperands = 2, .count = "requires <from> and <to>"};
+        if (sub == QLatin1String("merge"))
             return {.least = 2, .most = 2, .first = Operand::Tag, .rest = Operand::Tag,
                     .count = "takes exactly two tags, <from> and <to>"};
         return {};
@@ -332,7 +343,7 @@ Takes takesFor(const QString &verb, const QString &sub = {})
         return {.most = 1, .count = oneDir};
     // Two paths, where a rename flag does not make it a set: see `renamesSet`.
     if (verb == QLatin1String("mv") || verb == QLatin1String("cp"))
-        return {.rename = verb == QLatin1String("mv"), .least = 2, .most = 2,
+        return {.rename = verb == QLatin1String("mv"), .transfer = true, .least = 2, .most = 2,
                 .count = "takes exactly two paths, <old> and <new>"};
     if (verb == QLatin1String("rm") || verb == QLatin1String("trash"))
         return {.least = 1, .count = "path required"};
@@ -508,7 +519,8 @@ QStringList withoutGlobals(const QStringList &args, QStringList *said)
             rest.append(arg);
             if (i + 1 < args.size())
                 rest.append(args.at(++i));
-        } else if (isGlobalFlag(arg)) {
+        } else if (isGlobalFlag(arg) && !(arg == QLatin1String("-n") && !rest.isEmpty()
+                   && (rest.first() == QLatin1String("cp") || rest.first() == QLatin1String("mv")))) {
             said->append(arg);
         } else {
             rest.append(arg);
@@ -589,8 +601,11 @@ int finished(const QString &verb, int status)
     return status == kOk ? 1 : status;
 }
 
-void printJson(const QJsonValue &value)
+std::function<QJsonValue(const QJsonValue &)> studioReceipt;
+
+void printJson(const QJsonValue &raw)
 {
+    const QJsonValue value = studioReceipt ? studioReceipt(raw) : raw;
     const QJsonDocument doc = value.isArray() ? QJsonDocument(value.toArray())
                                                : QJsonDocument(value.toObject());
     out() << QString::fromUtf8(doc.toJson(QJsonDocument::Compact)) << '\n';
@@ -635,7 +650,8 @@ Tags:
   tag ls     -- <path>
   tag clear  -- <path>...
   tag cp     --from <path> -- <path>...   adds them, keeps what is there
-  tag merge  <from> <to>            (alias: tag rename)
+  tag merge  <from> <to>            across the index
+  tag rename <from> <to> [-- <path>...]  selected paths; without paths, tag merge
 
 Asking:
   ls       [--tag <tag>]... [--any <tag>]... [--untagged] [--name <glob>]
@@ -663,13 +679,13 @@ Asking:
 Moving:
   open     <path>...                what the desktop would use, or xdg-open
   mv       <old> <new>              file and its tags; a folder cannot
-                                    cross a filesystem, and it will not
-                                    write over what is already there
+                                    cross a filesystem; conflict flags:
+                                    -f, -n, -i, --keep-both, -b, -T
   mv       [--replace <text>] [--with <text>] [--pattern <template>]
            -- <path>...             rename a set by rule, each in its own
                                     folder: {name} {stem} {ext} {n}
-  cp       <old> <new>              file and its tags; will not write over
-                                    what is already there
+  cp       <old> <new>              file and its tags; conflict flags:
+                                    -f, -n, -i, --keep-both, -b, -T
   trash    <path>...                gio trash, then drop the rows; one
                                     operand it cannot take makes it
                                     refuse the whole list
@@ -761,20 +777,16 @@ Shell:
         if (!entry && !line.startsWith(QLatin1Char(' ')) && !trimmed.isEmpty())
             taking = false;
         if (entry) {
-            // `tag add` is spelled in two words and `tag` alone names all six;
+            // `tag add` is spelled in two words and `tag` alone names the family;
             // `view` and `roots` the same.
             const QStringList words = trimmed.split(QLatin1Char(' '),
                                                     Qt::SkipEmptyParts);
             const QString named = subcommandsOf(words.value(0)).contains(words.value(1))
                 ? words.value(0) + QLatin1Char(' ') + words.value(1)
                 : words.value(0);
-            // An entry names its own aliases, so the spelling the body does
-            // not start with is still findable -- `tag rename` for
-            // `tag merge`.
-            const bool alias = trimmed.contains(QStringLiteral("(alias: %1)").arg(verb));
-            taking = named == verb || words.value(0) == verb || alias;
+            taking = named == verb || words.value(0) == verb;
             if (taking) {
-                family = family || (named != verb && !alias);
+                family = family || named != verb;
                 int start = 0;
                 while (start < line.size() && line.at(start) == QLatin1Char(' '))
                     ++start;
@@ -801,6 +813,12 @@ Shell:
     // each entry below carries its own.
     if (family)
         shapes = {QString()};
+    if (takesFor(verb).transfer && !shapes.isEmpty()) {
+        for (const Flag &flag : kFlags) {
+            if (flag.gate == &Takes::transfer)
+                shapes.first() += QStringLiteral(" [%1]").arg(flag.name);
+        }
+    }
     for (qsizetype i = 0; i < shapes.size(); ++i) {
         out() << (i == 0 ? QStringLiteral("Usage: ") : QStringLiteral("       "))
               << QStringLiteral("omafiles ") << verb;
@@ -1134,7 +1152,7 @@ Walk walkTree(const QString &base, const QSet<QString> &apart = {})
 // a walk never yields the directory it starts in.
 bool listedUnder(const QString &path, const Root &root)
 {
-    const Root *own = rootAt(path) ? rootFor(typedDirectory(path, nullptr)) : rootFor(path);
+    const auto own = rootAt(path) ? rootFor(typedDirectory(path, nullptr)) : rootFor(path);
     return own && own->id == root.id;
 }
 
@@ -1271,6 +1289,10 @@ bool onlyReads(const QString &verb)
 struct Session {
     Store store{defaultIndexPath()};
     bool opened = false;
+    bool journal = qgetenv("OMAFILES_STUDIO_JOURNAL") == "1";
+    QMap<QString, Record> undoRows;
+    mutable QMap<QString, QByteArray> undoValues;
+    mutable QString undoError;
     /// Set from the verb before anything opens the store. A writer holds the
     /// lock from before its read until after its commit.
     bool writes = true;
@@ -1321,6 +1343,8 @@ int openSession(Session *session)
         fail(error);
         return kStore;
     }
+    if (session->journal)
+        session->undoRows = session->store.recordSnapshot();
     session->opened = true;
     return kOk;
 }
@@ -1726,37 +1750,35 @@ bool startingRow(const Session &s, const QString &verb, const QString &path, Sta
                                 "written").arg(verb, error));
         return false;
     }
+    if (s.journal && !s.undoValues.contains(path))
+        s.undoValues.insert(path, value);
     if (held == TagsValue::Held)
         start->tags = uniqueSorted(start->tags + salvagedTags(tagsOfValue(value), nullptr));
     return true;
 }
 
-// `tags` are folded already, and `paths` is not empty: `parseCommand` checks
-// both, so a batch refuses a bad line before any line runs.
-int cmdTagAdd(const Globals &g, Session &s, const QStringList &tags, const QStringList &paths)
+// Each edit uses the same path resolution, starting tags, stamp and mirror.
+int cmdTagEdit(const Globals &g, Session &s, const QString &verb, const QStringList &paths,
+               const std::function<std::optional<QStringList>(const QStringList &)> &edit,
+               bool removing = false)
 {
     int status = kOk;
-    const QStringList resolved = resolveTagged(QStringLiteral("tag add"), paths, &status);
+    const QStringList resolved = resolveTagged(verb, paths, &status);
     if (status != kOk)
         return status;
-
     if ((status = openSession(&s)) != kOk)
         return status;
-
     QString error;
     QVector<Record> written;
     for (const QString &path : resolved) {
         Starting start;
-        if (!startingRow(s, QStringLiteral("tag add"), path, &start))
+        if (!startingRow(s, verb, path, &start))
             return kIncomplete;
-        // The file's own copy is written even where no tag changed: it is the
-        // half that goes missing on its own -- a `cp` without
-        // `--preserve=xattr`, a move onto a filesystem with no `user.*` -- so
-        // skipping it would leave `verify` shouting about a disagreement this
-        // verb is the repair for.
+        const auto next = edit(start.tags);
+        if (!next)
+            continue;
         PathState state = PathState::Missing;
-        const Record record = stamped(path, start.tags + tags, &error, &state, start.row,
-                                      s.store.loaded(path));
+        const Record record = stamped(path, *next, &error, &state, start.row, s.store.loaded(path));
         if (record.path.isEmpty()) {
             fail(error);
             return pathStatus(state);
@@ -1765,44 +1787,23 @@ int cmdTagAdd(const Globals &g, Session &s, const QStringList &tags, const QStri
         written.append(record);
         mirrorTags(s, record);
     }
-    return finish(g, s, written);
+    status = finish(g, s, written);
+    return status != kOk || !removing ? status : settledStatus(s);
+}
+
+int cmdTagAdd(const Globals &g, Session &s, const QStringList &tags, const QStringList &paths)
+{
+    return cmdTagEdit(g, s, QStringLiteral("tag add"), paths,
+                     [&tags](const QStringList &held) { return held + tags; });
 }
 
 int cmdTagRm(const Globals &g, Session &s, const QStringList &tags, const QStringList &paths)
 {
-    int status = kOk;
-    const QStringList resolved = resolveTagged(QStringLiteral("tag rm"), paths, &status);
-    if (status != kOk)
-        return status;
-
-    if ((status = openSession(&s)) != kOk)
-        return status;
-
-    QString error;
-    QVector<Record> written;
-    for (const QString &path : resolved) {
-        Starting start;
-        if (!startingRow(s, QStringLiteral("tag rm"), path, &start))
-            return kIncomplete;
-        QStringList next;
-        for (const QString &tag : std::as_const(start.tags)) {
-            if (!tags.contains(tag))
-                next.append(tag);
-        }
-        PathState state = PathState::Missing;
-        const Record record = stamped(path, next, &error, &state, start.row,
-                                      s.store.loaded(path));
-        if (record.path.isEmpty()) {
-            fail(error);
-            return pathStatus(state);
-        }
-        s.store.put(record);
-        written.append(record);
-        mirrorTags(s, record);
-    }
-    if ((status = finish(g, s, written)) != kOk)
-        return status;
-    return settledStatus(s);
+    return cmdTagEdit(g, s, QStringLiteral("tag rm"), paths, [&tags](QStringList held) {
+        for (const QString &tag : tags)
+            held.removeAll(tag);
+        return held;
+    }, true);
 }
 
 int cmdTagLs(const Globals &g, Session &s, const QStringList &paths)
@@ -2046,11 +2047,11 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
         // root's list alone, so a nested root is neither listed twice nor
         // listed while it is away. A `[dir]` no root holds has no list for
         // the part of it outside them.
-        const Root *holding = dir.isEmpty() ? nullptr : rootFor(dir);
+        const auto holding = dir.isEmpty() ? std::nullopt : rootFor(dir);
         QVector<Root> scope;
         for (const Root &root : roots()) {
             if (dir.isEmpty()
-                || (holding && (&root == holding || isUnderDirectory(root.path, dir))))
+                || (holding && (root.id == holding->id || isUnderDirectory(root.path, dir))))
                 scope.append(root);
         }
         if (roots().isEmpty()) {
@@ -2827,7 +2828,8 @@ std::optional<QStringList> completionFor(const QStringList &words)
     const Takes counted = bySet(takes, given);
     if (taken || (counted.most >= 0 && operands >= counted.most))
         return QStringList();
-    switch (operands == 0 ? counted.first : counted.rest) {
+    switch (operands < counted.tagOperands ? Operand::Tag
+                                          : operands == 0 ? counted.first : counted.rest) {
     case Operand::Tag:
         return tagCandidates();
     case Operand::Shell:
@@ -3111,8 +3113,18 @@ int cmdTagCp(const Globals &g, Session &s, const QString &from, const QStringLis
 }
 
 // `from` and `to` are two different tags, folded: `parseCommand` checks.
-int cmdTagMerge(const Globals &g, Session &s, const QString &from, const QString &to)
+int cmdTagMerge(const Globals &g, Session &s, const QString &from, const QString &to,
+                const QStringList &paths)
 {
+    if (!paths.isEmpty()) {
+        return cmdTagEdit(g, s, QStringLiteral("tag rename"), paths,
+                         [&from, &to](QStringList held) -> std::optional<QStringList> {
+            if (!held.contains(from))
+                return std::nullopt;
+            std::replace(held.begin(), held.end(), from, to);
+            return held;
+        }, true);
+    }
     int status = openSession(&s);
     if (status != kOk)
         return status;
@@ -3582,7 +3594,7 @@ QString unusableParent(const QString &parent)
 // directory, at it otherwise. The directory part is resolved by the kernel as it
 // was typed -- `L/..` is the parent of where `L` leads, POSIX 4.13 -- and never
 // cleaned as text. Empty, and said, where no file can go there.
-QString destination(const QString &doing, const QString &from, const QString &typed)
+QString destination(const QString &doing, const QString &from, const QString &typed, bool exact = false)
 {
     // No name at all, which `rename(2)` answers ENOENT for.
     if (typed.isEmpty()) {
@@ -3603,7 +3615,7 @@ QString destination(const QString &doing, const QString &from, const QString &ty
     const QString typedIn = typedDirectory(typed, &typedName);
     // A directory that is the source spelled in another case is the new name.
     // Asked of the entry, since a trailing `/` follows a link to the source.
-    const bool into = statState(typed, nullptr, true, &st) == PathState::Present
+    const bool into = !exact && statState(typed, nullptr, true, &st) == PathState::Present
         && S_ISDIR(st.st_mode)
         && (typedName == name
             || canonicalLinkPath(QDir(typedIn).filePath(typedName), nullptr) != from);
@@ -3776,17 +3788,18 @@ bool moveNamed(const QString &from, const QString &to, const QStringList &record
         const QByteArray aside = source + ".omafiles~" + QByteArray::number(::getpid());
         struct stat st {};
         int failure = ::lstat(aside.constData(), &st) == 0 ? EEXIST : 0;
-        if (failure == 0 && ::rename(source.constData(), aside.constData()) != 0)
+        if (failure == 0 && ::renameat2(AT_FDCWD, source.constData(), AT_FDCWD, aside.constData(), RENAME_NOREPLACE) != 0)
             failure = errno;
-        if (failure == 0 && ::rename(aside.constData(), destination.constData()) != 0) {
+        if (failure == 0 && ::renameat2(AT_FDCWD, aside.constData(), AT_FDCWD, destination.constData(), RENAME_NOREPLACE) != 0) {
             failure = errno;
-            ::rename(aside.constData(), source.constData());
+            if (::renameat2(AT_FDCWD, aside.constData(), AT_FDCWD, source.constData(), RENAME_NOREPLACE) != 0 && note)
+                *note = QStringLiteral("the file remains at %1: %2").arg(QString::fromUtf8(aside), systemReason(errno));
         }
         if (failure != 0 && error)
             *error = systemReason(failure);
         return failure == 0;
     }
-    if (::rename(source.constData(), destination.constData()) == 0)
+    if (::renameat2(AT_FDCWD, source.constData(), AT_FDCWD, destination.constData(), RENAME_NOREPLACE) == 0)
         return true;
     // Kept before building any message can overwrite it: the reason is the
     // system's to give.
@@ -3911,6 +3924,8 @@ void dropStale(const Globals &g, Session &s, const QString &verb, const QStringL
                const QString &how = QStringLiteral("landing there"))
 {
     for (const QString &stale : rows) {
+        if (!s.store.contains(stale))
+            continue;
         warn(g, QStringLiteral("%1: %2 had a row for a file that is gone; %3 %4 it and its "
                                "tags %5")
                     .arg(verb, spelled(stale), how,
@@ -4008,7 +4023,156 @@ QString cannotMove(const QString &from, const QString &to)
         .arg(spelled(from), spelled(to));
 }
 
-int cmdMove(const Globals &g, Session &s, const QStringList &positionals)
+struct TransferOptions {
+    QString policy;
+    bool exact = false;
+    bool backup = false;
+};
+
+// Every landing is exclusive, including replacement: move the old entry aside first.
+class Displaced {
+public:
+    Displaced(Session &session, const Globals &globals) : s(session), g(globals) {}
+    ~Displaced()
+    {
+        if (!path.isEmpty() && !committed) {
+            QString error, note;
+            if (!moveNamed(path, original, tags, &error, &note))
+                fail(QStringLiteral("replacement rollback: %1 is kept at %2: %3")
+                         .arg(spelled(original), spelled(path), error));
+        }
+    }
+    bool stage(const QString &from, const QString &to, bool numbered)
+    {
+        struct stat source {}, target {};
+        QString error;
+        if (statState(from, &error, false, &source) != PathState::Present
+            || statState(to, &error, false, &target) != PathState::Present) {
+            fail(error.isEmpty() ? QStringLiteral("the source or destination disappeared") : error);
+            return false;
+        }
+        if (source.st_dev == target.st_dev && source.st_ino == target.st_ino) {
+            fail(QStringLiteral("cannot replace a file with itself"));
+            return false;
+        }
+        if (S_ISDIR(source.st_mode) != S_ISDIR(target.st_mode)) {
+            fail(QStringLiteral("cannot replace a folder with a file or a file with a folder"));
+            return false;
+        }
+        if (S_ISDIR(target.st_mode)) {
+            QStringList entries, unnameable;
+            const bool read = readDirectory(to, &entries, &unnameable, &error);
+            if (!read || !unnameable.isEmpty() || !entries.isEmpty()) {
+                fail(error.isEmpty() ? QStringLiteral("cannot replace a nonempty folder; use Keep both or Skip") : error);
+                return false;
+            }
+        }
+        QStringList rows;
+        if (!rowsUnder(s.store, to, S_ISDIR(target.st_mode), &rows, &error)
+            || !landingTags(s, to, &tags, &error)) {
+            fail(error);
+            return false;
+        }
+        QString candidate;
+        for (int n = 1; n <= 1000000; ++n) {
+            candidate = numbered ? to + QStringLiteral(".~%1~").arg(n)
+                : QDir(typedDirectory(to, nullptr)).filePath(QStringLiteral(".omafiles-replaced-")
+                    + QUuid::createUuid().toString(QUuid::WithoutBraces));
+            const PathState state = statState(candidate, &error, false);
+            if (state == PathState::Missing) break;
+            if (state != PathState::Present || n == 1000000) { fail(error); return false; }
+        }
+        original = to;
+        device = target.st_dev;
+        inode = target.st_ino;
+        if (!g.dryRun) {
+            QString note;
+            if (!moveNamed(to, candidate, tags, &error, &note)) { fail(error); return false; }
+            path = candidate;
+            struct stat saved {};
+            if (statState(path, &error, false, &saved) != PathState::Present
+                || saved.st_dev != target.st_dev || saved.st_ino != target.st_ino) {
+                fail(QStringLiteral("the destination changed while replacement was starting"));
+                return false;
+            }
+        }
+        QVector<Record> written;
+        followMove(s, rows, to, candidate, tags, &written);
+        if (!numbered && !s.journal) {
+            for (const Record &row : written) s.store.remove(row.path);
+        }
+        receipt = movedJson(to, candidate, written);
+        receipt.insert(QStringLiteral("kind"), QStringLiteral("mv"));
+        receipt.insert(QStringLiteral("temporaryBackup"), !numbered && s.journal);
+        keep = numbered || s.journal;
+        return true;
+    }
+    void finish()
+    {
+        committed = true;
+        if (!keep && !path.isEmpty()) {
+            const QByteArray bytes = QFile::encodeName(path);
+            struct stat st {};
+            if (::lstat(bytes.constData(), &st) == 0 && st.st_dev == device && st.st_ino == inode
+                && (S_ISDIR(st.st_mode) ? ::rmdir(bytes.constData()) : ::unlink(bytes.constData())) != 0)
+                warn(g, QStringLiteral("the replaced entry remains at %1: %2").arg(spelled(path), systemReason(errno)));
+        }
+    }
+    QJsonValue result(const QJsonObject &incoming) const
+    {
+        return keep && !receipt.isEmpty() ? QJsonValue(QJsonArray{receipt, incoming}) : QJsonValue(incoming);
+    }
+private:
+    Session &s;
+    const Globals &g;
+    QString path, original;
+    QStringList tags;
+    QJsonObject receipt;
+    bool committed = false, keep = false;
+    dev_t device = 0;
+    ino_t inode = 0;
+};
+
+// 0 proceeds, 1 skips, -1 refuses. A skipped file has no receipt and no journal step.
+int conflictTarget(const QString &verb, const QString &from, QString *to, const TransferOptions &options)
+{
+    QString error;
+    const PathState state = statState(*to, &error, false);
+    if (state == PathState::Missing || (verb == QLatin1String("mv") && recased(from, *to)))
+        return 0;
+    if (state != PathState::Present) { fail(error); return -1; }
+    if (options.policy == QLatin1String("skip")) return 1;
+    if (options.policy == QLatin1String("keep")) {
+        const QString name = QFileInfo(*to).fileName();
+        const int dot = name.lastIndexOf(QLatin1Char('.'));
+        const int split = dot > 0 && !isFolder(from) ? dot : name.size();
+        const QString parent = typedDirectory(*to, nullptr);
+        for (int n = 1; n <= 1000000; ++n) {
+            const QString candidate = QDir(parent).filePath(name.left(split) + QStringLiteral(" (%1)").arg(n) + name.mid(split));
+            const PathState free = statState(candidate, &error, false);
+            if (free == PathState::Missing) { *to = candidate; return 0; }
+            if (free != PathState::Present) { fail(error); return -1; }
+        }
+        fail(QStringLiteral("cannot find an unused name"));
+        return -1;
+    }
+    if (options.policy == QLatin1String("ask")) {
+        if (!::isatty(STDIN_FILENO)) {
+            fail(QStringLiteral("%1: --interactive needs a terminal; use --force, --no-clobber or --keep-both").arg(verb));
+            return -1;
+        }
+        QTextStream prompt(stderr);
+        prompt << "Replace " << spelled(*to) << "? [y/N] " << Qt::flush;
+        QTextStream input(stdin);
+        if (input.readLine().trimmed().toLower() != QLatin1String("y")) return 1;
+        return 0;
+    }
+    if (options.policy == QLatin1String("replace") || options.backup) return 0;
+    fail(occupied(verb, *to));
+    return -1;
+}
+
+int cmdMove(const Globals &g, Session &s, const QStringList &positionals, const TransferOptions &options)
 {
     int status = kOk;
     // The path that was named, not the one it points at: a rename moves the
@@ -4025,18 +4189,16 @@ int cmdMove(const Globals &g, Session &s, const QStringList &positionals)
     // symlink walk straight past the inside-itself guard below. A parent that
     // cannot hold it is refused in both modes, like the already-exists and
     // cross-filesystem refusals: it is a fact about the path, there to be read.
-    QString to = destination(QStringLiteral("mv: cannot move"), from, positionals.at(1));
+    QString to = destination(QStringLiteral("mv: cannot move"), from, positionals.at(1), options.exact);
     if (to.isEmpty())
         return kUsage;
     refuseKept(QStringLiteral("mv"), {to}, &status);
     if (status != kOk)
         return status;
 
-    if (const QString taken = occupied(QStringLiteral("mv"), to);
-        !taken.isEmpty() && !recased(from, to)) {
-        fail(taken);
-        return kUsage;
-    }
+    const int conflict = conflictTarget(QStringLiteral("mv"), from, &to, options);
+    if (conflict != 0)
+        return conflict > 0 ? kOk : kUsage;
 
     if ((status = openSession(&s)) != kOk)
         return status;
@@ -4076,13 +4238,17 @@ int cmdMove(const Globals &g, Session &s, const QStringList &positionals)
         moving.removeOne(from);
         dropLinkRow(g, s, from);
     }
+    Displaced displaced(s, g);
+    if (!recased(from, to) && statState(to, nullptr, false) == PathState::Present
+        && !displaced.stage(from, to, options.backup))
+        return kUsage;
     dropStale(g, s, QStringLiteral("mv"), stale);
 
     if (g.dryRun) {
         // In the shape asked for: `--json --dry-run` must not hand a JSON
         // consumer an arrow between two paths.
         if (g.json) {
-            printJson(movedJson(from, to, movedRows(s.store, moving, from, to, tags)));
+            printJson(displaced.result(movedJson(from, to, movedRows(s.store, moving, from, to, tags))));
         } else {
             // The destination, which is what the real run prints: a preview
             // whose shape differs from the result is a preview nothing can be
@@ -4118,8 +4284,9 @@ int cmdMove(const Globals &g, Session &s, const QStringList &positionals)
         undoMove(from, to, tags);
         return done;
     }
+    displaced.finish();
     if (g.json)
-        printJson(movedJson(from, to, written));
+        printJson(displaced.result(movedJson(from, to, written)));
     else
         out() << to << '\n';
     // The rename happened and every row followed it, so there is nothing left
@@ -4129,7 +4296,7 @@ int cmdMove(const Globals &g, Session &s, const QStringList &positionals)
     return kOk;
 }
 
-int cmdCopy(const Globals &g, Session &s, const QStringList &positionals)
+int cmdCopy(const Globals &g, Session &s, const QStringList &positionals, const TransferOptions &options)
 {
     int status = kOk;
     // The path that was named. `cp` reads through a link -- POSIX says an
@@ -4168,7 +4335,7 @@ int cmdCopy(const Globals &g, Session &s, const QStringList &positionals)
 
     // Resolved through its parent, like `mv`'s; a parent that cannot hold it is
     // refused in both modes, like the already-exists refusal.
-    QString to = destination(QStringLiteral("cp: cannot copy"), from, positionals.at(1));
+    QString to = destination(QStringLiteral("cp: cannot copy"), from, positionals.at(1), options.exact);
     if (to.isEmpty())
         return kUsage;
     // The file at the far end of a link is the one read, so it is asked too.
@@ -4178,10 +4345,9 @@ int cmdCopy(const Globals &g, Session &s, const QStringList &positionals)
     if (status != kOk)
         return status;
 
-    if (const QString taken = occupied(QStringLiteral("cp"), to); !taken.isEmpty()) {
-        fail(taken);
-        return kUsage;
-    }
+    const int conflict = conflictTarget(QStringLiteral("cp"), from, &to, options);
+    if (conflict != 0)
+        return conflict > 0 ? kOk : kUsage;
 
     if ((status = openSession(&s)) != kOk)
         return status;
@@ -4198,6 +4364,10 @@ int cmdCopy(const Globals &g, Session &s, const QStringList &positionals)
                  .arg(spelled(from), spelled(to), unread));
         return kUsage;
     }
+    Displaced displaced(s, g);
+    if (!recased(from, to) && statState(to, nullptr, false) == PathState::Present
+        && !displaced.stage(reached, to, options.backup))
+        return kUsage;
     dropStale(g, s, QStringLiteral("cp"), stale);
 
     if (g.dryRun) {
@@ -4215,7 +4385,7 @@ int cmdCopy(const Globals &g, Session &s, const QStringList &positionals)
                 record.tagged = QDateTime::currentSecsSinceEpoch();
                 plan.append(record);
             }
-            printJson(movedJson(from, to, plan));
+            printJson(displaced.result(movedJson(from, to, plan)));
         } else {
             // The destination, which is what the real run prints: a preview
             // whose shape differs from the result is a preview nothing can be
@@ -4261,8 +4431,9 @@ int cmdCopy(const Globals &g, Session &s, const QStringList &positionals)
                      .arg(spelled(to), systemReason(errno)));
         return done;
     }
+    displaced.finish();
     if (g.json)
-        printJson(movedJson(from, to, written));
+        printJson(displaced.result(movedJson(from, to, written)));
     else
         out() << to << '\n';
     return kOk;
@@ -4373,6 +4544,11 @@ int cmdRemove(const Globals &g, Session &s, const QStringList &paths, bool toTra
     // before the prompt.
     bool refused = false;
     for (const QString &path : resolved) {
+        if (s.journal && toTrash) {
+            QByteArray value;
+            if (readTagsValue(path, &value, &s.undoError) != TagsValue::Unknown)
+                s.undoValues.insert(path, value);
+        }
         if (!g.dryRun) {
             if (toTrash) {
                 QProcess gio;
@@ -5278,7 +5454,8 @@ int cmdSweep(const Globals &g, Session &s, bool status, const QStringList &posit
         // A list of names belongs to a root, so it is written only where the
         // tree being swept is one. `sweep` with no `[dir]` is every declared
         // root, which is how the caches get built without anybody asking.
-        sweepOneTree(g, s, tree, trees, &run, &written, rootAt(tree));
+        const auto cacheFor = rootAt(tree);
+        sweepOneTree(g, s, tree, trees, &run, &written, cacheFor ? &*cacheFor : nullptr);
         run.trees.append(tree);
         // `announce` is false because the run has one answer for every tree it
         // swept and prints it below; a per-tree array would be one JSON
@@ -5986,6 +6163,7 @@ struct Parsed {
     bool fromXattr = false;
     bool all = false;
     bool status = false;
+    TransferOptions transfer;
     QStringList positionals;
 };
 
@@ -6030,6 +6208,12 @@ int parseFlags(QStringList args, Parsed *parsed, const QString &verb, const QStr
             value = args.at(++i);
         }
         given.insert(name);
+        if (name == QLatin1String("--force")) parsed->transfer.policy = QStringLiteral("replace");
+        if (name == QLatin1String("--no-clobber")) parsed->transfer.policy = QStringLiteral("skip");
+        if (name == QLatin1String("--interactive")) parsed->transfer.policy = QStringLiteral("ask");
+        if (name == QLatin1String("--keep-both")) parsed->transfer.policy = QStringLiteral("keep");
+        if (name == QLatin1String("--backup")) parsed->transfer.backup = true;
+        if (name == QLatin1String("--no-target-directory")) parsed->transfer.exact = true;
         if (name == QLatin1String("--tag")) {
             parsed->tags.append(value);
         } else if (name == QLatin1String("--any")) {
@@ -6086,6 +6270,11 @@ int parseFlags(QStringList args, Parsed *parsed, const QString &verb, const QStr
             parsed->all = true;
         }
     }
+    if (parsed->transfer.backup && (parsed->transfer.policy == QLatin1String("skip")
+        || parsed->transfer.policy == QLatin1String("keep")))
+        return refuse(QStringLiteral("--backup cannot be combined with --no-clobber or --keep-both"));
+    if (renamesSet(given) && (parsed->transfer.exact || parsed->transfer.backup || !parsed->transfer.policy.isEmpty()))
+        return refuse(QStringLiteral("conflict flags take two paths, not a rename pattern"));
     const int count = parsed->positionals.size();
     // Before the operands are counted or resolved, so `ls --untagged --any x
     // /nope` names the flag rather than sending somebody after the path.
@@ -6690,7 +6879,7 @@ int parseCommand(const Globals &g, Session &s, QStringList rest, std::function<i
                          .arg(verb, spelled(paths.at(0)), spelled(paths.at(1))));
                 return kUsage;
             }
-            *run = [=, &g, &s] { return cmdTagMerge(g, s, from, to); };
+            *run = [=, &g, &s] { return cmdTagMerge(g, s, from, to, paths.mid(2)); };
             return kOk;
         }
         if (sub == QLatin1String("cp"))
@@ -6821,7 +7010,7 @@ int parseCommand(const Globals &g, Session &s, QStringList rest, std::function<i
             *run = [=, &g, &s] { return cmdRenameSet(g, s, parsed); };
             return kOk;
         }
-        *run = [=, &g, &s] { return cmdMove(g, s, parsed.positionals); };
+        *run = [=, &g, &s] { return cmdMove(g, s, parsed.positionals, parsed.transfer); };
         return kOk;
     }
     if (cmd == QLatin1String("cp")) {
@@ -6829,7 +7018,7 @@ int parseCommand(const Globals &g, Session &s, QStringList rest, std::function<i
         const int parsedStatus = parseFlags(rest, &parsed, cmd);
         if (parsedStatus != kOk)
             return parsedStatus;
-        *run = [=, &g, &s] { return cmdCopy(g, s, parsed.positionals); };
+        *run = [=, &g, &s] { return cmdCopy(g, s, parsed.positionals, parsed.transfer); };
         return kOk;
     }
     if (cmd == QLatin1String("trash") || cmd == QLatin1String("rm")) {
@@ -7069,5 +7258,56 @@ int main(int argc, char **argv)
     }
 
     Session session;
-    return finished(spokenVerb(rest), dispatch(g, session, rest));
+    if (session.journal && g.json && !g.dryRun) {
+        studioReceipt = [&session](const QJsonValue &result) {
+            QStringList scope = session.undoValues.keys();
+            const auto collect = [&scope](const QJsonObject &object) {
+                for (const QString &key : {QStringLiteral("from"), QStringLiteral("to")}) {
+                    const QString path = object.value(key).toString();
+                    if (!path.isEmpty())
+                        scope.append(path);
+                }
+                for (const QJsonValue &path : object.value(QStringLiteral("removed")).toArray())
+                    scope.append(path.toString());
+            };
+            if (result.isArray()) {
+                for (const QJsonValue &value : result.toArray())
+                    collect(value.toObject());
+            } else {
+                collect(result.toObject());
+            }
+            const auto scopedRows = [&scope](const QMap<QString, Record> &rows) {
+                QJsonArray answer;
+                for (const Record &row : rows) {
+                    if (std::any_of(scope.cbegin(), scope.cend(), [&](const QString &root) {
+                            return row.path == root || isUnderDirectory(row.path, root);
+                        }))
+                        answer.append(row.toJson());
+                }
+                return answer;
+            };
+            QJsonObject beforeValues, afterValues;
+            for (auto it = session.undoValues.cbegin(); it != session.undoValues.cend(); ++it)
+                beforeValues.insert(it.key(), QString::fromLatin1(it.value().toBase64()));
+            scope.removeDuplicates();
+            for (const QString &path : scope) {
+                struct stat entry {};
+                if (statState(path, nullptr, false, &entry) != PathState::Present || S_ISLNK(entry.st_mode))
+                    continue;
+                QByteArray value;
+                if (readTagsValue(path, &value, &session.undoError) != TagsValue::Unknown)
+                    afterValues.insert(path, QString::fromLatin1(value.toBase64()));
+            }
+            return QJsonObject{{QStringLiteral("result"), result},
+                {QStringLiteral("journal"), QJsonObject{
+                    {QStringLiteral("beforeRows"), scopedRows(session.undoRows)},
+                    {QStringLiteral("afterRows"), scopedRows(session.store.recordSnapshot())},
+                    {QStringLiteral("beforeValues"), beforeValues},
+                    {QStringLiteral("afterValues"), afterValues},
+                    {QStringLiteral("error"), session.undoError}}}};
+        };
+    }
+    const int status = dispatch(g, session, rest);
+    studioReceipt = {};
+    return finished(spokenVerb(rest), status);
 }

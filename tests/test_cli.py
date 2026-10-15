@@ -203,6 +203,7 @@ def main():
         check_prune_scope(data, workspace)
         check_moving_a_folder(data, workspace)
         check_contradictory_flags(data, workspace)
+        check_transfer_conflict_policies(data, workspace)
         check_json_on_file_verbs(data, workspace)
         check_json_does_not_invent_a_row(data, workspace)
         check_json_array_verbs_do_not_invent_a_row(data, workspace)
@@ -300,6 +301,7 @@ def main():
         check_a_row_under_a_file_is_gone(data, workspace)
         check_a_directory_is_shut_when_it_will_not_open(data, workspace)
         check_the_window_refuses_what_it_cannot_spell(data, workspace)
+        check_desktop_file_manager(data, workspace)
         check_recent_orders_before_it_looks(data, workspace)
         check_recent_desktop_is_one_row_per_file(data, workspace)
         check_open_names_every_path_before_the_opener(data, workspace)
@@ -356,6 +358,8 @@ def main():
         check_a_tag_is_folded_in_ascii_only(data, workspace)
         check_a_flag_from_the_environment_is_on_or_off(data, workspace)
         check_tag_merge_onto_itself_is_refused(data, workspace)
+        check_tag_rename_on_selected_paths(data, workspace)
+        check_rename_refuses_a_late_collision(data, workspace)
         check_landing_on_a_stale_row_names_the_tags_it_drops(data, workspace)
         check_trash_lists_each_operand_before_its_rows(data, workspace)
         check_no_write_goes_through_a_link_at_a_rows_path(data, workspace)
@@ -797,10 +801,7 @@ def check_has_and_help_answer(data, workspace):
     assert "tag clear" not in page.stdout
     assert "tag clear" in run(data, "tag", "--help").stdout
 
-    # An alias is a spelling of the command, including when it asks for help.
-    # `printHelp` matched the body's literal entry text, which only spells `tag
-    # merge`, so `tag rename --help` failed -- for a word `dispatch` accepts and
-    # docs/cli.md lists under Aliases.
+    # Scoped rename describes its collection-wide form through tag merge.
     page = run(data, "tag", "rename", "--help")
     assert page.returncode == 0, page.stderr
     assert "tag merge" in page.stdout, page.stdout
@@ -3860,7 +3861,8 @@ def check_a_usage_line_carries_the_usage(data, workspace):
     expected = {
         "prune": "Usage: omafiles prune [dir] [--all]",
         "verify": "Usage: omafiles verify [dir]",
-        "mv": "Usage: omafiles mv <old> <new>",
+        "mv": "Usage: omafiles mv <old> <new> [--force] [--no-clobber] [--interactive] "
+              "[--keep-both] [--backup] [--no-target-directory]",
         "recent": "Usage: omafiles recent [--desktop] [n]",
         "has": "Usage: omafiles has --tag <tag> -- <path>",
         "reindex": "Usage: omafiles reindex [--from-xattr] [dir]",
@@ -3874,10 +3876,10 @@ def check_a_usage_line_carries_the_usage(data, workspace):
         assert helped.returncode == 0, (verb, helped.stderr)
         assert helped.stdout.splitlines()[0] == line, (verb, helped.stdout)
 
-    # Two words, and the alias the body does not start with.
+    # Two-word commands keep their full synopsis.
     for verb, line in (("tag add", "Usage: omafiles tag add --tag <tag>... -- <path>..."),
                        ("tag cp", "Usage: omafiles tag cp --from <path> -- <path>..."),
-                       ("tag rename", "Usage: omafiles tag rename <from> <to>")):
+                       ("tag rename", "Usage: omafiles tag rename <from> <to> [-- <path>...]")):
         helped = run(data, *verb.split(), "--help")
         assert helped.stdout.splitlines()[0] == line, (verb, helped.stdout)
 
@@ -3915,9 +3917,9 @@ def check_the_divergences_are_written_down(data, workspace):
         assert "already exists" in run(data, "--dry-run", verb,
                                        str(source), str(taken)).stderr
         helped = " ".join(run(data, verb, "--help").stdout.split())
-        assert "over what is already there" in helped, verb
-    assert "write over something already at the destination" in readme
-    assert reference.count("refused rather than overwritten") == 2, "mv or cp says nothing"
+        assert "conflict flags:" in helped and "--keep-both" in helped, verb
+    assert "occupied destination by default" in readme
+    assert reference.count("An occupied destination is refused unless a conflict flag is given") == 2, "mv or cp says nothing"
 
     # 2. A dry run does not predict a write the filesystem will refuse. The only
     # way to find out whether a `user.*` write is taken is to make it, and every
@@ -5972,9 +5974,8 @@ def check_chmod_refuses_a_symlink_and_a_set_it_cannot_take(data, workspace):
 def check_chmod_leaves_the_owner_question_to_the_system(data, workspace):
     """Whether a mode may change is the kernel's answer, reported per path.
 
-    `/` is somebody else's for anybody but root, and it is asked for the mode it
-    already has, so the case is harmless whoever runs it. For root the kernel
-    refuses nothing here, so there is nothing to measure."""
+    `/` is owned by root and read-only in the validation namespace. The kernel
+    may report either restriction; the requested mode is its current mode."""
     if os.geteuid() == 0:
         return
     room = workspace / "owners"
@@ -5991,7 +5992,8 @@ def check_chmod_leaves_the_owner_question_to_the_system(data, workspace):
 
     denied = run(data, "chmod", root_mode, "/")
     assert denied.returncode == 1, denied.stdout
-    assert "chmod: changing permissions of /: Operation not permitted" in denied.stderr, \
+    assert any(f"chmod: changing permissions of /: {reason}" in denied.stderr
+               for reason in ("Operation not permitted", "Read-only file system")), \
         denied.stderr
 
     # Every other operand is still changed, and the receipt names only those.
@@ -9849,6 +9851,7 @@ def check_r6a_a_move_the_index_would_not_take_is_undone(data, workspace):
     (w / "s" / "x2").write_text("2")
     assert run(home, "tag", "add", "-t", "t", "--", w / "a", w / "b", w / "c",
                w / "s/x1", w / "s/x2").returncode == 0
+    assert run(home, "tag", "add", "-t", "incoming", "--", w / "b").returncode == 0
     kept = home / "omafiles"
     saved = w.parent / "index.saved"
     shutil.copy(kept / "index.jsonl", saved)
@@ -9860,6 +9863,12 @@ def check_r6a_a_move_the_index_would_not_take_is_undone(data, workspace):
     assert f"{w}/a2 was moved back to {w}/a" in moved.stderr and moved.stdout == "", moved
     copied = run(home, "cp", w / "b", w / "b2", wrap=wrap)
     assert copied.returncode == 3 and f"{w}/b2 was removed again" in copied.stderr, copied
+    for verb, source, target in (("mv", w / "a", w / "b"), ("cp", w / "b", w / "a")):
+        before = (source.read_bytes(), target.read_bytes())
+        replacement = run(home, verb, "--force", "-T", "--", source, target, wrap=wrap)
+        assert replacement.returncode == 3 and not replacement.stdout, replacement
+        assert (source.read_bytes(), target.read_bytes()) == before
+        assert not list(w.glob(".omafiles-replaced-*"))
     renamed = run(home, "mv", "--replace", "x", "--with", "y", "--", w / "s/x1", w / "s/x2",
                   wrap=wrap)
     assert renamed.returncode == 3 and renamed.stdout == "", renamed
@@ -10462,7 +10471,8 @@ def check_r7_help_names_every_flag_the_parse_takes(data, workspace):
                 (verb, flag, taken.stderr)
     for verb in ("rm", "trash", "mv", "cp"):
         page = run(home, verb, "--help").stdout
-        assert "both" not in page and "neither" not in page, (verb, page)
+        prose = re.sub(r"--[a-z][a-z-]*", "", page)
+        assert "both" not in prose and "neither" not in prose, (verb, page)
 
 
 def check_r7_the_bash_shim_offers_each_word_as_one(data, workspace):
@@ -12337,6 +12347,288 @@ def check_r13_trash_drops_the_rows_gio_reports_gone(data, workspace):
     assert not (w / "a").exists() and (w / "stuck").exists() and not (w / "b").exists()
     assert [json.loads(row)["path"] for row in run(home, "export").stdout.splitlines()] == \
         [str(w / "stuck")]
+
+
+def check_desktop_file_manager(data, workspace):
+    """Desktop registration, isolated MIME defaults and the running instance."""
+    import configparser
+    desktop = configparser.ConfigParser(interpolation=None)
+    desktop.read(ROOT / "pkgbuild/omafiles.desktop")
+    assert desktop["Desktop Entry"]["Exec"] == "omafiles-studio %U"
+    assert desktop["Desktop Entry"]["MimeType"] == "inode/directory;"
+    service = configparser.ConfigParser()
+    service.read(ROOT / "pkgbuild/org.freedesktop.FileManager1.service")
+    assert service["D-BUS Service"]["Name"] == "org.freedesktop.FileManager1"
+    assert service["D-BUS Service"]["Exec"] == "/usr/bin/omafiles-studio"
+    home, w = fresh(workspace, "desktop-manager")
+    env = {**cli_env(home), "QT_QPA_PLATFORM": "offscreen", "QT_QPA_PLATFORMTHEME": ""}
+    for key in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
+        Path(env[key]).mkdir(parents=True, exist_ok=True)
+    temporary = home / "tmp"
+    temporary.mkdir()
+    env["TMPDIR"] = str(temporary)
+    runtime = home / "runtime"
+    runtime.mkdir(mode=0o700)
+    env["XDG_RUNTIME_DIR"] = str(runtime)
+    applications = Path(env["XDG_DATA_HOME"]) / "applications"
+    applications.mkdir()
+    shutil.copy(ROOT / "pkgbuild/omafiles.desktop", applications)
+    chosen = subprocess.run(["xdg-mime", "default", "omafiles.desktop", "inode/directory"],
+                            env=env, capture_output=True, timeout=10)
+    assert chosen.returncode == 0, chosen.stderr
+    answer = subprocess.run(["xdg-mime", "query", "default", "inode/directory"],
+                            env=env, capture_output=True, timeout=10)
+    assert answer.stdout.strip() == b"omafiles.desktop", answer
+    studio = CLI.parent / "omafiles-studio"
+    if not studio.is_file():
+        return
+    with subprocess.Popen(["dbus-daemon", "--session", "--nofork", "--print-address=1"],
+                          env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as bus:
+        try:
+            env["DBUS_SESSION_BUS_ADDRESS"] = bus.stdout.readline().decode().strip()
+            assert env["DBUS_SESSION_BUS_ADDRESS"], bus.stderr.read().decode()
+            folder = w / "folder # percent %"
+            folder.mkdir()
+            file = w / "file.txt"
+            file.write_text("file")
+            for words in ([str(w / "missing")], [folder.as_uri(), "file:///tmp/%ff"]):
+                refused = subprocess.run([studio, *words], env=env, capture_output=True, timeout=5)
+                assert refused.returncode == 2, refused
+            with subprocess.Popen([studio, folder.as_uri(), str(file)], env=env,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) as primary:
+                try:
+                    query = ["gdbus", "call", "--session", "--dest", "org.freedesktop.DBus",
+                             "--object-path", "/org/freedesktop/DBus", "--method",
+                             "org.freedesktop.DBus.NameHasOwner", "org.omafiles.Studio"]
+                    deadline = time.monotonic() + 10
+                    while True:
+                        owned = subprocess.run(query, env=env, capture_output=True, timeout=5)
+                        if b"true" in owned.stdout:
+                            break
+                        assert primary.poll() is None, primary.stderr.read().decode()
+                        assert time.monotonic() < deadline, "instance never registered"
+                        time.sleep(0.02)
+                    for words in ([], [str(folder), file.as_uri()], ["folder # percent %"]):
+                        secondary = subprocess.run([studio, *words], cwd=w, env=env,
+                                                   capture_output=True, timeout=5)
+                        assert secondary.returncode == 0, secondary.stderr
+                        assert primary.poll() is None, primary.stderr.read().decode()
+                    with subprocess.Popen(["dbus-monitor", "--session",
+                            "type='method_call',interface='org.freedesktop.FileManager1',member='Open'"],
+                            env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as monitor:
+                        try:
+                            assert select.select([monitor.stdout], [], [], 5)[0], "monitor never became ready"
+                            token_env = {**env, "XDG_ACTIVATION_TOKEN": "wayland-test-token",
+                                         "DESKTOP_STARTUP_ID": "startup-test-id"}
+                            for token in ("wayland-test-token", ""):
+                                token_env["XDG_ACTIVATION_TOKEN"] = token
+                                done = subprocess.run([studio], env=token_env, capture_output=True, timeout=5)
+                                assert done.returncode == 0, done.stderr
+                        finally:
+                            monitor.terminate()
+                            traffic, diagnostic = monitor.communicate(timeout=5)
+                        assert b'string "wayland-test-token"' in traffic, (traffic, diagnostic)
+                        assert b'string "startup-test-id"' in traffic, (traffic, diagnostic)
+                    for method in ("ShowFolders", "ShowItems", "ShowItemProperties"):
+                        reply = subprocess.run(["gdbus", "call", "--session", "--dest",
+                            "org.freedesktop.FileManager1", "--object-path",
+                            "/org/freedesktop/FileManager1", "--method",
+                            "org.freedesktop.FileManager1." + method,
+                            "['" + folder.as_uri() + "']", ""], env=env,
+                            capture_output=True, timeout=5)
+                        assert reply.returncode == 0, (method, reply.stderr)
+                finally:
+                    primary.terminate()
+                    primary.wait(timeout=5)
+        finally:
+            bus.terminate()
+            bus.wait(timeout=5)
+
+
+def check_tag_rename_on_selected_paths(data, workspace):
+    """A scoped rename edits only selected carriers, merges valid xattr tags,
+    and refuses a bad set without changing its index or mirrors."""
+    home, w = fresh(workspace, "window-tag-rename")
+    a, b, outside, plain = [w / name for name in ("-a", "b", "outside", "plain")]
+    for path in (a, b, outside, plain):
+        path.write_text("body")
+    seeded = run(home, "tag", "add", "--tag", "old", "--", a, b, outside)
+    assert seeded.returncode == 0, seeded
+    assert run(home, "tag", "add", "--tag", "old-keep", "--", a).returncode == 0
+    if carries_xattrs(a):
+        os.setxattr(a, "user.omafiles.tags", b"old,local,old-keep")
+        os.setxattr(plain, "user.omafiles.tags", b"untouched")
+    renamed = run(home, "--json", "tag", "rename", "OLD", "New", "--", a, b, plain)
+    assert renamed.returncode == 0, renamed
+    receipt = json.loads(renamed.stdout)
+    assert {row["path"] for row in receipt} == {str(a), str(b)}, receipt
+    for path in (a, b):
+        row = json.loads(run(home, "json", "--", path).stdout)
+        assert "new" in row["tags"] and "old" not in row["tags"], row
+    assert run(home, "json", "--", plain).stdout == ""
+    if carries_xattrs(plain):
+        assert os.getxattr(plain, "user.omafiles.tags") == b"untouched"
+    assert json.loads(run(home, "json", "--", outside).stdout)["tags"] == ["old"]
+    if carries_xattrs(a):
+        row = json.loads(run(home, "json", "--", a).stdout)
+        assert row["tags"] == ["local", "new", "old-keep"], row
+        assert os.getxattr(a, "user.omafiles.tags") == b"local,new,old-keep"
+    before = (home / "omafiles/index.jsonl").read_bytes()
+    refused = run(home, "tag", "rename", "new", "again", "--", a, w / "missing")
+    assert refused.returncode == 2 and refused.stdout == "", refused
+    assert (home / "omafiles/index.jsonl").read_bytes() == before
+    invalid = run(home, "tag", "rename", "new", "not valid", "--", a)
+    assert invalid.returncode == 1 and "invalid tag" in invalid.stderr, invalid
+    assert (home / "omafiles/index.jsonl").read_bytes() == before
+    same = run(home, "tag", "rename", "new", "NEW", "--", a)
+    assert same.returncode == 1 and "same tag" in same.stderr, same
+    assert (home / "omafiles/index.jsonl").read_bytes() == before
+    preview = run(home, "--dry-run", "tag", "rename", "new", "preview", "--", a)
+    assert preview.returncode == 0 and str(a) in preview.stdout, preview
+    assert (home / "omafiles/index.jsonl").read_bytes() == before
+    complete = run(home, "__complete", "tag", "rename", "")
+    assert complete.returncode == 0 and "new" in complete.stdout.splitlines(), complete
+    assert run(home, "__complete", "tag", "rename", "old", "new", "").returncode == 1
+    batch = run(home, "batch", "-", stdin=f"tag rename new batch -- '{a}'\n")
+    assert batch.returncode == 0, batch
+    assert json.loads(run(home, "json", "--", a).stdout)["tags"][-1] != "new"
+    merged = run(home, "tag", "rename", "batch", "old-keep", "--", a)
+    assert merged.returncode == 0, merged
+    tags = json.loads(run(home, "json", "--", a).stdout)["tags"]
+    assert "batch" not in tags and tags.count("old-keep") == 1, tags
+    if carries_xattrs(a):
+        assert os.getxattr(a, "user.omafiles.tags") == ",".join(tags).encode()
+    global_rename = run(home, "tag", "rename", "old", "global")
+    assert global_rename.returncode == 0, global_rename
+    assert json.loads(run(home, "json", "--", outside).stdout)["tags"] == ["global"]
+
+
+def check_rename_refuses_a_late_collision(data, workspace):
+    """The kernel refuses a destination created after userspace preflight."""
+    home, room = fresh(workspace, "rename-late-collision")
+    shim = room / "rename-race.so"
+    source_code = r"""
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+static int move(int olddir, const char *old, int newdir, const char *to, unsigned flags) {
+    const char *expected = getenv("OMAFILES_TEST_RACE_SOURCE");
+    if (expected && strcmp(expected, old) == 0) {
+        int fd = openat(newdir, to, O_WRONLY | O_CREAT | O_EXCL, 0600);
+        if (fd >= 0) { write(fd, "occupied", 8); close(fd); }
+    }
+    return syscall(SYS_renameat2, olddir, old, newdir, to, flags);
+}
+int rename(const char *old, const char *to) { return move(AT_FDCWD, old, AT_FDCWD, to, 0); }
+int renameat2(int olddir, const char *old, int newdir, const char *to, unsigned flags) {
+    return move(olddir, old, newdir, to, flags);
+}
+"""
+    built = subprocess.run(["cc", "-shared", "-fPIC", "-x", "c", "-", "-o", str(shim)],
+                           input=source_code, text=True, capture_output=True, check=False)
+    assert built.returncode == 0, built.stderr
+    for pattern in (False, True):
+        source = room / ("pattern" if pattern else "single")
+        destination = room / (source.name + "-new")
+        source.write_text("original")
+        assert run(home, "tag", "add", "--tag", "safe", "--", source).returncode == 0
+        words = ["mv", "--pattern", "{name}-new", "--", source] if pattern else ["mv", "--", source, destination]
+        result = run(home, *words, extra_env={"LD_PRELOAD": str(shim),
+                     "OMAFILES_TEST_RACE_SOURCE": str(source)})
+        assert result.returncode != 0 and "File exists" in result.stderr, result
+        assert source.read_text() == "original"
+        assert destination.read_text() == "occupied"
+        assert json.loads(run(home, "json", "--", source).stdout)["tags"] == ["safe"]
+
+
+def check_transfer_conflict_policies(data, workspace):
+    """Conflict decisions preserve the winner's bytes and tags without following a destination link."""
+    room = workspace / "transfer-conflicts"
+    room.mkdir()
+    for verb in ("cp", "mv"):
+        for policy in ("-f", "-n", "--keep-both", "-b"):
+            case = room / (verb + policy)
+            case.mkdir()
+            source, target = case / "incoming.txt", case / "existing.txt"
+            source.write_text("incoming")
+            target.write_text("existing")
+            for path, tag in ((source, "incoming"), (target, "existing")):
+                tagged = run(data, "tag", "add", "--tag", tag, "--", path)
+                assert tagged.returncode == 0, tagged.stderr
+            if policy == "-b":
+                preview = run(data, "--json", "--dry-run", verb, policy, "-T", "--", source, target)
+                assert preview.returncode == 0, preview.stderr
+                planned = json.loads(preview.stdout)
+                assert len(planned) == 2 and planned[0]["to"].endswith("existing.txt.~1~")
+                assert target.read_text() == "existing" and source.read_text() == "incoming"
+            result = run(data, "--json", verb, policy, "-T", "--", source, target)
+            assert result.returncode == 0, result.stderr
+            if policy == "-n":
+                assert not result.stdout and source.read_text() == "incoming"
+                assert target.read_text() == "existing"
+                winner = target
+                expected = "existing"
+            else:
+                receipt = json.loads(result.stdout)
+                if policy == "-b":
+                    assert len(receipt) == 2
+                    backup = case / "existing.txt.~1~"
+                    assert backup.read_text() == "existing"
+                    assert json.loads(run(data, "json", backup).stdout)["tags"] == ["existing"]
+                    receipt = receipt[-1]
+                winner = Path(receipt["to"])
+                expected = "incoming"
+                assert winner.read_text() == "incoming"
+                assert source.exists() == (verb == "cp")
+                if policy == "--keep-both":
+                    assert winner.name == "existing (1).txt"
+                    assert target.read_text() == "existing"
+                assert not list(case.glob(".omafiles-replaced-*"))
+            assert json.loads(run(data, "json", winner).stdout)["tags"] == [expected]
+    source = room / "source"
+    source.write_text("source")
+    sentinel = room / "sentinel"
+    sentinel.write_text("sentinel")
+    link = room / "link"
+    link.symlink_to(sentinel)
+    replaced = run(data, "cp", "-f", "-T", "--", source, link)
+    assert replaced.returncode == 0, replaced.stderr
+    assert not link.is_symlink() and link.read_text() == "source"
+    assert sentinel.read_text() == "sentinel"
+    link.unlink()
+    link.symlink_to(room / "missing")
+    skipped = run(data, "--json", "cp", "-n", "-T", "--", source, link)
+    assert skipped.returncode == 0 and not skipped.stdout and link.is_symlink()
+    kept = run(data, "cp", "--keep-both", "-T", "--", source, link)
+    assert kept.returncode == 0, kept.stderr
+    assert (room / "link (1)").read_text() == "source" and link.is_symlink()
+    interactive = run(data, "cp", "-i", "-T", "--", source, link)
+    assert interactive.returncode == 1 and "terminal" in interactive.stderr
+    code, text = run_pty(data, "cp", "-i", "-T", "--", source, link, answer="n\n")
+    assert code == 0 and link.is_symlink(), text
+    code, text = run_pty(data, "cp", "-i", "-T", "--", source, link, answer="y\n")
+    assert code == 0 and not link.is_symlink(), text
+    same = run(data, "cp", "-f", "-T", "--", source, source)
+    assert same.returncode == 1 and source.read_text() == "source"
+    target = room / "dry-target"
+    target.write_text("old")
+    dry = run(data, "--dry-run", "cp", "-f", "-T", "--", source, target)
+    assert dry.returncode == 0 and target.read_text() == "old" and source.exists()
+    folders = room / "folder"
+    folders.mkdir()
+    (folders / "child").write_text("protected")
+    other = room / "other-folder"
+    other.mkdir()
+    refusal = run(data, "mv", "-f", "-T", "--", other, folders)
+    assert refusal.returncode == 1 and "nonempty" in refusal.stderr
+    assert other.is_dir() and (folders / "child").read_text() == "protected"
+    (folders / "child").unlink()
+    allowed = run(data, "mv", "-f", "-T", "--", other, folders)
+    assert allowed.returncode == 0 and not other.exists() and folders.is_dir(), allowed.stderr
+    assert not list(room.rglob(".omafiles-replaced-*"))
 
 
 if __name__ == "__main__":

@@ -1,28 +1,48 @@
 <RCC>
     <qresource prefix="/">
+        <file alias="omafiles.desktop">../../pkgbuild/omafiles.desktop</file>
+        <file alias="filemanager.service">../../pkgbuild/org.freedesktop.FileManager1.service</file>
         <file>qml/Main.qml</file>
+        <file>qml/FileChooser.qml</file>
+        <file>qml/TrashView.qml</file>
         <file>qml/Chip.qml</file>
         <file>qml/CriteriaBar.qml</file>
         <file>qml/FocusableControl.qml</file>
+        <file>qml/Focus.js</file>
+        <file>qml/FileDragGrip.qml</file>
+        <file>qml/FileDropArea.qml</file>
         <file>qml/ColumnHead.qml</file>
         <file>qml/Details.qml</file>
         <file>qml/Dock.qml</file>
+        <file>qml/DeviceSection.qml</file>
         <file>qml/Entry.qml</file>
         <file>qml/HelpSheet.qml</file>
+        <file>qml/PreviewSheet.qml</file>
+        <file>qml/ReadOnlyText.qml</file>
+    <file>qml/OverlayPanel.qml</file>
+    <file>qml/OverlayScroll.qml</file>
+    <file>qml/OverlayList.qml</file>
         <file>qml/Hints.qml</file>
+        <file>qml/RowTapHandler.qml</file>
         <file>qml/Icon.qml</file>
+        <file>qml/FileIcon.qml</file>
         <file>qml/KeyCap.qml</file>
         <file>qml/ModeBits.qml</file>
         <file>qml/ModeSheet.qml</file>
+        <file>qml/ConflictSheet.qml</file>
+        <file>qml/ArchiveSheet.qml</file>
         <file>qml/Label.qml</file>
         <file>qml/Rule.qml</file>
         <file>qml/TabHandle.qml</file>
         <file>qml/TagStrip.qml</file>
+        <file>qml/TagSheet.qml</file>
+        <file>qml/TagField.qml</file>
         <file>qml/ToolButton.qml</file>
         <file>qml/StatusBar.qml</file>
         <file>qml/CommandPalette.qml</file>
         <file>qml/ContextMenu.qml</file>
         <file>qml/Tooltip.qml</file>
         <file>qml/RubberBand.qml</file>
+        <file>qml/ImmediateWheel.qml</file>
     </qresource>
 </RCC>

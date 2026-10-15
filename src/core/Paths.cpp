@@ -8,7 +8,9 @@
 #include <QSet>
 #include <QStringDecoder>
 #include <QUrl>
+#include <QScopeGuard>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -733,7 +735,7 @@ QString relativeTo(const QString &path, const QString &directory)
 
 PathState storageState(const QString &path, QString *error)
 {
-    const Root *root = rootFor(path);
+    const auto root = rootFor(path);
     if (!root)
         return PathState::Present;
     QString why;
@@ -853,7 +855,19 @@ bool makePath(const QString &directory, QString *error)
 bool readDirectory(const QString &directory, QStringList *names, QStringList *unnameable,
                    QString *error, PathState *state)
 {
-    DIR *handle = ::opendir(QFile::encodeName(directory).constData());
+    return visitDirectory(directory, [names](QAnyStringView name, unsigned char) {
+        if (names)
+            names->append(name.toString());
+        return true;
+    }, unnameable, error, state);
+}
+
+namespace {
+
+bool visitEntries(DIR *handle, const QString &directory,
+                    const std::function<bool(QAnyStringView, unsigned char)> &visitor,
+                    QStringList *unnameable, QString *error, PathState *state)
+{
     if (!handle) {
         const int failure = errno;
         if (error)
@@ -873,17 +887,27 @@ bool readDirectory(const QString &directory, QStringList *names, QStringList *un
         const dirent *entry = ::readdir(handle);
         if (!entry)
             break;
-        const QByteArray name(entry->d_name);
-        if (name == "." || name == "..")
+        const QByteArrayView bytes(entry->d_name);
+        if (bytes == "." || bytes == "..")
             continue;
-        QString spelled;
-        if (!nameFromBytes(name, &spelled)) {
-            if (unnameable)
-                unnameable->append(escapedBytes(name));
-            continue;
+        QString decoded;
+        QAnyStringView name;
+        if (std::all_of(bytes.begin(), bytes.end(),
+                        [](char byte) { return static_cast<unsigned char>(byte) < 0x80; })) {
+            name = QLatin1StringView(bytes.data(), bytes.size());
+        } else {
+            const QByteArray raw = QByteArray::fromRawData(bytes.data(), bytes.size());
+            if (!nameFromBytes(raw, &decoded)) {
+                if (unnameable)
+                    unnameable->append(escapedBytes(raw));
+                continue;
+            }
+            name = QStringView(decoded);
         }
-        if (names)
-            names->append(spelled);
+        if (!visitor(name, entry->d_type)) {
+            ::closedir(handle);
+            return true;
+        }
     }
     // Kept before `closedir`, which has an errno of its own to set.
     const int failure = errno;
@@ -896,6 +920,98 @@ bool readDirectory(const QString &directory, QStringList *names, QStringList *un
         return false;
     }
     return true;
+}
+
+} // namespace
+
+bool visitDirectory(const QString &directory,
+                    const std::function<bool(QAnyStringView, unsigned char)> &visitor,
+                    QStringList *unnameable, QString *error, PathState *state)
+{
+    return visitEntries(::opendir(QFile::encodeName(directory).constData()), directory,
+                        visitor, unnameable, error, state);
+}
+
+bool visitDirectory(int descriptor, const QString &directory,
+                    const std::function<bool(QAnyStringView, unsigned char)> &visitor,
+                    QStringList *unnameable, QString *error, PathState *state)
+{
+    const int copy = ::dup(descriptor);
+    DIR *handle = copy < 0 ? nullptr : ::fdopendir(copy);
+    if (!handle && copy >= 0) {
+        const int failure = errno;
+        ::close(copy);
+        errno = failure;
+    }
+    return visitEntries(handle, directory, visitor, unnameable, error, state);
+}
+
+int openDirectoryNoFollow(const QString &path)
+{
+    if (!isCleanAbsolute(path)) {
+        errno = EINVAL;
+        return -1;
+    }
+    int parent = ::open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    const auto close = qScopeGuard([&] { if (parent >= 0) ::close(parent); });
+    if (parent < 0)
+        return -1;
+    const auto parts = path.split(u'/', Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        const int child = ::openat(parent, QFile::encodeName(part).constData(),
+                                   O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        if (child < 0)
+            return -1;
+        ::close(parent);
+        parent = child;
+    }
+    const int result = parent;
+    parent = -1;
+    return result;
+}
+
+QString removeTreeAt(int parent, const QByteArray &name)
+{
+    struct stat state{};
+    if (::fstatat(parent, name.constData(), &state, AT_SYMLINK_NOFOLLOW) != 0)
+        return systemReason(errno);
+    if (!S_ISDIR(state.st_mode))
+        return ::unlinkat(parent, name.constData(), 0) == 0 ? QString() : systemReason(errno);
+    const int child = ::openat(parent, name.constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    const auto close = qScopeGuard([child] { if (child >= 0) ::close(child); });
+    if (child < 0)
+        return systemReason(errno);
+    const int copy = ::dup(child);
+    DIR *stream = copy < 0 ? nullptr : ::fdopendir(copy);
+    if (!stream) {
+        const int failure = errno;
+        if (copy >= 0)
+            ::close(copy);
+        return systemReason(failure);
+    }
+    QString error;
+    errno = 0;
+    while (const auto *entry = ::readdir(stream)) {
+        const QByteArray bytes(entry->d_name);
+        if (bytes == "." || bytes == "..")
+            continue;
+        error = removeTreeAt(child, bytes);
+        if (!error.isEmpty())
+            break;
+        errno = 0;
+    }
+    const int failure = errno;
+    ::closedir(stream);
+    if (!error.isEmpty())
+        return error;
+    if (failure)
+        return systemReason(failure);
+    struct stat current{};
+    if (::fstatat(parent, name.constData(), &current, AT_SYMLINK_NOFOLLOW) != 0)
+        return systemReason(errno);
+    if (current.st_dev != state.st_dev || current.st_ino != state.st_ino)
+        return QStringLiteral("directory changed during deletion");
+    return ::unlinkat(parent, name.constData(), AT_REMOVEDIR) == 0 ? QString() : systemReason(errno);
 }
 
 } // namespace omafiles

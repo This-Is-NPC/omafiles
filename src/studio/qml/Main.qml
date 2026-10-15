@@ -1,8 +1,10 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQml.Models
 import QtQuick.Window
 import QtQuick.Controls.Basic as C
+import QtQuick.Templates as T
 import QtQuick.Layouts
 import omafiles
 
@@ -20,6 +22,8 @@ import omafiles
 // any of them returns to the list. `?` prints the whole map.
 Window {
     id: win
+    property bool firstFrameShown: false
+    onFrameSwapped: firstFrameShown = true
     width: 1180
     height: 720
     minimumWidth: 880
@@ -28,6 +32,137 @@ Window {
     title: "omafiles"
     color: Theme.background
     onClosing: Qt.quit()
+
+    property var receiptDialogs: []
+    property TrashView activeTrash: null
+    readonly property bool onTrash: activeTab && activeTab.kind === "trash" && activeTrash !== null
+    function showReceipt(title, text) {
+        const dialog = receiptDialogComponent.createObject(win.contentItem, {
+            title: title, receipt: text
+        }) as C.Dialog
+        receiptDialogs = receiptDialogs.concat([dialog])
+        dialog.open()
+    }
+
+    function reloadIndex() {
+        changeNoticeContext()
+        IndexModel.reload()
+        if (activeFolder)
+            activeFolder.reload()
+    }
+
+    function changeNoticeContext() {
+        IndexModel.changeNoticeContext(activeFolder ? activeFolder.directory : "")
+    }
+    onActiveFolderChanged: changeNoticeContext()
+
+    Connections {
+        target: Workspace
+        function onCurrentTabChanged() { win.changeNoticeContext() }
+        function onFocusedPaneChanged() { win.changeNoticeContext() }
+        function onPropertiesRequested(text: string) {
+            win.showReceipt("Properties", text)
+        }
+    }
+    Connections {
+        target: win.activeFolder
+        function onDirectoryChanged() { win.changeNoticeContext() }
+        function onSelectedTagChanged() { win.changeNoticeContext() }
+        function onQueryChanged() { win.changeNoticeContext() }
+        function onPatternChanged() { win.changeNoticeContext() }
+        function onRecentChanged() { win.changeNoticeContext() }
+        function onFacetsChanged() { win.changeNoticeContext() }
+    }
+    Connections {
+        target: Views
+        function onNotice(message: string) { IndexModel.setNotice(message) }
+    }
+    Connections {
+        target: IndexModel
+        function onDefaultManagerFinished(ok: bool, text: string) {
+            win.showReceipt(ok ? "Default file manager" : "Default file manager: incomplete", text)
+        }
+    }
+    Connections {
+        target: Devices
+        function onOpenRequested(path: string) {
+            Workspace.openTabIn(Workspace.focusedPane, "files", path)
+            win.takeFocus()
+        }
+        function onNotice(message: string) { IndexModel.setNotice(message) }
+        function onStorageChanged() { IndexModel.refreshStorage() }
+    }
+
+    Component {
+        id: receiptDialogComponent
+        C.Dialog {
+            id: receiptDialog
+            property string receipt: ""
+            readonly property Item focusTarget: propertyText
+            objectName: "propertiesDialog"
+            parent: win.contentItem
+            anchors.centerIn: parent
+            width: Math.min(700, Math.max(0, win.width - 16))
+            height: Math.min(480, Math.max(0, win.height - 16))
+            title: "Properties"
+            font.family: Theme.fontFamily
+            font.pixelSize: 12
+            palette.window: Theme.panel
+            palette.windowText: Theme.foreground
+            palette.text: Theme.foreground
+            palette.base: Theme.panel
+            palette.button: Theme.sunken
+            palette.buttonText: Theme.foreground
+            palette.highlight: Theme.accent
+            palette.highlightedText: Theme.background
+            modal: true
+            popupType: C.Popup.Item
+            onOpened: propertyText.forceActiveFocus()
+            onClosed: {
+                win.receiptDialogs = win.receiptDialogs.filter(function (dialog) { return dialog !== receiptDialog })
+                destroy()
+            }
+            footer: Item {
+                implicitHeight: 64
+                Chip {
+                    objectName: "receiptClose"
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(100, implicitWidth)
+                    height: 40
+                    label: "Close"
+                    onClicked: receiptDialog.close()
+                }
+            }
+            contentItem: OverlayScroll {
+                id: propertiesScroll
+                contentHeight: propertyText.height
+                ReadOnlyText {
+                    id: propertyText
+                    objectName: "propertyText"
+                    width: propertiesScroll.width
+                    height: Math.max(implicitHeight, propertiesScroll.height)
+                    focusFrame: propertiesScroll
+                    onCursorRectangleChanged: if (activeFocus) propertiesScroll.revealRect(propertyText, cursorRectangle)
+                    text: receiptDialog.receipt
+                    wrapMode: TextEdit.Wrap
+                    Keys.onPressed: function (event) {
+                        if (event.key === Qt.Key_PageDown || event.key === Qt.Key_PageUp) {
+                            const delta = propertiesScroll.height * 0.9
+                                * (event.key === Qt.Key_PageDown ? 1 : -1)
+                            const next = positionAt(cursorRectangle.x, cursorRectangle.y + delta)
+                            propertiesScroll.handleKey(event)
+                            if (event.modifiers & Qt.ShiftModifier)
+                                moveCursorSelection(next)
+                            else
+                                cursorPosition = next
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     property var activeFilesRoot: null
     property var activeGraph: null
@@ -50,7 +185,17 @@ Window {
     /// under an open prompt and the cursor is not promised to stay.
     property string promptPath: ""
     property var promptPaths: []
-    property string focusRegion: "list"
+    readonly property string focusRegion: {
+        const item = activeFocusItem
+        if (editingPath && insideOverlay(pathField, item)) return "path"
+        if (filterBar.visible && insideOverlay(filterBar, item)) return "filter"
+        if (activeDock) {
+            if (item === activeDock.devicesFocusTarget || insideOverlay(activeDevicesList, item)) return "devices"
+            if (item === activeDock.tagsFocusTarget || insideOverlay(activeTagsList, item)) return "tags"
+            if (item === activeDock.viewsFocusTarget || insideOverlay(activeViewsList, item)) return "views"
+        }
+        return "list"
+    }
     property bool pendingG: false
     property var paneItems: ({})
     /// Where the last menu was opened, so a second page of one lands on it.
@@ -62,6 +207,7 @@ Window {
     readonly property var activeFolder: activeFilesRoot ? activeFilesRoot.folder : null
     readonly property var activeListing: activeFilesRoot ? activeFilesRoot.view : null
     readonly property var activeTagsList: activeDock ? activeDock.tagsList : null
+    readonly property var activeDevicesList: activeDock ? activeDock.devicesList : null
     readonly property var activeViewsList: activeDock ? activeDock.viewsList : null
     // A list is on screen. Two kinds of tab draw one: a folder, and a set of
     // tags read as folders. They share the view, the keys and the model, so
@@ -75,17 +221,123 @@ Window {
     /// Narrower still: a files tab showing a folder, and not a tag, a search
     /// or the desktop's list -- the only listing something can be made or
     /// pasted into, because it is the only one that is somewhere.
-    readonly property bool standingInFolder: onDirectory && activeTab.selectedTag === ""
-                                             && activeTab.pattern === "" && !activeTab.recent
+    function isFolderTab(tab) {
+        return tab && tab.kind === "files" && tab.selectedTag === ""
+            && tab.pattern === "" && !tab.recent
+    }
+    readonly property bool standingInFolder: onDirectory && isFolderTab(activeTab)
     readonly property bool onTags: onFiles && activeTab.kind === "tags"
     readonly property bool onGraph: activeTab !== null && activeTab !== undefined
                                     && activeTab.kind === "graph" && activeGraph !== null
-    readonly property bool blocked: commandPalette.visible || helpSheet.visible
-                                    || fileMenu.visible || tabMenu.visible
-                                    || openWithMenu.visible || scriptsMenu.visible
-                                    || viewMenu.visible || modeSheet.visible
-                                    || filterMenu.visible
-                                    || newTabMenu.visible || editingPath || filtering
+    readonly property var overlays: [filterBar, pathField, commandPalette, helpSheet, previewSheet,
+        fileMenu, tabMenu, openWithMenu, scriptsMenu, viewMenu, deviceMenu, tagMenu, modeSheet, tagSheet, conflictSheet, archiveSheet,
+        filterMenu, columnMenu, newTabMenu, trashMenu, trashEmptyMenu].concat(receiptDialogs)
+    property var overlayStack: []
+    property Item overlayOrigin: null
+    property int overlayRevision: 0
+    readonly property bool overlayOpen: overlayStack.some(function (entry) {
+        return !win.inlineOverlay(entry.overlay)
+    })
+
+    function inlineOverlay(overlay) { return overlay === filterBar || overlay === pathField }
+
+    function insideOverlay(overlay, item) {
+        if (!overlay)
+            return false
+        if (inlineOverlay(overlay) && item && item.objectName === "hintAction") {
+            for (let parent = item.parent; parent; parent = parent.parent)
+                if (parent === status) return true
+        }
+        const container = overlay instanceof T.Popup ? overlay.contentItem.parent : overlay
+        for (let parent = item; parent; parent = parent.parent) {
+            if (parent === container)
+                return true
+        }
+        return false
+    }
+
+    function focusControl(item) {
+        if (item && item.activeFocusOnTab) return item
+        for (let parent = item; parent; parent = parent.parent)
+            if (parent instanceof ListView) return parent
+        return item
+    }
+
+    function rememberOverlayFocus() {
+        const top = overlayStack[overlayStack.length - 1]
+        if (top && insideOverlay(top.overlay, activeFocusItem))
+            top.focus = focusControl(activeFocusItem)
+        else if (!top && activeFocusItem && activeFocusItem !== contentItem
+                 && !overlays.some(function (overlay) { return overlay.visible && insideOverlay(overlay, activeFocusItem) }))
+            overlayOrigin = focusControl(activeFocusItem)
+    }
+    function keepOverlayFocus() {
+        const top = overlayStack[overlayStack.length - 1]
+        if (top && !insideOverlay(top.overlay, activeFocusItem))
+            restoreOverlayFocus()
+    }
+    onActiveFocusItemChanged: {
+        rememberOverlayFocus()
+        Qt.callLater(keepOverlayFocus)
+    }
+
+    function restoreOverlayFocus() {
+        const top = overlayStack[overlayStack.length - 1]
+        if (top) {
+            const item = top.focus
+            if (item && item.visible && item.enabled && insideOverlay(top.overlay, item))
+                item.forceActiveFocus()
+            else
+                top.overlay.focusTarget.forceActiveFocus()
+        }
+    }
+
+    function trackOverlay(overlay) {
+        const next = overlayStack.slice()
+        const index = next.findIndex(function (entry) { return entry.overlay === overlay })
+        if (overlay.visible) {
+            if (index >= 0)
+                return
+            rememberOverlayFocus()
+            next.push({ overlay: overlay, focus: null })
+        } else {
+            if (index < 0)
+                return
+            next.splice(index, 1)
+        }
+        for (let i = 0; i < next.length; ++i) {
+            if (!(next[i].overlay instanceof T.Popup) && !inlineOverlay(next[i].overlay))
+                next[i].overlay.z = 81 + i
+        }
+        overlayStack = next
+        const revision = ++overlayRevision
+        if (overlay.visible || index !== next.length)
+            return
+        // Wait for Qt's popup focus cleanup and any command opened by the closing menu.
+        Qt.callLater(function () {
+            if (revision !== overlayRevision)
+                return
+            if (overlayStack.length > 0)
+                restoreOverlayFocus()
+            else if (!activeFocusItem || activeFocusItem === contentItem || activeFocusItem === root
+                     || !activeFocusItem.visible || insideOverlay(overlay, activeFocusItem)) {
+                if (overlayOrigin && overlayOrigin.visible && overlayOrigin.enabled)
+                    overlayOrigin.forceActiveFocus()
+                else
+                    takeFocus()
+            }
+        })
+    }
+
+    Instantiator {
+        model: win.overlays
+        delegate: Connections {
+            required property var modelData
+            target: modelData
+            function onVisibleChanged() { win.trackOverlay(modelData) }
+        }
+    }
+    readonly property bool blocked: overlayOpen || editingPath || filtering
                                     || prompt !== ""
 
     // ---------------------------------------------------------------- keymap
@@ -105,7 +357,19 @@ Window {
             { key: "PgDn PgUp", label: "page" },
             { key: "Home End", label: "first, last row" },
             { key: "← →", label: "prev, next (icons)" } ] },
+        { title: "devices", keys: [
+            { key: "d", label: "devices panel" },
+            { key: "j k / ↑ ↓", label: "move; Home/End/Page Up/Page Down also work" },
+            { key: "Enter Space l", label: "open device; mount if needed" },
+            { key: "m Menu Shift F10", label: "mount, unmount, eject or cancel" },
+            { key: "h ← Esc", label: "return to files" } ] },
+        { title: "archives", keys: [
+            { key: "m", label: "row menu: Compress or Extract" },
+            { key: ":", label: "commands: compress or extract" },
+            { key: "Tab Shift+Tab", label: "destination, format and action controls" },
+            { key: "Escape", label: "cancel preparation; stop publication after current entry" } ] },
         { title: "go", keys: [
+            { key: "i", label: "quick preview" },
             { key: "l", label: "open or enter" },
             { key: "Enter", label: "open or enter" },
             { key: "→", label: "open or enter (list, details)" },
@@ -116,6 +380,15 @@ Window {
             { key: "Ctrl l", label: "type a path" },
             { key: "F5", label: "reload index" },
             { key: "Ctrl r", label: "reload index" } ] },
+        { title: "preview", keys: [
+            { key: "i Esc", label: "close preview" },
+            { key: "j k", label: "next, previous file" },
+            { key: "← →", label: "previous, next file" },
+            { key: "P", label: "play, pause media" },
+            { key: "[ ]", label: "seek five seconds" },
+            { key: "PgDn PgUp", label: "scroll preview" },
+            { key: "Home End", label: "scroll to ends" },
+            { key: "Tab", label: "preview controls" } ] },
         { title: "mark", keys: [
             { key: "Space", label: "mark row" },
             { key: "J K", label: "mark row, then down, up" },
@@ -134,23 +407,26 @@ Window {
             { key: "s", label: "name, tags, type, size, modified, each the way it reads" },
             { key: "S", label: "flip the direction" } ] },
         { title: "edit", keys: [
+            { key: "Ctrl z", label: "undo the last operation" },
             { key: "r", label: "rename" },
             { key: "F2", label: "rename" },
             { key: "n", label: "new folder" },
             { key: "Ctrl Shift n", label: "new folder" },
             { key: "Ctrl c", label: "copy the row or the marked" },
             { key: "Ctrl x", label: "cut the row or the marked" },
-            { key: "Ctrl v", label: "paste into this folder" } ] },
+            { key: "Ctrl v", label: "paste into this folder" },
+            { key: "Ctrl Shift v", label: "link clipboard files here" } ] },
         { title: "find", keys: [
             { key: "/", label: "filter this folder" },
             { key: "f", label: "find by name across the roots" },
             { key: "F", label: "filter by type, tag or date" },
             { key: "Enter", label: "keep filter" },
             { key: "Esc", label: "clear filter" },
-            { key: "t", label: "tag panel" },
+            { key: "t", label: "tag panel; a adds, d removes, r renames" },
             { key: "v", label: "saved views" },
             { key: "Enter", label: "toggle tag" },
             { key: "Space", label: "toggle tag" },
+            { key: "m Menu Shift F10", label: "tag menu" },
             { key: "h", label: "leave the tag panel" },
             { key: "← Esc", label: "leave the tag panel" } ] },
         { title: "tabs and panes", keys: [
@@ -181,11 +457,20 @@ Window {
             { key: "+ - =", label: "zoom" },
             { key: "Shift h j k l", label: "pan" },
             { key: "0", label: "reset the view" } ] },
+        { title: "trash", keys: [
+            { key: ":", label: "Open Trash from commands" },
+            { key: "j k / ↑ ↓", label: "move; Home/End/Page Up/Page Down also work" },
+            { key: "Space / a / A", label: "mark / mark all / clear marks" },
+            { key: "Enter", label: "read the complete original path and deletion details" },
+            { key: "r", label: "restore row or marked entries" },
+            { key: "m / Menu", label: "row menu" },
+            { key: "e", label: "confirm empty Trash (permanent)" },
+            { key: "F5", label: "refresh Trash" } ] },
         { title: "window", keys: [
             { key: ":", label: "commands" },
             { key: "Ctrl p", label: "commands" },
             { key: "?", label: "this list" },
-            { key: "Tab", label: "next control" },
+            { key: "Tab", label: "next control or receipt" },
             { key: "Esc", label: "back to the list" } ] }
     ]
 
@@ -202,6 +487,11 @@ Window {
                                          : makingFolder ? "make"
                                          : matching ? "mark"
                                          : finding ? "find" : "save" }]
+        if (onTrash)
+            return [{ key: "?", label: "keys" }, { key: ":", label: "cmd" },
+                    { key: "Space", label: "mark" }, { key: "m", label: "menu" },
+                    { key: "r", label: "restore" }, { key: "e", label: "empty" },
+                    { key: "j k", label: "move" }]
         if (onGraph)
             return [{ key: "?", label: "keys" },
                     { key: ":", label: "cmd" },
@@ -210,7 +500,7 @@ Window {
                     { key: "m", label: "menu" },
                     { key: "l", label: "open" },
                     { key: "j k", label: "node" }]
-        if (focusRegion === "views")
+        if (focusRegion === "devices" || focusRegion === "views")
             return [{ key: "?", label: "keys" },
                     { key: "Esc", label: "back" },
                     { key: "m", label: "menu" },
@@ -219,6 +509,7 @@ Window {
         if (focusRegion === "tags")
             return [{ key: "?", label: "keys" },
                     { key: "Esc", label: "back" },
+                    { key: "m", label: "menu" },
                     { key: "j k", label: "move" },
                     { key: "Enter", label: "toggle" }]
         return [{ key: "?", label: "keys" },
@@ -235,15 +526,32 @@ Window {
 
     // ----------------------------------------------------------------- focus
     function takeFocus() {
-        focusRegion = "list"
-        root.forceActiveFocus()
+        if (overlayStack.length > 0) {
+            restoreOverlayFocus()
+            return
+        }
+        if (onTrash) activeTrash.focusTarget.forceActiveFocus()
+        else root.forceActiveFocus()
+        if (activeDock) activeDock.expanded = false
+    }
+
+    function openPreview(path) {
+        const file = path || cursorPath()
+        if (file) previewSheet.openFor(file)
+    }
+
+    function stepPreview(direction) {
+        if (!activeFolder || !activeListing) return
+        const row = activeFolder.previewRow(activeListing.currentIndex, direction)
+        if (row < 0) return
+        moveCursorTo(row)
+        previewSheet.openFor(activeFolder.pathAt(row))
     }
 
     function startFilter() {
         if (!onFiles)
             return
         filtering = true
-        focusRegion = "filter"
         filterField.text = activeTab.filter
         filterField.focusEntry()
     }
@@ -311,7 +619,6 @@ Window {
         if (!onFiles)
             return
         filterRow = activeFilesRoot.entry
-        filterMenu.returnFocus = takeFocus
         filterMenu.openAt(root.width / 2 - 100, root.height / 3)
     }
 
@@ -322,7 +629,6 @@ Window {
         if (!onFiles)
             return
         prompt = "view"
-        focusRegion = "filter"
         filterField.text = onTags ? win.facetPath(activeTab.facets, activeTab.untagged)
                                   : win.nameOf(activeFolder ? activeFolder.directory : "")
         filterField.focusEntry()
@@ -355,6 +661,18 @@ Window {
     // Renaming is `mv` to the same folder, so the prompt offers the name and
     // the verb keeps the tags. The stem is selected and the extension is not:
     // the extension is the part nobody opened the prompt to change.
+    function startArchive(extracting, target) {
+        if (!onFiles || !activeFolder || IndexModel.operationBusy) return
+        const path = target || cursorPath()
+        if (!path) return
+        const paths = activeFolder.targetPaths(path)
+        if (extracting && paths.length !== 1) {
+            IndexModel.setNotice("Extract one archive at a time; clear the other marks first")
+            return
+        }
+        archiveSheet.openFor(paths, extracting, parentOf(path))
+    }
+
     function startRename(target) {
         const path = target || cursorPath()
         if (!path || !onFiles)
@@ -368,7 +686,6 @@ Window {
         }
         promptPath = path
         prompt = "rename"
-        focusRegion = "filter"
         const name = nameOf(path)
         filterField.text = name
         const dot = name.lastIndexOf(".")
@@ -420,16 +737,29 @@ Window {
             return false
         const paths = Clipboard.files()
         const dir = folder.directory
-        // One file lands under the cursor; a set lands where it lands.
-        if (paths.length === 1)
-            folder.pointCursorAt((dir === "/" ? "" : dir) + "/" + nameOf(paths[0]))
-        if (Clipboard.cutting()) {
-            IndexModel.moveInto(paths, dir)
+        transferFiles(paths, dir, Clipboard.cutting() ? Qt.MoveAction : Qt.CopyAction)
+        if (Clipboard.cutting())
             Clipboard.clear()
-        } else {
-            IndexModel.copyInto(paths, dir)
-        }
         return true
+    }
+
+    function transferFiles(paths, dir, action) {
+        const folder = activeFolder
+        // One file lands under the cursor in the receiving folder.
+        if (folder && folder.directory === dir && paths.length === 1)
+            folder.pointCursorAt((dir === "/" ? "" : dir) + "/" + nameOf(paths[0]))
+        if (action === Qt.MoveAction)
+            IndexModel.moveInto(paths, dir)
+        else if (action === Qt.LinkAction)
+            IndexModel.linkInto(paths, dir)
+        else
+            IndexModel.copyInto(paths, dir)
+    }
+
+    Connections {
+        target: FileTransfer
+        function onRequested(paths, directory, action) { win.transferFiles(paths, directory, action) }
+        function onRefused(reason) { IndexModel.setNotice(reason) }
     }
 
     // A shell pattern over every name under the declared roots, answered out
@@ -439,7 +769,6 @@ Window {
         if (!onDirectory || !activeFolder)
             return
         prompt = "find"
-        focusRegion = "filter"
         filterField.text = activeTab.pattern
         filterField.focusEntry()
     }
@@ -475,7 +804,6 @@ Window {
         if (!onFiles || !activeFolder)
             return
         prompt = "match"
-        focusRegion = "filter"
         filterField.text = ""
         filterField.focusEntry()
     }
@@ -494,7 +822,6 @@ Window {
             return
         promptPaths = paths
         prompt = "set"
-        focusRegion = "filter"
         filterField.text = "{stem}{ext}"
         filterField.focusEntry()
     }
@@ -517,7 +844,6 @@ Window {
         const folder = activeFolder
         if (!path || !folder)
             return
-        modeSheet.returnFocus = takeFocus
         modeSheet.openFor(folder.targetPaths(path), folder.entryAt(folder.rowForPath(path)))
     }
 
@@ -544,19 +870,11 @@ Window {
     function linkHere() {
         const folder = activeFolder
         if (!canPaste || !folder)
-            return
+            return false
         const paths = Clipboard.files()
         const dir = folder.directory
-        let made = 0
-        for (let i = 0; i < paths.length; i++) {
-            if (IndexModel.makeLink(paths[i], joined(dir, nameOf(paths[i]))))
-                ++made
-        }
-        if (made > 0) {
-            if (paths.length === 1)
-                folder.pointCursorAt(joined(dir, nameOf(paths[0])))
-            folder.reload()
-        }
+        transferFiles(paths, dir, Qt.LinkAction)
+        return true
     }
 
     // Only where the list is a folder: a tag listing spans the index and has
@@ -565,7 +883,6 @@ Window {
         if (!standingInFolder || !activeFolder)
             return
         prompt = "folder"
-        focusRegion = "filter"
         filterField.text = ""
         filterField.focusEntry()
     }
@@ -590,7 +907,6 @@ Window {
         if (!onFiles)
             return
         editingPath = true
-        focusRegion = "path"
         pathField.text = onTags ? facetPath(activeTab.facets, activeTab.untagged)
                                 : activeTab.cwd
         pathField.focusEntry()
@@ -668,17 +984,53 @@ Window {
     }
 
     function focusTags() {
-        if (!activeTagsList || IndexModel.tagRowCount() === 0)
+        if (!activeTagsList)
             return
-        focusRegion = "tags"
         // On the tag the listing is showing, when there is one: the way out of
         // a tag listing is the key that opened it, and hunting for the row
         // again is not a way out.
+        activeDock.expanded = true
+        activeDock.tagsFocusTarget.forceActiveFocus()
         const chosen = activeTab ? tagRow(activeTab.selectedTag) : -1
         if (chosen >= 0)
             activeTagsList.currentIndex = chosen
-        else if (activeTagsList.currentIndex < 0)
+        else if (activeTagsList.currentIndex < 0 && IndexModel.tagRowCount() > 0)
             activeTagsList.currentIndex = 0
+    }
+
+    function startTagEdit(operation, path, tag) {
+        const folder = activeFolder
+        const listing = activeListing
+        if (!folder || !listing)
+            return
+        if (!path)
+            path = folder.pathAt(listing.currentIndex)
+        const row = folder.rowForPath(path)
+        const kind = folder.kindAt(row)
+        if (kind !== "file" && kind !== "dir")
+            return
+        tagSheet.openFor(folder.targetPaths(path), operation || "add", tag || "")
+    }
+
+    function focusDevices() {
+        if (!activeDock) {
+            Workspace.addTab("files")
+            Qt.callLater(focusDevices)
+            return
+        }
+        activeDock.expanded = true
+        activeDock.devicesFocusTarget.forceActiveFocus()
+    }
+
+    function openDeviceMenu(id, x, y) {
+        if (!activeDock) return
+        activeDock.expanded = true
+        const entries = Devices.entries
+        for (let row = 0; row < entries.length; ++row)
+            if (entries[row].id === id) activeDevicesList.currentIndex = row
+        activeDock.devicesFocusTarget.forceActiveFocus()
+        deviceMenu.targetId = id
+        deviceMenu.openAt(x, y)
     }
 
     // Focused even with nothing in it, so `v` shows where views live rather
@@ -687,10 +1039,8 @@ Window {
     function focusViews() {
         if (!activeViewsList)
             return
-        focusRegion = "views"
-        // The focus as well as the region: the view menu returns here when it
-        // closes, with the focus on a scope that has just gone invisible.
-        root.forceActiveFocus()
+        activeDock.expanded = true
+        activeDock.viewsFocusTarget.forceActiveFocus()
         if (Views.count > 0 && activeViewsList.currentIndex < 0)
             activeViewsList.currentIndex = 0
     }
@@ -706,6 +1056,15 @@ Window {
             return
         }
         openTagsTab(view.tags)
+    }
+
+    function openTagMenuAt(row, x, y) {
+        if (!activeTagsList || IndexModel.tagAt(row) === "") return
+        activeTagsList.currentIndex = row
+        activeDock.expanded = true
+        activeDock.tagsFocusTarget.forceActiveFocus()
+        tagMenu.targetRow = row
+        tagMenu.openAt(x, y)
     }
 
     function toggleTagAt(row) {
@@ -771,7 +1130,6 @@ Window {
         IndexModel.clearNotice()
         menuX = x
         menuY = y
-        fileMenu.returnFocus = takeFocus
         fileMenu.openAt(x, y)
     }
 
@@ -790,7 +1148,6 @@ Window {
         }
         openWithMenu.apps = apps
         openWithMenu.targetPath = path
-        openWithMenu.returnFocus = takeFocus
         openWithMenu.openAt(menuX, menuY)
     }
 
@@ -803,7 +1160,6 @@ Window {
         scriptsMenu.scripts = scripts
         scriptsMenu.targetPaths = paths
         scriptsMenu.targetDir = directory
-        scriptsMenu.returnFocus = takeFocus
         scriptsMenu.openAt(menuX, menuY)
     }
 
@@ -845,7 +1201,6 @@ Window {
 
     function openColumnMenu(moving, x, y) {
         columnMenu.moving = moving
-        columnMenu.returnFocus = takeFocus
         columnMenu.openAt(x, y)
     }
 
@@ -885,11 +1240,12 @@ Window {
         if (row < 0 || row >= Views.count)
             return
         IndexModel.clearNotice()
-        focusRegion = "views"
-        if (activeViewsList)
+        if (activeViewsList) {
             activeViewsList.currentIndex = row
+            activeDock.expanded = true
+            activeDock.viewsFocusTarget.forceActiveFocus()
+        }
         viewMenu.targetRow = row
-        viewMenu.returnFocus = win.focusViews
         viewMenu.openAt(x, y)
     }
 
@@ -918,7 +1274,6 @@ Window {
         tabMenu.targetTabIndex = tabIndex
         tabMenu.targetTabCount = pane.tabCount
         IndexModel.clearNotice()
-        tabMenu.returnFocus = win.takeFocus
         tabMenu.openAt(x, y)
     }
 
@@ -936,6 +1291,8 @@ Window {
     // How many rows fit in the list the keyboard is walking. The tag panel
     // draws 25px rows with a pixel between them, the file views 30.
     function pageStep() {
+        if (focusRegion === "devices")
+            return activeDevicesList ? Math.max(1, Math.floor(activeDevicesList.height / 32)) : 6
         if (focusRegion === "views")
             return activeViewsList ? Math.max(1, Math.floor(activeViewsList.height / 26)) : 6
         if (focusRegion === "tags")
@@ -968,7 +1325,10 @@ Window {
                 graph.stepSelection(delta)
             return
         }
-        if (focusRegion === "views")
+        if (focusRegion === "devices") {
+            const list = activeDevicesList
+            if (list) list.currentIndex = Math.max(0, Math.min(list.currentIndex + delta, list.count - 1))
+        } else if (focusRegion === "views")
             moveViewCursor(delta)
         else if (focusRegion === "tags")
             moveTagCursor(delta)
@@ -983,7 +1343,10 @@ Window {
                 graph.selectEnd(last)
             return
         }
-        if (focusRegion === "views") {
+        if (focusRegion === "devices") {
+            const list = activeDevicesList
+            if (list) list.currentIndex = last ? Math.max(0, list.count - 1) : 0
+        } else if (focusRegion === "views") {
             const views = activeViewsList
             if (views)
                 views.currentIndex = last ? Math.max(0, Views.count - 1) : 0
@@ -1041,20 +1404,18 @@ Window {
         if (onGraph)
             return false
         const step = direction * Math.max(1, Math.floor(pageStep() / 2))
-        if (focusRegion === "tags")
-            moveTagCursor(step)
-        else
-            moveCursor(step)
+        moveByDelta(step)
         return true
     }
 
     function handleModified(event, ctrl, alt, shift) {
         if (ctrl) {
             switch (event.key) {
+            case Qt.Key_Z: IndexModel.undo(); return true
             case Qt.Key_L: startPathEdit(); return true
             case Qt.Key_P: commandPalette.open(); return true
             case Qt.Key_T: Workspace.addTab("files"); return true
-            case Qt.Key_R: IndexModel.reload(); return true
+            case Qt.Key_R: win.reloadIndex(); return true
             case Qt.Key_W:
                 if (shift)
                     Workspace.closePane(Workspace.focusedPane)
@@ -1076,7 +1437,7 @@ Window {
                 return shift
             case Qt.Key_C: return copyToClipboard(false)
             case Qt.Key_X: return copyToClipboard(true)
-            case Qt.Key_V: return paste()
+            case Qt.Key_V: return shift ? linkHere() : paste()
             case Qt.Key_Comma: return resizeFocusedPane(-40)
             case Qt.Key_Period: return resizeFocusedPane(40)
             }
@@ -1121,11 +1482,42 @@ Window {
         const tags = activeTagsList
         if (!tags)
             return false
+        if (text === "a" || text === "d" || text === "r") {
+            startTagEdit(text === "a" ? "add" : text === "d" ? "remove" : "rename",
+                         "", text === "a" ? "" : IndexModel.tagAt(tags.currentIndex))
+            return true
+        }
+        if (text === "m" || event.key === Qt.Key_Menu
+                || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+            const at = activeDock.mapToItem(root, 12, 64)
+            openTagMenuAt(tags.currentIndex, at.x, at.y)
+            return true
+        }
         if (handleSideListKey(event, text))
             return true
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
                 || event.key === Qt.Key_Space) {
             toggleTagAt(tags.currentIndex)
+            return true
+        }
+        return false
+    }
+
+    function handleDeviceKey(event, text) {
+        if (handleSideListKey(event, text)) return true
+        const list = activeDevicesList
+        const device = list && list.currentIndex >= 0 ? Devices.entries[list.currentIndex] : null
+        if (!device) return false
+        if (text === "m" || event.key === Qt.Key_Menu
+                || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
+            const item = list.currentItem || list
+            const at = item.mapToItem(root, 0, item.height)
+            openDeviceMenu(device.id, at.x, at.y)
+            return true
+        }
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                || event.key === Qt.Key_Space || text === "l") {
+            Devices.act(device.id, "open")
             return true
         }
         return false
@@ -1194,6 +1586,7 @@ Window {
 
         switch (text) {
         case "l": folder.activateRow(listing.currentIndex); return true
+        case "i": openPreview(""); return true
         case "h": folder.goUp(); return true
         case "~": folder.goHome(); return true
         case "t": focusTags(); return true
@@ -1278,10 +1671,30 @@ Window {
         return false
     }
 
+    function activateHint(caption) {
+        const name = caption.split(" ")[0]
+        if (editingPath || filtering || prompt !== "") {
+            const entry = editingPath ? pathField : filterField
+            if (name === "Esc") entry.cancelled()
+            else if (name === "Enter") entry.accepted(entry.text)
+            return
+        }
+        const key = name === "Esc" ? Qt.Key_Escape : name === "Enter" ? Qt.Key_Return
+            : name === "Space" ? Qt.Key_Space : name.toUpperCase().charCodeAt(0)
+        handleKey({ key: key, text: name === "Space" ? " " : name,
+                    modifiers: Qt.NoModifier, accepted: false, isAutoRepeat: false })
+    }
+
     function handleKey(event) {
         // A band can be drawn with the filter bar open, which blocks the rest.
         if (event.key === Qt.Key_Escape && activeFilesRoot && activeFilesRoot.band.live) {
             activeFilesRoot.band.cancel()
+            event.accepted = true
+            return
+        }
+        const top = overlayStack[overlayStack.length - 1]
+        if (top && inlineOverlay(top.overlay) && event.key === Qt.Key_Escape) {
+            activateHint("Esc")
             event.accepted = true
             return
         }
@@ -1308,13 +1721,19 @@ Window {
             return
         }
 
+        if (text === "d" && focusRegion !== "tags") {
+            focusDevices()
+            event.accepted = true
+            return
+        }
         if (event.key === Qt.Key_F5) {
-            IndexModel.reload()
+            Devices.refresh()
+            if (onTrash) activeTrash.model.reload()
+            win.reloadIndex()
             event.accepted = true
             return
         }
         if (text === "?") {
-            helpSheet.returnFocus = takeFocus
             helpSheet.open()
             event.accepted = true
             return
@@ -1345,11 +1764,15 @@ Window {
                 event.accepted = true
             return
         }
-
+        if (onTrash) {
+            activeTrash.handleKey(event)
+            return
+        }
         if (!onFiles)
             return
 
-        const handled = focusRegion === "views" ? handleViewKey(event, text)
+        const handled = focusRegion === "devices" ? handleDeviceKey(event, text)
+                      : focusRegion === "views" ? handleViewKey(event, text)
                       : focusRegion === "tags"  ? handleTagKey(event, text)
                                                 : handleListKey(event, text)
         if (handled)
@@ -1380,6 +1803,7 @@ Window {
         Component.onCompleted: forceActiveFocus()
 
         Column {
+            enabled: !win.overlayOpen
             anchors.fill: parent
             spacing: 0
 
@@ -1414,11 +1838,20 @@ Window {
                         onClicked: if (win.activeFolder) win.activeFolder.goHome()
                     }
                     ToolButton {
+                        objectName: "undoButton"
+                        anchors.verticalCenter: parent.verticalCenter
+                        iconKind: "undo"
+                        caption: IndexModel.undoLabel
+                        key: "Ctrl+Z"
+                        usable: IndexModel.canUndo
+                        onClicked: IndexModel.undo()
+                    }
+                    ToolButton {
                         anchors.verticalCenter: parent.verticalCenter
                         iconKind: "reload"
                         caption: "Reload index"
                         key: "F5"
-                        onClicked: IndexModel.reload()
+                        onClicked: win.reloadIndex()
                     }
                 }
 
@@ -1518,6 +1951,8 @@ Window {
 
                     Entry {
                         id: pathField
+                    nextFocus: status.firstHint || pathField.focusTarget
+                    previousFocus: status.lastHint || pathField.focusTarget
                         anchors.fill: parent
                         visible: win.editingPath
                         placeholder: "path"
@@ -1582,6 +2017,7 @@ Window {
             // -------------------------------------------------------- filter
             Item {
                 id: filterBar
+                readonly property Item focusTarget: filterField.focusTarget
                 width: parent.width
                 height: win.filtering || win.prompt !== "" ? 34 : 0
                 visible: height > 0
@@ -1594,6 +2030,8 @@ Window {
 
                 Entry {
                     id: filterField
+                    nextFocus: status.firstHint || filterField.focusTarget
+                    previousFocus: status.lastHint || filterField.focusTarget
                     objectName: "filterEntry"
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -1650,32 +2088,39 @@ Window {
             // -------------------------------------------------------- status
             StatusBar {
                 id: status
+                nextHintFocus: win.editingPath ? pathField.focusTarget
+                    : filterBar.visible ? filterField.focusTarget : null
+                previousHintFocus: nextHintFocus
                 objectName: "statusBar"
+                editing: win.editingPath || filterBar.visible
+                onReceiptRequested: win.showReceipt("Receipt", status.message)
+                onHintRequested: function (key) { win.activateHint(key) }
                 width: parent.width
                 // A graph tab counts nodes, because that is what it has: the
                 // folder counts belong to a FolderModel it does not use, and
                 // read out here they would be a confident `0/0`.
-                cursor: win.onGraph ? win.activeGraph.selectedRow
+                cursor: win.onTrash ? win.activeTrash.cursor : win.onGraph ? win.activeGraph.selectedRow
                                     : (win.activeFilesRoot ? win.activeFilesRoot.cursor : -1)
-                total: win.onGraph ? win.activeGraph.nodeCount
+                total: win.onTrash ? win.activeTrash.model.count : win.onGraph ? win.activeGraph.nodeCount
                                    : (win.activeFolder ? win.activeFolder.count : 0)
                 note: win.onGraph ? win.activeGraph.summary : ""
-                marked: win.activeFolder ? win.activeFolder.markedCount : 0
+                marked: win.onTrash ? win.activeTrash.model.markedCount : win.activeFolder ? win.activeFolder.markedCount : 0
                 tagged: win.activeFolder ? win.activeFolder.taggedCount : 0
                 pastable: Clipboard.holdsFiles ? Clipboard.files().length : 0
                 cutting: Clipboard.holdsFiles && Clipboard.cutting()
                 tag: win.activeTab ? win.activeTab.selectedTag : ""
                 filter: win.activeTab ? win.activeTab.filter : ""
-                // The receipt before the errors: it answers what was just asked
-                // and goes with the next question, where an error is a condition
-                // still there afterwards. The folder's before the index's, since
-                // it goes when you walk out of the pane.
-                message: Views.error !== ""
-                         ? Views.error
-                         : IndexModel.notice !== ""
-                         ? IndexModel.notice
-                         : (win.activeFolder && win.activeFolder.error !== ""
-                            ? win.activeFolder.error : IndexModel.error)
+                message: Devices.busy ? Devices.status
+                         : IndexModel.archive.busy ? IndexModel.archive.progress
+                         : IndexModel.operationBusy ? "File operation in progress"
+                         : win.onTrash && win.activeTrash.model.busy ? win.activeTrash.model.message
+                         : win.onTrash && win.activeTrash.model.loading ? win.activeTrash.model.message
+                         : win.onTrash && win.activeTrash.model.error !== "" ? win.activeTrash.model.error
+                         : Views.error !== "" ? Views.error
+                         : win.activeFolder && win.activeFolder.error !== "" ? win.activeFolder.error
+                         : IndexModel.error !== "" ? IndexModel.error
+                         : win.onTrash && win.activeTrash.model.message !== "" ? win.activeTrash.model.message
+                         : IndexModel.notice
                 hints: win.hintsForRegion
             }
         }
@@ -1683,11 +2128,15 @@ Window {
         // ------------------------------------------------------------ sheets
         CommandPalette {
             id: commandPalette
+            objectName: "commandPalette"
             anchors.fill: parent
-            returnFocus: win.takeFocus
             commands: [
                 { id: "add-files", label: "New files tab", key: "Ctrl+T" },
                 { id: "add-tags", label: "New tags tab", key: "" },
+                { id: "devices", label: "Devices", key: "d" },
+                { id: "open-trash", label: "Open Trash", key: "" },
+                { id: "restore-trash", label: "Restore from Trash", key: "r" },
+                { id: "empty-trash", label: "Empty Trash (permanent)…", key: "e" },
                 { id: "save-view", label: "Save this as a view", key: "" },
                 { id: "views", label: "Saved views", key: "v" },
                 { id: "add-graph", label: "New graph tab", key: "" },
@@ -1704,7 +2153,13 @@ Window {
                 { id: "leave-search", label: "Leave the search", key: "h" },
                 { id: "recent", label: "Recently opened on the desktop", key: "" },
                 { id: "rename", label: "Rename", key: "r" },
+                { id: "preview", label: "Quick preview", key: "i" },
+                { id: "compress", label: "Compress row or marked files…", key: "" },
+                { id: "extract", label: "Extract archive…", key: "" },
                 { id: "chmod", label: "Permissions", key: "" },
+                { id: "edit-tag-add", label: "Add tag to the row or marked files", key: "t a" },
+                { id: "edit-tag-remove", label: "Remove tag from the row or marked files", key: "t d" },
+                { id: "edit-tag-rename", label: "Rename tag on the row or marked files", key: "t r" },
                 { id: "new-folder", label: "New folder", key: "n" },
                 { id: "copy-files", label: "Copy", key: "Ctrl+C" },
                 { id: "cut-files", label: "Cut", key: "Ctrl+X" },
@@ -1723,21 +2178,30 @@ Window {
                 { id: "sort-size", label: "Sort by size", key: "s" },
                 { id: "sort-mtime", label: "Sort by modified", key: "s" },
                 { id: "sort-flip", label: "Flip sort direction", key: "S" },
+                { id: "make-default", label: "Make omafiles the default file manager", key: "" },
+                { id: "undo", label: IndexModel.undoLabel, key: "Ctrl+Z" },
                 { id: "keys", label: "Show keys", key: "?" }
             ].concat(win.columnActions(Workspace.columns), win.filterActionsFor({}))
             onChosen: function (id) {
                 // The filter entries are `narrow`'s; it passes over the rest.
                 win.narrow(id)
                 switch (id) {
+                case "preview": Qt.callLater(win.openPreview, ""); break
+                case "compress": Qt.callLater(win.startArchive, false, ""); break
+                case "extract": Qt.callLater(win.startArchive, true, ""); break
                 case "add-files": Workspace.addTab("files"); break
                 case "add-tags": Workspace.addTab("tags"); break
+                case "open-trash": Workspace.addTab("trash"); Qt.callLater(win.takeFocus); break
+                case "restore-trash": if (win.onTrash) win.activeTrash.restore(); break
+                case "empty-trash": if (win.onTrash) win.confirmEmptyTrash(); break
                 case "save-view": Qt.callLater(win.startNaming); break
                 case "views": Qt.callLater(win.focusViews); break
                 case "add-graph": Workspace.addTab("graph"); break
                 case "close-tab": Workspace.closeCurrentTab(); break
                 case "split": Workspace.splitRight("files"); break
                 case "close-pane": Workspace.closePane(Workspace.focusedPane); break
-                case "reload": IndexModel.reload(); break
+                case "undo": IndexModel.undo(); break
+                case "reload": win.reloadIndex(); break
                 case "home": if (win.activeFolder) win.activeFolder.goHome(); break
                 case "up": if (win.activeFolder) win.activeFolder.goUp(); break
                 case "path": Qt.callLater(win.startPathEdit); break
@@ -1748,12 +2212,15 @@ Window {
                 case "recent": win.openRecent(); break
                 case "rename": Qt.callLater(win.startRename); break
                 case "chmod": Qt.callLater(win.startModeChange); break
+                case "edit-tag-add": Qt.callLater(win.startTagEdit, "add"); break
+                case "edit-tag-remove": Qt.callLater(win.startTagEdit, "remove"); break
+                case "edit-tag-rename": Qt.callLater(win.startTagEdit, "rename"); break
                 case "new-folder": Qt.callLater(win.startMakingFolder); break
                 case "copy-files": win.copyToClipboard(false); break
                 case "cut-files": win.copyToClipboard(true); break
                 case "paste": win.paste(); break
-                case "mark-all": if (win.activeFolder) win.activeFolder.markAll(); break
-                case "clear-marks": if (win.activeFolder) win.activeFolder.clearMarks(); break
+                case "mark-all": if (win.onTrash) win.activeTrash.model.markAll(); else if (win.activeFolder) win.activeFolder.markAll(); break
+                case "clear-marks": if (win.onTrash) win.activeTrash.model.clearMarks(); else if (win.activeFolder) win.activeFolder.clearMarks(); break
                 case "mark-pattern": Qt.callLater(win.startMarking); break
                 case "clear-tag": if (win.activeTab) win.activeTab.selectedTag = ""; break
                 case "view-list": if (win.activeTab) win.activeTab.viewMode = "list"; break
@@ -1766,9 +2233,9 @@ Window {
                 case "sort-mtime": if (win.activeTab) win.activeTab.pickSortRole("mtime"); break
                 case "sort-tags": if (win.activeTab) win.activeTab.pickSortRole("tags"); break
                 case "sort-flip": if (win.activeTab) win.activeTab.toggleSortDirection(); break
+                case "make-default": IndexModel.makeDefaultFileManager(); break
                 case "keys":
                     Qt.callLater(function () {
-                        helpSheet.returnFocus = win.takeFocus
                         helpSheet.open()
                     })
                     break
@@ -1783,6 +2250,22 @@ Window {
             anchors.fill: parent
             groups: win.keymap
         }
+
+        PreviewSheet {
+            id: previewSheet
+            anchors.fill: parent
+            frontmost: win.overlayStack.length > 0 && win.overlayStack[win.overlayStack.length - 1].overlay === previewSheet
+            previousAvailable: visible && win.activeFolder !== null && win.activeListing !== null
+                && win.activeFolder.previewRow(win.activeListing.currentIndex, -1) >= 0
+            nextAvailable: visible && win.activeFolder !== null && win.activeListing !== null
+                && win.activeFolder.previewRow(win.activeListing.currentIndex, 1) >= 0
+            onStepRequested: function (direction) { win.stepPreview(direction) }
+        }
+
+        ConflictSheet { id: conflictSheet; anchors.fill: parent }
+        ArchiveSheet { id: archiveSheet; anchors.fill: parent }
+
+        TagSheet { id: tagSheet; anchors.fill: parent }
 
         ModeSheet {
             id: modeSheet
@@ -1872,6 +2355,9 @@ Window {
 
             actions: [
                 { id: "open", label: "Open", key: "l", when: fileMenu.hasTarget },
+                { id: "preview", label: "Quick preview", key: "i", when: fileMenu.isFile },
+                { id: "compress", label: fileMenu.counted("Compress…", "Compress %1 entries…"), when: fileMenu.onRow && !IndexModel.operationBusy },
+                { id: "extract", label: "Extract archive…", when: fileMenu.isFile && !IndexModel.operationBusy },
                 { id: "open-with", label: "Open with…",
                   when: IndexModel.canOpenWith && fileMenu.isRow },
                 { id: "go-to", label: "Go to containing folder",
@@ -1896,6 +2382,12 @@ Window {
                 { id: "copy-name", label: "Copy name", when: fileMenu.hasTarget },
                 { id: "copy-uri", label: fileMenu.counted("Copy as URI", "Copy %1 URIs"),
                   when: fileMenu.hasTarget },
+                { id: "edit-tag-add", label: fileMenu.counted("Add tag…", "Add tag to %1 files…"),
+                  when: fileMenu.onRow },
+                { id: "edit-tag-remove", label: fileMenu.counted("Remove tag…", "Remove tag from %1 files…"),
+                  when: fileMenu.onRow },
+                { id: "edit-tag-rename", label: fileMenu.counted("Rename tag…", "Rename tag on %1 files…"),
+                  when: fileMenu.onRow },
                 { id: "copy-tags", label: "Copy tags", when: fileMenu.targetTags.length > 0 },
                 { id: "copy-tag-command", label: "Copy tag command", when: fileMenu.hasTarget },
                 { id: "copy-open-command", label: "Copy open command", when: fileMenu.isFile },
@@ -2010,9 +2502,10 @@ Window {
                     else
                         IndexModel.openPath(path)
                     break
-                // On the next tick, because this menu is still closing: the
-                // close that follows this handler puts the focus back on the
-                // list, and it would take it off the menu opened here.
+                case "preview": Qt.callLater(win.openPreview, path); break
+                case "compress": Qt.callLater(win.startArchive, false, path); break
+                case "extract": Qt.callLater(win.startArchive, true, path); break
+                // Open the next page after this menu has closed.
                 case "open-with": Qt.callLater(win.openOpenWithMenu, path); break
                 case "go-to": if (folder) folder.goTo(path); break
                 case "open-tab":
@@ -2062,6 +2555,9 @@ Window {
                 case "leave-search": if (win.activeTab) win.activeTab.pattern = ""; break
                 case "recent": win.openRecent(); break
                 case "leave-recent": if (win.activeTab) win.activeTab.recent = false; break
+                case "edit-tag-add": Qt.callLater(win.startTagEdit, "add", path); break
+                case "edit-tag-remove": Qt.callLater(win.startTagEdit, "remove", path); break
+                case "edit-tag-rename": Qt.callLater(win.startTagEdit, "rename", path); break
                 case "tag-add": IndexModel.tagAdd(paths, fileMenu.focusedTag); break
                 case "tag-rm": IndexModel.tagRemove(paths, fileMenu.focusedTag); break
                 case "tag-clear": IndexModel.tagClear(paths); break
@@ -2078,8 +2574,7 @@ Window {
                 case "duplicate": IndexModel.duplicate(path); break
                 case "link-beside": win.linkBeside(path); break
                 case "link-here": win.linkHere(); break
-                // On the next tick, like `open-with`: the menu is still closing
-                // and its close would take the focus off the prompt opened here.
+                // Prompts begin after the menu has closed.
                 case "rename": Qt.callLater(win.startRename, path); break
                 case "chmod": Qt.callLater(win.startModeChange, path); break
                 case "new-folder": Qt.callLater(win.startMakingFolder); break
@@ -2088,7 +2583,7 @@ Window {
                 case "reindex": IndexModel.reindexTree(fileMenu.hereDir); break
                 case "prune": IndexModel.pruneTree(fileMenu.hereDir); break
                 case "verify": IndexModel.verifyTree(fileMenu.hereDir); break
-                case "reload": IndexModel.reload(); break
+                case "reload": win.reloadIndex(); break
                 }
             }
         }
@@ -2191,6 +2686,43 @@ Window {
         }
 
         ContextMenu {
+            id: tagMenu
+            objectName: "tagMenu"
+            anchors.fill: parent
+            property int targetRow: -1
+            readonly property string tag: IndexModel.tagAt(targetRow)
+            readonly property bool canEdit: win.activeFolder !== null && win.activeListing !== null
+                && (win.activeFolder.kindAt(win.activeListing.currentIndex) === "file"
+                    || win.activeFolder.kindAt(win.activeListing.currentIndex) === "dir")
+            actions: [
+                { id: "toggle", label: "Toggle tag filter", key: "Enter" },
+                { id: "add", label: "Add tags…", key: "a", when: tagMenu.canEdit },
+                { id: "remove", label: "Remove tag…", key: "d", when: tagMenu.canEdit },
+                { id: "rename", label: "Rename tag…", key: "r", when: tagMenu.canEdit }
+            ]
+            onChosen: function (id) {
+                if (id === "toggle") win.toggleTagAt(targetRow)
+                else Qt.callLater(win.startTagEdit, id, "", id === "add" ? "" : tag)
+            }
+        }
+
+        ContextMenu {
+            id: deviceMenu
+            objectName: "deviceMenu"
+            anchors.fill: parent
+            property string targetId: ""
+            readonly property var target: Devices.entries.find(function (device) { return device.id === deviceMenu.targetId }) || ({})
+            actions: [
+                { id: "open", label: "Open", when: !Devices.busy && deviceMenu.target.id !== undefined },
+                { id: "mount", label: "Mount", when: !Devices.busy && deviceMenu.target.canMount && !deviceMenu.target.mounted },
+                { id: "unmount", label: "Unmount", when: !Devices.busy && deviceMenu.target.canUnmount },
+                { id: "eject", label: "Eject safely", when: !Devices.busy && deviceMenu.target.canEject },
+                { id: "cancel", label: "Cancel device operation", when: Devices.busy }
+            ]
+            onChosen: function (id) { Devices.act(deviceMenu.targetId, id) }
+        }
+
+        ContextMenu {
             id: viewMenu
             objectName: "viewMenu"
             anchors.fill: parent
@@ -2245,13 +2777,51 @@ Window {
         }
 
         ContextMenu {
+            id: trashMenu
+            objectName: "trashMenu"
+            anchors.fill: parent
+            actions: win.onTrash ? [
+                { id: "restore", label: "Restore row or marked entries", key: "r",
+                  when: win.onTrash && win.activeTrash.model.count > 0 },
+                { id: "details", label: "Original path and deletion details", key: "Enter" },
+                { id: "mark", label: "Toggle mark", key: "Space" },
+                { id: "mark-all", label: "Mark all", key: "a" },
+                { id: "clear-marks", label: "Clear marks", key: "A" },
+                { id: "empty", label: "Empty Trash (permanent)…", key: "e" }
+            ] : []
+            onChosen: function (id) {
+                if (!win.onTrash) return
+                if (id === "restore") win.activeTrash.restore()
+                else if (id === "details") win.activeTrash.showDetails()
+                else if (id === "mark") win.activeTrash.markCurrent()
+                else if (id === "mark-all") win.activeTrash.model.markAll()
+                else if (id === "clear-marks") win.activeTrash.model.clearMarks()
+                else Qt.callLater(win.confirmEmptyTrash)
+            }
+        }
+        ContextMenu {
+            id: trashEmptyMenu
+            objectName: "trashEmptyMenu"
+            anchors.fill: parent
+            actions: win.onTrash ? [
+                { id: "cancel", label: "Cancel — keep the files" },
+                { id: "empty", label: "Permanently delete all Trash entries" }
+            ] : []
+            onChosen: function (id) {
+                if (id === "empty" && win.onTrash) win.activeTrash.model.empty()
+            }
+        }
+
+        ContextMenu {
             id: newTabMenu
+            objectName: "newTabMenu"
             anchors.fill: parent
             property int targetPaneIndex: 0
             actions: [
                 { id: "files", label: "Files tab" },
                 { id: "tags", label: "Tags tab" },
-                { id: "graph", label: "Graph tab" }
+                { id: "graph", label: "Graph tab" },
+                { id: "trash", label: "Trash" }
             ]
             onChosen: function (id) {
                 Workspace.addTabIn(newTabMenu.targetPaneIndex, id)
@@ -2288,6 +2858,8 @@ Window {
             acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
             onPressed: function (mouse) {
                 Workspace.focusedPane = paneRoot.paneIndex
+                if (win.filtering)
+                    win.finishFilter(false)
                 mouse.accepted = false
             }
         }
@@ -2325,6 +2897,7 @@ Window {
                     Repeater {
                         model: paneRoot.pane.tabs
                         delegate: TabHandle {
+                            id: tabHandle
                             objectName: "tabHandle"
                             required property var modelData
                             required property int index
@@ -2342,6 +2915,11 @@ Window {
                             // enclosing scope is kept, so this runs once more
                             // with `pane` already null.
                             current: paneRoot.pane?.currentIndex === index
+                            FileDropArea {
+                                anchors.fill: parent
+                                directory: win.isFolderTab(tabHandle.modelData) ? tabHandle.modelData.cwd : ""
+                                blocked: win.blocked
+                            }
                             onActivated: {
                                 Workspace.focusedPane = paneRoot.paneIndex
                                 paneRoot.pane.currentIndex = index
@@ -2377,7 +2955,6 @@ Window {
                             Workspace.focusedPane = paneRoot.paneIndex
                             newTabMenu.targetPaneIndex = paneRoot.paneIndex
                             const pos = mapToItem(root, 0, height + 4)
-                            newTabMenu.returnFocus = win.takeFocus
                             newTabMenu.openAt(pos.x, pos.y)
                         }
                     }
@@ -2488,7 +3065,8 @@ Window {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 sourceComponent: paneRoot.pane.current && paneRoot.pane.current.kind === "graph"
-                                  ? graphView : filesView
+                                  ? graphView : paneRoot.pane.current && paneRoot.pane.current.kind === "trash"
+                                  ? trashView : filesView
                 property var tab: paneRoot.pane.current
                 property int paneIndex: paneRoot.paneIndex
             }
@@ -2503,6 +3081,10 @@ Window {
 
         Dock {
             id: dock
+            onKeyRequested: function (event) { win.handleKey(event) }
+            onFocusEntered: {
+                Workspace.focusedPane = paneRoot.paneIndex
+            }
             Layout.fillHeight: true
             Layout.preferredWidth: 252
             // The panel belongs to both list tabs: the views in it are how you
@@ -2510,15 +3092,13 @@ Window {
             readonly property bool holdsTags: paneRoot.pane.current
                                               && (paneRoot.pane.current.kind === "files"
                                                   || paneRoot.pane.current.kind === "tags")
-            showTags: paneRoot.pane.current
-                      && paneRoot.pane.current.kind === "files"
+            showTags: dock.holdsTags
             // Dropped whole in a pane too narrow to hold it and a list at the
             // same time -- splitting the window is asking for two lists, not
             // for two copies of the same tag vocabulary where the names should
             // be -- and back for as long as `t` is walking it, because a key
             // the sheet names without a condition has to work at every size.
-            visible: dock.holdsTags && (paneRoot.width >= 640 || dock.walking
-                                        || dock.walkingViews)
+            visible: dock.holdsTags && (paneRoot.width >= 640 || dock.expanded)
 
             tab: paneRoot.pane.current
             // A Loader's payload has no static type -- it is whichever component
@@ -2529,8 +3109,23 @@ Window {
             entry: content.item && content.item.entry !== undefined ? content.item.entry : ({})
             // qmllint enable missing-property
             walking: win.focusRegion === "tags" && win.activeDock === dock
+            walkingDevices: win.focusRegion === "devices" && win.activeDock === dock
+            onDeviceActivated: function (id) { Workspace.focusedPane = paneRoot.paneIndex; Devices.act(id, "open") }
+            onDeviceMenuRequested: function (id, x, y) {
+                Workspace.focusedPane = paneRoot.paneIndex
+                win.activeDock = dock
+                win.openDeviceMenu(id, x, y)
+            }
             walkingViews: win.focusRegion === "views" && win.activeDock === dock
 
+            onTagChipActivated: function (path, tag) {
+                Workspace.focusedPane = paneRoot.paneIndex
+                win.startTagEdit("remove", path, tag)
+            }
+            onTagEditRequested: {
+                Workspace.focusedPane = paneRoot.paneIndex
+                win.startTagEdit("add")
+            }
             onViewActivated: function (row) { win.openView(row) }
             onViewMenuRequested: function (row, x, y) {
                 Workspace.focusedPane = paneRoot.paneIndex
@@ -2538,6 +3133,11 @@ Window {
                 win.openViewMenuAt(row, x, y)
             }
 
+            onTagMenuRequested: function (row, x, y) {
+                Workspace.focusedPane = paneRoot.paneIndex
+                win.activeDock = dock
+                win.openTagMenuAt(row, x, y)
+            }
             onTagActivated: function (name) {
                 win.takeFocus()
                 if (dock.tab)
@@ -2567,11 +3167,71 @@ Window {
         }
     }
 
+    function confirmEmptyTrash() {
+        if (!onTrash || IndexModel.operationBusy || !activeTrash.model.prepareEmpty()) return
+        trashEmptyMenu.openAt(width / 2 - 140, height / 2 - 40)
+    }
+
+    Component {
+        id: trashView
+        TrashView {
+            id: trashRoot
+            // The Loader owns the tab and pane properties.
+            // qmllint disable missing-property
+            property var tab: parent ? parent.tab : null
+            property int paneIndex: parent ? parent.paneIndex : 0
+            // qmllint enable missing-property
+            function syncActive() {
+                if (Workspace.currentTab === tab) win.activeTrash = trashRoot
+                else if (win.activeTrash === trashRoot) win.activeTrash = null
+            }
+            Component.onCompleted: syncActive()
+            Component.onDestruction: if (win.activeTrash === trashRoot) win.activeTrash = null
+            onTabChanged: syncActive()
+            Connections {
+                target: Workspace
+                function onCurrentTabChanged() { trashRoot.syncActive() }
+                function onFocusedPaneChanged() { trashRoot.syncActive() }
+            }
+            onMenuRequested: function (x, y) {
+                Workspace.focusedPane = paneIndex
+                const pos = mapToItem(root, x, y)
+                trashMenu.openAt(pos.x, pos.y)
+            }
+            onEmptyRequested: win.confirmEmptyTrash()
+            onReceiptRequested: function (text) { win.showReceipt("Trash", text) }
+            onGlobalKey: function (event) { win.handleKey(event) }
+        }
+    }
+
     // ------------------------------------------------------------ files view
     Component {
         id: filesView
         Item {
             id: filesRoot
+            property bool thumbnailsReady: false
+            function selectRow(row, modifiers) {
+                Workspace.focusedPane = filesRoot.paneIndex
+                if (modifiers & Qt.ShiftModifier)
+                    folder.markRange(filesRoot.cursor, row)
+                filesRoot.setCursor(row)
+                win.takeFocus()
+            }
+            function rowMenu(row, path, kind, source, position) {
+                selectRow(row, 0)
+                const at = source.mapToItem(root, position.x, position.y)
+                win.openFileMenuForPath(path, kind, at.x, at.y)
+            }
+            function deferThumbnails() {
+                thumbnailsReady = false
+                thumbnailDelay.restart()
+            }
+            Timer {
+                id: thumbnailDelay
+                interval: 160
+                running: win.firstFrameShown && !filesRoot.thumbnailsReady
+                onTriggered: if (win.firstFrameShown) filesRoot.thumbnailsReady = true
+            }
             anchors.fill: parent
             // `parent` is the Loader that holds this component, and a Loader is
             // typed as a plain item -- the two properties it carries for its
@@ -2615,34 +3275,52 @@ Window {
             property var entry: ({})
 
             function syncEntry() {
+                if (folder.loading) {
+                    filesRoot.entry = ({})
+                    return
+                }
                 filesRoot.entry = folder.entryAt(filesRoot.cursor)
             }
 
             // The one place the cursor moves. Clamped here so no caller has to
             // know the row count, and remembered here so a rebuild -- a filter
             // keystroke, a reload, a change of directory -- can put it back.
+            function showCursor(row) {
+                const view = filesRoot.view
+                view.currentIndex = row
+                view.cancelFlick()
+                view.forceLayout()
+                view.positionViewAtIndex(row, filesRoot.viewMode === "icons"
+                                               ? GridView.Contain : ListView.Contain)
+                syncEntry()
+            }
+
             function setCursor(row) {
                 if (folder.count <= 0)
                     return
                 const clamped = Math.max(0, Math.min(row, folder.count - 1))
-                listing.currentIndex = clamped
-                grid.currentIndex = clamped
+                showCursor(clamped)
                 folder.rememberCursor(clamped)
-                syncEntry()
             }
 
-            // After a rebuild the views reset their own cursor to the top before
-            // this gets a say, so the restore has to run once that has happened.
             function restoreCursor() {
+                if (folder.loading)
+                    return
                 const row = folder.cursorRow()
                 if (row < 0) {
                     filesRoot.entry = ({})
                     return
                 }
-                listing.currentIndex = row
-                grid.currentIndex = row
-                syncEntry()
+                showCursor(row)
             }
+
+            function revealCursor() {
+                if (view && view.currentIndex >= 0)
+                    showCursor(view.currentIndex)
+            }
+            onHeightChanged: Qt.callLater(revealCursor)
+            onWidthChanged: Qt.callLater(revealCursor)
+            onViewModeChanged: { deferThumbnails(); Qt.callLater(restoreCursor) }
 
             function syncActive() {
                 if (filesRoot.tab && Workspace.currentTab === filesRoot.tab)
@@ -2689,27 +3367,43 @@ Window {
                 // to hear so its title and path bar follow.
                 onPatternChanged: if (filesRoot.tab) filesRoot.tab.pattern = pattern
                 onRecentChanged: if (filesRoot.tab) filesRoot.tab.recent = recent
-                onChanged: Qt.callLater(filesRoot.restoreCursor)
+                onChanged: {
+                    if (loading)
+                        filesRoot.syncEntry()
+                    Qt.callLater(filesRoot.restoreCursor)
+                }
                 // The panel reads one row, and marking does not move the
                 // cursor: without this the `marked` line only catches up when
                 // the cursor next moves off the row and back.
                 onMarkedChanged: filesRoot.syncEntry()
+                onMetadataChanged: filesRoot.syncEntry()
             }
 
             Item {
                 id: listArea
                 anchors.fill: parent
 
+                    FileDropArea {
+                        anchors.fill: parent
+                        directory: win.isFolderTab(filesRoot.tab) ? folder.directory : ""
+                        blocked: win.blocked
+                    }
+
                     ListView {
                         id: listing
+                        reuseItems: !folder.loading
+                        cacheBuffer: 0
+                        onContentYChanged: filesRoot.deferThumbnails()
                         anchors.fill: parent
                         visible: filesRoot.viewMode !== "icons"
                         clip: true
-                        model: folder
+                        model: visible ? folder : null
                         boundsBehavior: Flickable.StopAtBounds
+                        highlightResizeDuration: 0
                         readonly property int rowHeight: 30
                         currentIndex: 0
                         keyNavigationEnabled: false
+                        highlightMoveDuration: 0
                         Accessible.role: filesRoot.viewMode === "details"
                                          ? Accessible.Table : Accessible.List
                         Accessible.name: "Files"
@@ -2778,6 +3472,10 @@ Window {
 
                         delegate: Rectangle {
                             id: row
+                            objectName: "fileRow"
+                            property bool pooled: false
+                            ListView.onPooled: row.pooled = true
+                            ListView.onReused: row.pooled = false
                             required property string path
                             required property string name
                             required property string kind
@@ -2837,8 +3535,16 @@ Window {
                                 renderType: Text.NativeRendering
                             }
 
-                            Icon {
+                            FileIcon {
                                 id: rowIcon
+                                folder: folder
+                                rowIndex: row.index
+                                path: row.path
+                                allowed: filesRoot.thumbnailsReady && !previewSheet.visible
+                                inViewport: filesRoot.view === listing && !row.pooled && row.visible
+                                    && row.y + row.height > listing.contentY
+                                    && row.y < listing.contentY + listing.height
+                                moving: listing.moving
                                 anchors.left: markDot.right
                                 anchors.leftMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
@@ -2891,6 +3597,10 @@ Window {
                                                 limit: filesRoot.tagsWidth
                                                 alignRight: false
                                                 tags: row.tagList
+                                                onActivated: function (tag) {
+                                                    Workspace.focusedPane = filesRoot.paneIndex
+                                                    Qt.callLater(win.startTagEdit, "remove", row.path, tag)
+                                                }
                                             }
                                         }
                                         Component {
@@ -2940,42 +3650,46 @@ Window {
                                 anchors.verticalCenter: parent.verticalCenter
                                 limit: row.width * 0.4
                                 tags: row.tagList
+                                onActivated: function (tag) {
+                                    Workspace.focusedPane = filesRoot.paneIndex
+                                    Qt.callLater(win.startTagEdit, "remove", row.path, tag)
+                                }
                             }
 
                             // The icon and the name, where a drag is the row's
                             // and not the rubber band's.
-                            Item {
-                                objectName: "grip"
+                            FileDragGrip {
+                                folder: filesRoot.folder
+                                path: row.path
+                                enabled: row.kind === "file" || row.kind === "dir"
+                                onStarted: {
+                                    Workspace.focusedPane = filesRoot.paneIndex
+                                    filesRoot.setCursor(row.index)
+                                    win.takeFocus()
+                                }
                                 x: rowIcon.x
                                 width: rowName.x + Math.min(rowName.contentWidth, rowName.width)
                                        - rowIcon.x
                                 height: row.height
                             }
 
+                            FileDropArea {
+                                anchors.fill: parent
+                                directory: row.kind === "dir" || row.kind === "parent" ? row.path : ""
+                                blocked: win.blocked
+                            }
+
                             HoverHandler { id: rowHover }
 
-                            TapHandler {
-                                id: rowTap
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                onTapped: function (point, button) {
-                                    Workspace.focusedPane = filesRoot.paneIndex
-                                    // Shift marks from the cursor to here
-                                    // before the cursor moves here.
-                                    if (button === Qt.LeftButton
-                                            && (rowTap.point.modifiers & Qt.ShiftModifier))
-                                        folder.markRange(listing.currentIndex, row.index)
-                                    filesRoot.setCursor(row.index)
-                                    win.takeFocus()
-                                    if (button === Qt.RightButton) {
-                                        const pos = row.mapToItem(root, point.position.x,
-                                                                  point.position.y)
-                                        win.openFileMenuForPath(row.path, row.kind, pos.x, pos.y)
-                                    }
+                            RowTapHandler {
+                                onClicked: function (position, modifiers) {
+                                    filesRoot.selectRow(row.index, modifiers)
                                 }
-                                onDoubleTapped: {
-                                    Workspace.focusedPane = filesRoot.paneIndex
-                                    filesRoot.setCursor(row.index)
-                                    win.takeFocus()
+                                onContextRequested: function (position) {
+                                    filesRoot.rowMenu(row.index, row.path, row.kind, row, position)
+                                }
+                                onActivated: {
+                                    filesRoot.selectRow(row.index, 0)
                                     folder.activateRow(row.index)
                                 }
                             }
@@ -2984,21 +3698,29 @@ Window {
 
                     GridView {
                         id: grid
+                        reuseItems: !folder.loading
+                        cacheBuffer: 0
+                        onContentYChanged: filesRoot.deferThumbnails()
                         anchors.fill: parent
                         visible: filesRoot.viewMode === "icons"
                         clip: true
-                        model: folder
+                        model: visible ? folder : null
                         cellWidth: 112
                         cellHeight: 92
                         boundsBehavior: Flickable.StopAtBounds
                         currentIndex: 0
                         keyNavigationEnabled: false
+                        highlightMoveDuration: 0
                         Accessible.role: Accessible.List
                         Accessible.name: "Files"
                         onCurrentIndexChanged: filesRoot.syncEntry()
 
                         delegate: Item {
                             id: cell
+                            objectName: "fileRow"
+                            property bool pooled: false
+                            GridView.onPooled: cell.pooled = true
+                            GridView.onReused: cell.pooled = false
                             required property string path
                             required property string name
                             required property string kind
@@ -3012,8 +3734,15 @@ Window {
                             width: grid.cellWidth
                             height: grid.cellHeight
 
-                            Item {
-                                objectName: "grip"
+                            FileDragGrip {
+                                folder: filesRoot.folder
+                                path: cell.path
+                                enabled: cell.kind === "file" || cell.kind === "dir"
+                                onStarted: {
+                                    Workspace.focusedPane = filesRoot.paneIndex
+                                    filesRoot.setCursor(cell.index)
+                                    win.takeFocus()
+                                }
                                 readonly property real span: Math.max(
                                     cellIcon.width,
                                     Math.min(cellName.contentWidth, cellName.width))
@@ -3040,8 +3769,17 @@ Window {
                                     anchors.margins: 8
                                     spacing: 6
 
-                                    Icon {
+                                    FileIcon {
                                         id: cellIcon
+                                        folder: folder
+                                        rowIndex: cell.index
+                                        path: cell.path
+                                        extent: 256
+                                        allowed: filesRoot.thumbnailsReady && !previewSheet.visible
+                                        inViewport: filesRoot.view === grid && !cell.pooled && cell.visible
+                                            && cell.y + cell.height > grid.contentY
+                                            && cell.y < grid.contentY + grid.height
+                                        moving: grid.moving
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         width: 30
                                         height: 30
@@ -3061,33 +3799,34 @@ Window {
                                     }
                                 }
 
+                                FileDropArea {
+                                    anchors.fill: parent
+                                    directory: cell.kind === "dir" || cell.kind === "parent" ? cell.path : ""
+                                    blocked: win.blocked
+                                }
+
                                 HoverHandler { id: cellHover }
 
-                                TapHandler {
-                                    id: cellTap
-                                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                    onTapped: function (point, button) {
-                                        Workspace.focusedPane = filesRoot.paneIndex
-                                        if (button === Qt.LeftButton
-                                                && (cellTap.point.modifiers & Qt.ShiftModifier))
-                                            folder.markRange(grid.currentIndex, cell.index)
-                                        filesRoot.setCursor(cell.index)
-                                        win.takeFocus()
-                                        if (button === Qt.RightButton) {
-                                            const pos = cell.mapToItem(root, point.position.x,
-                                                                       point.position.y)
-                                            win.openFileMenuForPath(cell.path, cell.kind, pos.x, pos.y)
-                                        }
+                                RowTapHandler {
+                                    onClicked: function (position, modifiers) {
+                                        filesRoot.selectRow(cell.index, modifiers)
                                     }
-                                    onDoubleTapped: {
-                                        Workspace.focusedPane = filesRoot.paneIndex
-                                        filesRoot.setCursor(cell.index)
-                                        win.takeFocus()
+                                    onContextRequested: function (position) {
+                                        filesRoot.rowMenu(cell.index, cell.path, cell.kind, tile, position)
+                                    }
+                                    onActivated: {
+                                        filesRoot.selectRow(cell.index, 0)
                                         folder.activateRow(cell.index)
                                     }
                                 }
                             }
                         }
+                    }
+
+                    ImmediateWheel {
+                        anchors.fill: parent
+                        view: filesRoot.view
+                        step: filesRoot.viewMode === "icons" ? grid.cellHeight : listing.rowHeight
                     }
 
                     RubberBand {

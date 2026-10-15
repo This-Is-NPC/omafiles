@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Window
 import omafiles
 
 // Shared tab focus, keyboard activation, inner focus ring, and pointer shell.
@@ -39,6 +40,11 @@ Item {
     onUsableChanged: if (!control.usable && control.activeFocus)
         nextItemInFocusChain(true).forceActiveFocus()
 
+    onEnabledChanged: if (!enabled && control.tooltip) control.tooltip.cancel()
+    onVisibleChanged: if (!visible && control.tooltip) control.tooltip.cancel()
+
+    Keys.onPressed: function (event) { if (control.tooltip) control.tooltip.handleKey(event) }
+
     Keys.onSpacePressed: function (event) {
         if (control.usable)
             control.activated()
@@ -62,12 +68,29 @@ Item {
         id: chrome
         anchors.fill: parent
         z: -1
+        color: "transparent"
 
         Behavior on color { ColorAnimation { duration: 90 } }
         Behavior on border.color { ColorAnimation { duration: 90 } }
     }
 
-    Tooltip { id: tooltip }
+    readonly property Tooltip tooltip: tooltipLoader.item as Tooltip
+    readonly property bool tooltipHovered: hover.hovered && control.Window.window !== null
+        && control.Window.window.PointerActivity.observed
+    onTooltipHoveredChanged: {
+        if (tooltipHovered && tooltipCaption !== "") {
+            tooltipLoader.active = true
+            tooltip.text = tooltipCaption + (tooltipKey === "" ? "" : "   " + tooltipKey)
+            tooltip.request(control)
+        } else if (tooltip) {
+            tooltip.dismiss()
+        }
+    }
+    Loader {
+        id: tooltipLoader
+        active: false
+        sourceComponent: Tooltip {}
+    }
 
     Item {
         id: contentLayer
@@ -90,16 +113,7 @@ Item {
     HoverHandler {
         id: hover
         cursorShape: control.handCursor && control.usable ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onHoveredChanged: {
-            control.hoverChanged(hovered)
-            if (hovered && control.tooltipCaption !== "") {
-                tooltip.text = control.tooltipCaption
-                        + (control.tooltipKey === "" ? "" : "   " + control.tooltipKey)
-                tooltip.request(control)
-            } else {
-                tooltip.dismiss()
-            }
-        }
+        onHoveredChanged: control.hoverChanged(hovered)
     }
     TapHandler {
         enabled: control.usable
@@ -108,7 +122,7 @@ Item {
             control.pointerFocus.forceActiveFocus()
             if (control.tapped)
                 control.tapped(eventPoint.position, button)
-            else if (button === Qt.LeftButton)
+            else if (button === Qt.LeftButton || button === Qt.NoButton)
                 control.activated()
         }
     }

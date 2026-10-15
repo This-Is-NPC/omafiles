@@ -35,3 +35,9 @@ SOURCES += \
     Open.cpp \
     Recent.cpp \
     Glob.cpp
+
+HEADERS += Trash.h
+SOURCES += Trash.cpp
+
+HEADERS += CpuBudget.h
+SOURCES += CpuBudget.cpp

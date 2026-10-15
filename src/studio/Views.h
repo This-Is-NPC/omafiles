@@ -65,6 +65,7 @@ public:
     void say(const QString &message);
 
 signals:
+    void notice(const QString &message);
     void changed();
 
 private:

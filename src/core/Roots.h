@@ -5,6 +5,8 @@
 #include <QString>
 #include <QVector>
 
+#include <optional>
+
 namespace omafiles {
 
 /// One declared root: a tree the index is allowed to keep rows relative to.
@@ -26,6 +28,11 @@ struct Root {
     /// mount point is usually still an empty directory, so its being there
     /// proves nothing on its own.
     QString check;
+
+    bool operator==(const Root &other) const
+    {
+        return id == other.id && path == other.path && mount == other.mount && check == other.check;
+    }
 };
 
 /// The id a root may be declared under, folded, or empty with a reason.
@@ -48,15 +55,9 @@ QString normalizeRootCheck(const QString &raw, QString *error);
 /// uses, so the same eyes and the same tools read both.
 QString defaultRootsPath();
 
-/// The roots this run knows about.
-///
-/// A process-wide table, read once before anything else runs, because every
-/// answer about a path depends on it: whether a row resolves, and whether a
-/// file that is not there is gone or merely unplugged. Empty until something
-/// declares one, which is every machine that has never asked for this -- and
-/// with an empty table every path is absolute and nothing behaves differently
-/// from before.
-const QVector<Root> &roots();
+/// A process-wide value snapshot. Readers retain their copy while declarations
+/// are replaced by another thread.
+QVector<Root> roots();
 QVector<Root> setRoots(QVector<Root> table);
 
 /// Reads `path` into the table. A file that is not there is not a failure: it
@@ -70,12 +71,12 @@ bool rootsRespelled();
 /// Writes the table back, by rename, the way the index is written.
 bool saveRoots(const QString &path, const QVector<Root> &table, QString *error);
 
-const Root *rootById(const QString &id);
-/// The root holding `absolutePath`, or null. The longest match wins, so a root
+std::optional<Root> rootById(const QString &id);
+/// The root holding `absolutePath`, or empty. The longest match wins, so a root
 /// declared inside another one takes the rows under it.
-const Root *rootFor(const QString &absolutePath);
-/// The root declared at `absolutePath` itself, or null.
-const Root *rootAt(const QString &absolutePath);
+std::optional<Root> rootFor(const QString &absolutePath);
+/// The root declared at `absolutePath` itself, or empty.
+std::optional<Root> rootAt(const QString &absolutePath);
 /// Whether the root's storage is here: Present, Unreachable where it is away,
 /// or Unknown with the system's reason where the question could not be asked.
 PathState rootState(const Root &root, QString *error);

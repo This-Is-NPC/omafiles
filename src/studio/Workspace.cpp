@@ -7,10 +7,6 @@
 
 namespace omafiles {
 namespace {
-// Empty until `main` sets it, and resolved only when a tab asks, so a studio
-// started with no argument opens exactly where it always did.
-QString g_startPath;
-
 QString statePath()
 {
     return stateHome() + QStringLiteral("/omafiles/studio.conf");
@@ -28,25 +24,17 @@ QString standingPath(const QString &path)
 }
 } // namespace
 
-void TabState::setStartPath(const QString &path)
-{
-    g_startPath = path;
-}
-
-QString TabState::startPath()
-{
-    return g_startPath.isEmpty() ? homeDirectory() : g_startPath;
-}
-
 TabState::TabState(QString kind, QObject *parent)
     : QObject(parent)
     , m_kind(std::move(kind))
-    , m_cwd(standingPath(startPath()))
+    , m_cwd(standingPath(homeDirectory()))
 {
 }
 
 QString TabState::title() const
 {
+    if (m_kind == QLatin1String("trash"))
+        return QStringLiteral("Trash");
     if (m_kind == QLatin1String("graph"))
         return QStringLiteral("Graph");
     if (m_kind == QLatin1String("tags")) {
@@ -313,6 +301,14 @@ void TabState::toggleSortDirection()
     emit sortChanged();
 }
 
+void TabState::setLocation(const QString &directory, const QString &cursor)
+{
+    setCursorPath(cursor);
+    setShowHidden(QFileInfo(cursor).fileName().startsWith(QLatin1Char('.')));
+    if (!directory.isEmpty())
+        setCwd(directory);
+}
+
 PaneState::PaneState(const QString &kind, QObject *parent)
     : QObject(parent)
 {
@@ -349,9 +345,10 @@ void PaneState::setCurrentIndex(int index)
     emit currentChanged();
 }
 
-TabState *PaneState::addTab(const QString &kind)
+TabState *PaneState::addTab(const QString &kind, const QString &directory, const QString &cursor)
 {
     auto *tab = new TabState(kind, this);
+    tab->setLocation(directory, cursor);
     m_tabs.append(tab);
     m_current = m_tabs.size() - 1;
     emit tabsChanged();
@@ -511,9 +508,7 @@ void Workspace::openTabIn(int paneIndex, const QString &kind, const QString &dir
 {
     if (paneIndex < 0 || paneIndex >= m_panes.size())
         return;
-    TabState *tab = m_panes.at(paneIndex)->addTab(kind);
-    if (tab && !directory.isEmpty())
-        tab->setCwd(directory);
+    m_panes.at(paneIndex)->addTab(kind, directory);
     setFocusedPane(paneIndex);
     emit currentTabChanged();
 }

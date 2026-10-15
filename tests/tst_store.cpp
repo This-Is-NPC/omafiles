@@ -8,11 +8,13 @@
 #include "Tag.h"
 #include "View.h"
 #include "Xattr.h"
+#include "Trash.h"
 
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QTemporaryDir>
+#include <QScopeGuard>
 
 #include <cerrno>
 #include <cstring>
@@ -22,6 +24,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <thread>
+#include <type_traits>
 
 // A `readdir` that can be made to fail, for the one branch no filesystem will
 // produce on demand: a directory read that dies half way through.
@@ -31,6 +34,7 @@
 // counter at zero every call is handed straight on, and it disarms itself on the
 // call it fails.
 static int g_readdirFailsOnCall = 0;
+static const char *g_readdirName = nullptr;
 
 extern "C" struct dirent *readdir(DIR *stream)
 {
@@ -40,8 +44,61 @@ extern "C" struct dirent *readdir(DIR *stream)
         errno = EIO;
         return nullptr;
     }
-    return passThrough(stream);
+    auto *entry = passThrough(stream);
+    g_readdirName = entry ? entry->d_name : nullptr;
+    return entry;
 }
+
+struct TrashFixture {
+    QTemporaryDir home;
+    QByteArray previous = qgetenv("XDG_DATA_HOME");
+    QString root;
+    TrashFixture()
+    {
+        qputenv("XDG_DATA_HOME", QFile::encodeName(home.path() + QStringLiteral("/data")));
+        root = omafiles::dataHome() + QStringLiteral("/Trash");
+        QDir().mkpath(root + QStringLiteral("/files"));
+        QDir().mkpath(root + QStringLiteral("/info"));
+    }
+    ~TrashFixture() { qputenv("XDG_DATA_HOME", previous); }
+    omafiles::Trash::Item item(const QString &name) const
+    {
+        const QString path = root + QStringLiteral("/files/") + name;
+        for (const auto &entry : omafiles::Trash::list({omafiles::dataHome()}).items) {
+            if (entry.path == path)
+                return entry;
+        }
+        qFatal("Trash test entry was not listed");
+    }
+    void write(const QString &path, const QByteArray &bytes)
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size())
+            qFatal("Cannot write Trash test fixture");
+    }
+    QByteArray bytes(const QString &path) const
+    {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly))
+            qFatal("Cannot read Trash test fixture");
+        return file.readAll();
+    }
+    QByteArray metadata(const QString &original) const
+    {
+        return QByteArray("[Trash Info]\nPath=") + QFile::encodeName(original).toPercentEncoding("/")
+            + "\nDeletionDate=2026-10-11T12:34:56\n";
+    }
+    void add(const QString &name, const QByteArray &metadata, bool directory = false)
+    {
+        const QString path = root + QStringLiteral("/files/") + name;
+        if (directory)
+            QDir().mkpath(path);
+        else
+            write(path, "payload");
+        if (!metadata.isEmpty())
+            write(root + QStringLiteral("/info/") + name + QStringLiteral(".trashinfo"), metadata);
+    }
+};
 
 class StoreTest : public QObject {
     Q_OBJECT
@@ -58,6 +115,41 @@ private slots:
         for (const char *variable : {"XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
                                      "XDG_STATE_HOME", "HOME"})
             qputenv(variable, QFile::encodeName(home.filePath(QLatin1String(variable))));
+    }
+
+    void rootSnapshotsSurviveConcurrentReplacement()
+    {
+        using namespace omafiles;
+        const auto before = setRoots({Root{"archive", "/archive", false, {}}});
+        const auto restore = qScopeGuard([&] { setRoots(before); });
+        const auto &snapshot = roots();
+        const auto held = rootFor("/archive/file");
+        QVERIFY(held);
+        bool failed = false;
+        std::thread writer([&] {
+            for (int i = 0; i < 5000; ++i)
+                setRoots({Root{"replacement", "/replacement", false, {}}});
+        });
+        for (int i = 0; i < 5000; ++i) {
+            const auto current = roots();
+            if (current.size() != 1
+                || (current.first().id != "archive" && current.first().id != "replacement")
+                || (current.first().id == "archive" && current.first().path != "/archive")
+                || (current.first().id == "replacement" && current.first().path != "/replacement"))
+                failed = true;
+            const auto root = rootFor("/replacement/file");
+            if (root && (root->id != "replacement" || root->path != "/replacement"))
+                failed = true;
+        }
+        writer.join();
+        QVERIFY(!failed);
+        QCOMPARE(snapshot.first().id, QStringLiteral("archive"));
+        QCOMPARE(snapshot.first().path, QStringLiteral("/archive"));
+        QCOMPARE(held->id, QStringLiteral("archive"));
+        QCOMPARE(held->path, QStringLiteral("/archive"));
+        QVERIFY(!rootById("archive"));
+        QVERIFY(!rootAt("/replacement/file"));
+        QVERIFY(rootAt("/replacement"));
     }
 
     void rejectsInvalidTags()
@@ -990,6 +1082,479 @@ private slots:
         QByteArray value;
         QCOMPARE(omafiles::readTagsValue(fifo, &value, nullptr), omafiles::TagsValue::Unsupported);
     }
+    void readsTrashMetadataAndRetainsDamagedEntries()
+    {
+        TrashFixture fixture;
+        const QString original = fixture.home.path() + QStringLiteral("/a b%é.txt");
+        fixture.add(QStringLiteral("opaque"), QByteArray("[Trash Info]\r\nPath=")
+            + QFile::encodeName(original).toPercentEncoding("/")
+            + "\r\nDeletionDate=2026-10-11T12:34:56\r\nPath=/ignored\nUnknown=value\n");
+        fixture.add(QStringLiteral("broken"), "[Trash Info]\nPath=../escape\nDeletionDate=2026-10-11T12:34:56\n");
+        fixture.add(QStringLiteral("orphan"), {});
+        auto listing = omafiles::Trash::list({});
+        QCOMPARE(listing.items.size(), 3);
+        QVERIFY(listing.errors.isEmpty());
+        QVERIFY(listing.watches.contains(fixture.root + QStringLiteral("/files")));
+        const auto item = fixture.item(QStringLiteral("opaque"));
+        QVERIFY2(item.error.isEmpty(), qPrintable(item.error));
+        QCOMPARE(item.original, original);
+        QCOMPARE(item.deleted, QStringLiteral("2026-10-11T12:34:56"));
+        const auto broken = fixture.item(QStringLiteral("broken"));
+        QVERIFY(!broken.error.isEmpty());
+        QVERIFY(broken.original.isEmpty());
+        QVERIFY(!omafiles::Trash::restore(broken).isEmpty());
+        const auto orphan = fixture.item(QStringLiteral("orphan"));
+        QVERIFY(!orphan.error.isEmpty());
+        QVERIFY(orphan.original.isEmpty());
+    }
+
+    void refusesUnsafeTrashMetadata_data()
+    {
+        QTest::addColumn<QByteArray>("metadata");
+        const QByteArray prefix("[Trash Info]\nPath=");
+        const QByteArray suffix("\nDeletionDate=2026-10-11T12:34:56\n");
+        QTest::newRow("parent") << prefix + "a/../outside" + suffix;
+        QTest::newRow("escaped-parent") << prefix + "%2e%2e/outside" + suffix;
+        QTest::newRow("bad-escape") << prefix + "/a%z1" + suffix;
+        QTest::newRow("short-escape") << prefix + "/a%" + suffix;
+        QTest::newRow("nul") << prefix + "/a%00b" + suffix;
+        QTest::newRow("invalid-utf8") << prefix + "/a%FF" + suffix;
+        QTest::newRow("root") << prefix + "/" + suffix;
+        QTest::newRow("header") << QByteArray("Path=/file\nDeletionDate=2026-10-11T12:34:56\n");
+        QTest::newRow("no-path") << QByteArray("[Trash Info]\nDeletionDate=2026-10-11T12:34:56\n");
+        QTest::newRow("bad-date") << prefix + "/file\nDeletionDate=2026-02-31T12:34:56\n";
+        QTest::newRow("first-invalid-path") << prefix + "../bad\nPath=/good" + suffix;
+        QTest::newRow("first-invalid-date") << prefix + "/file\nDeletionDate=bad\nDeletionDate=2026-10-11T12:34:56\n";
+        QTest::newRow("large") << QByteArray(65537, 'x');
+    }
+
+    void refusesUnsafeTrashMetadata()
+    {
+        QFETCH(QByteArray, metadata);
+        TrashFixture fixture;
+        fixture.add(QStringLiteral("entry"), metadata);
+        const auto item = fixture.item(QStringLiteral("entry"));
+        QVERIFY2(!item.error.isEmpty(), metadata.constData());
+        QVERIFY(!omafiles::Trash::restore(item).isEmpty());
+        QVERIFY(QFile::exists(item.path));
+        QVERIFY(omafiles::Trash::erase(item).isEmpty());
+        QVERIFY(!QFile::exists(item.path));
+    }
+
+    void listsBothMountTrashFormsAndRejectsSharedLinks()
+    {
+        TrashFixture fixture;
+        const QString mount = fixture.home.path() + QStringLiteral("/mount");
+        const QString shared = mount + QStringLiteral("/.Trash");
+        const QString uid = QString::number(::getuid());
+        const QStringList roots{shared + u'/' + uid, mount + QStringLiteral("/.Trash-") + uid};
+        for (const QString &path : roots) {
+            QVERIFY(QDir().mkpath(path + QStringLiteral("/files")));
+            QVERIFY(QDir().mkpath(path + QStringLiteral("/info")));
+            fixture.write(path + QStringLiteral("/files/key"), "value");
+            fixture.write(path + QStringLiteral("/info/key.trashinfo"), "[Trash Info]\nPath=sub/file\nDeletionDate=2026-10-11T12:34:56\n");
+        }
+        QCOMPARE(::chmod(QFile::encodeName(shared).constData(), 01777), 0);
+        auto listing = omafiles::Trash::list({mount});
+        QCOMPARE(listing.items.size(), 2);
+        for (const auto &item : listing.items) {
+            QVERIFY2(item.error.isEmpty(), qPrintable(item.error));
+            QCOMPARE(item.original, mount + QStringLiteral("/sub/file"));
+        }
+        QCOMPARE(::chmod(QFile::encodeName(shared).constData(), 0777), 0);
+        listing = omafiles::Trash::list({mount});
+        QCOMPARE(listing.items.size(), 1);
+        QVERIFY(!listing.errors.isEmpty());
+        QVERIFY(QDir().rename(shared, shared + QStringLiteral("-actual")));
+        QVERIFY(QFile::link(shared + QStringLiteral("-actual"), shared));
+        listing = omafiles::Trash::list({mount});
+        QCOMPARE(listing.items.size(), 1);
+        QVERIFY(!listing.errors.isEmpty());
+    }
+
+    void restoresTrashWithNestedIndexTagsAndAttributes()
+    {
+        TrashFixture fixture;
+        const QString original = fixture.home.path() + QStringLiteral("/restored");
+        fixture.add(QStringLiteral("tree"), fixture.metadata(original), true);
+        const QString source = fixture.root + QStringLiteral("/files/tree");
+        const QString child = source + QStringLiteral("/child");
+        fixture.write(child, "payload");
+        QString error;
+        QVERIFY2(omafiles::writeTagsXattr(child, {QStringLiteral("xattr")}, &error), qPrintable(error));
+        omafiles::Store store(omafiles::defaultIndexPath());
+        QVERIFY2(store.lockAndLoad(&error), qPrintable(error));
+        omafiles::Record row;
+        row.path = child;
+        row.tags = {QStringLiteral("indexed")};
+        store.put(row);
+        row.path = original + QStringLiteral("/child");
+        row.tags = {QStringLiteral("retained")};
+        store.put(row);
+        QVERIFY2(store.commit(&error), qPrintable(error));
+        const auto item = fixture.item(QStringLiteral("tree"));
+        error = omafiles::Trash::restore(item);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QVERIFY(QFile::exists(original + QStringLiteral("/child")));
+        QVERIFY(!QFile::exists(item.path));
+        QVERIFY(!QFile::exists(item.info));
+        QVERIFY(store.load(&error));
+        QVERIFY(!store.contains(child));
+        QCOMPARE(store.get(original + QStringLiteral("/child")).tags,
+                 (QStringList{QStringLiteral("indexed"), QStringLiteral("retained")}));
+        QStringList tags;
+        QVERIFY(omafiles::readTagsXattr(original + QStringLiteral("/child"), &tags, &error));
+        QCOMPARE(tags, QStringList{QStringLiteral("xattr")});
+    }
+
+    void refusesChangedTrashAndOccupiedRestoreTargets()
+    {
+        TrashFixture fixture;
+        const QString original = fixture.home.path() + QStringLiteral("/original");
+        fixture.add(QStringLiteral("entry"), fixture.metadata(original));
+        auto item = fixture.item(QStringLiteral("entry"));
+        fixture.write(original, "existing");
+        QVERIFY(omafiles::Trash::restore(item).contains(QStringLiteral("already exists")));
+        QCOMPARE(fixture.bytes(original), QByteArray("existing"));
+        QVERIFY(QFile::remove(original));
+        fixture.write(item.info, fixture.metadata(original + QStringLiteral("-changed")));
+        QVERIFY(omafiles::Trash::restore(item).contains(QStringLiteral("changed")));
+        QVERIFY(omafiles::Trash::erase(item).contains(QStringLiteral("changed")));
+        item = fixture.item(QStringLiteral("entry"));
+        QVERIFY(QFile::rename(item.path, item.path + QStringLiteral("-old")));
+        fixture.write(item.path, "replacement");
+        QVERIFY(omafiles::Trash::restore(item).contains(QStringLiteral("changed")));
+        QVERIFY(omafiles::Trash::erase(item).contains(QStringLiteral("changed")));
+        QCOMPARE(fixture.bytes(item.path), QByteArray("replacement"));
+    }
+
+    void refusesRestoreThroughDirectoryLinksAndMissingParents()
+    {
+        TrashFixture fixture;
+        const QString actual = fixture.home.path() + QStringLiteral("/actual");
+        const QString alias = fixture.home.path() + QStringLiteral("/alias");
+        QVERIFY(QDir().mkpath(actual));
+        QVERIFY(QFile::link(actual, alias));
+        fixture.add(QStringLiteral("linked"), fixture.metadata(alias + QStringLiteral("/file")));
+        auto item = fixture.item(QStringLiteral("linked"));
+        QVERIFY(omafiles::Trash::restore(item).contains(QStringLiteral("symbolic links")));
+        QVERIFY(!QFile::exists(actual + QStringLiteral("/file")));
+        fixture.add(QStringLiteral("missing"), fixture.metadata(fixture.home.path() + QStringLiteral("/missing/file")));
+        item = fixture.item(QStringLiteral("missing"));
+        QVERIFY(omafiles::Trash::restore(item).contains(QStringLiteral("Create the directory")));
+        QVERIFY(QFile::exists(item.path));
+    }
+
+    void erasesTrashWithoutFollowingLinksAndHandlesOrphans()
+    {
+        TrashFixture fixture;
+        const QString kept = fixture.home.path() + QStringLiteral("/kept");
+        fixture.write(kept, "keep");
+        fixture.add(QStringLiteral("tree"), fixture.metadata(fixture.home.path() + QStringLiteral("/original")), true);
+        const QString path = fixture.root + QStringLiteral("/files/tree");
+        QVERIFY(QFile::link(kept, path + QStringLiteral("/link")));
+        QVERIFY(QDir().mkpath(path + QStringLiteral("/nested")));
+        fixture.write(path + QStringLiteral("/nested/file"), "delete");
+        auto item = fixture.item(QStringLiteral("tree"));
+        QVERIFY(omafiles::Trash::erase(item).isEmpty());
+        QCOMPARE(fixture.bytes(kept), QByteArray("keep"));
+        QVERIFY(!QFile::exists(path));
+        fixture.add(QStringLiteral("link"), fixture.metadata(kept));
+        item = fixture.item(QStringLiteral("link"));
+        QVERIFY(QFile::remove(item.path));
+        QVERIFY(QFile::link(kept, item.path));
+        item = fixture.item(QStringLiteral("link"));
+        QVERIFY(omafiles::Trash::erase(item).isEmpty());
+        QCOMPARE(fixture.bytes(kept), QByteArray("keep"));
+        fixture.add(QStringLiteral("metadata-only"), fixture.metadata(kept));
+        QVERIFY(QFile::remove(fixture.root + QStringLiteral("/files/metadata-only")));
+        item = fixture.item(QStringLiteral("metadata-only"));
+        QVERIFY(!item.error.isEmpty());
+        QVERIFY(omafiles::Trash::erase(item).isEmpty());
+        QVERIFY(!QFile::exists(item.info));
+        fixture.add(QStringLiteral("payload-only"), {});
+        item = fixture.item(QStringLiteral("payload-only"));
+        QVERIFY(omafiles::Trash::erase(item).isEmpty());
+        QCOMPARE(omafiles::Trash::list({}).items.size(), 0);
+    }
+
+    void refusesLinkedTrashDirectoriesAndInformationFiles()
+    {
+        TrashFixture fixture;
+        const QString original = fixture.home.path() + QStringLiteral("/original");
+        fixture.add(QStringLiteral("entry"), fixture.metadata(original));
+        auto item = fixture.item(QStringLiteral("entry"));
+        const QString external = fixture.home.path() + QStringLiteral("/external-info");
+        fixture.write(external, fixture.metadata(original));
+        QVERIFY(QFile::remove(item.info));
+        QVERIFY(QFile::link(external, item.info));
+        item = fixture.item(QStringLiteral("entry"));
+        QVERIFY(!item.error.isEmpty());
+        QVERIFY(!omafiles::Trash::restore(item).isEmpty());
+        QVERIFY(omafiles::Trash::erase(item).isEmpty());
+        QCOMPARE(fixture.bytes(external), fixture.metadata(original));
+        const QString files = fixture.root + QStringLiteral("/files");
+        QVERIFY(QDir().rename(files, files + QStringLiteral("-actual")));
+        QVERIFY(QFile::link(files + QStringLiteral("-actual"), files));
+        QVERIFY(!omafiles::Trash::list({}).errors.isEmpty());
+        QVERIFY(QFile::remove(files));
+        QVERIFY(QDir().rename(files + QStringLiteral("-actual"), files));
+        QVERIFY(QDir().rename(fixture.root, fixture.root + QStringLiteral("-actual")));
+        QVERIFY(QFile::link(fixture.root + QStringLiteral("-actual"), fixture.root));
+        QVERIFY(omafiles::Trash::list({}).items.isEmpty());
+        QVERIFY(!omafiles::Trash::list({}).errors.isEmpty());
+    }
+
+    void reportsInterruptedTrashListingsAndHonorsCancellation()
+    {
+        TrashFixture fixture;
+        fixture.add(QStringLiteral("entry"), fixture.metadata(fixture.home.path() + QStringLiteral("/original")));
+        g_readdirFailsOnCall = 1;
+        const auto partial = omafiles::Trash::list({});
+        QVERIFY(!partial.errors.isEmpty());
+        g_readdirFailsOnCall = 0;
+        auto cancel = std::make_shared<std::atomic_bool>(true);
+        QVERIFY(omafiles::Trash::list({}, cancel).items.isEmpty());
+        QVERIFY(QDir(fixture.root).removeRecursively());
+        const auto empty = omafiles::Trash::list({});
+        QVERIFY(empty.items.isEmpty());
+        QVERIFY(empty.watches.contains(omafiles::dataHome()));
+    }
+
+    void refusesInPlaceChangesToTrashPayloads()
+    {
+        TrashFixture fixture;
+        fixture.add(QStringLiteral("entry"), fixture.metadata(fixture.home.path() + QStringLiteral("/original")));
+        const auto item = fixture.item(QStringLiteral("entry"));
+        fixture.write(item.path, "changed payload with different size");
+        QVERIFY(omafiles::Trash::restore(item).contains(QStringLiteral("changed")));
+        QVERIFY(omafiles::Trash::erase(item).contains(QStringLiteral("changed")));
+        QVERIFY(QFile::exists(item.info));
+    }
+
+    void refusesTrashWritesWhenTheIndexCannotBeRead()
+    {
+        TrashFixture fixture;
+        fixture.add(QStringLiteral("entry"), fixture.metadata(fixture.home.path() + QStringLiteral("/original")));
+        const auto item = fixture.item(QStringLiteral("entry"));
+        QVERIFY(QDir().mkpath(omafiles::dataHome() + QStringLiteral("/omafiles")));
+        fixture.write(omafiles::defaultIndexPath(), "not JSON\n");
+        QVERIFY(omafiles::Trash::restore(item).contains(QStringLiteral("malformed")));
+        QVERIFY(omafiles::Trash::erase(item).contains(QStringLiteral("malformed")));
+        QVERIFY(QFile::exists(item.path));
+        QVERIFY(QFile::exists(item.info));
+        QVERIFY(!QFile::exists(item.original));
+    }
+
+    void restoresTrashedSymbolicLinksAsNamedEntries()
+    {
+        TrashFixture fixture;
+        const QString kept = fixture.home.path() + QStringLiteral("/kept");
+        const QString original = fixture.home.path() + QStringLiteral("/original-link");
+        fixture.write(kept, "keep");
+        fixture.add(QStringLiteral("link"), fixture.metadata(original));
+        const QString path = fixture.root + QStringLiteral("/files/link");
+        QVERIFY(QFile::remove(path));
+        QVERIFY(QFile::link(kept, path));
+        const auto item = fixture.item(QStringLiteral("link"));
+        const QString error = omafiles::Trash::restore(item);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(omafiles::linkTarget(QFile::encodeName(original)), QFile::encodeName(kept));
+        QCOMPARE(fixture.bytes(kept), QByteArray("keep"));
+    }
+
+    void removesOnlyIndexRowsWithinErasedTrashEntries()
+    {
+        TrashFixture fixture;
+        const QString original = fixture.home.path() + QStringLiteral("/original");
+        fixture.add(QStringLiteral("tree"), fixture.metadata(original), true);
+        const auto item = fixture.item(QStringLiteral("tree"));
+        fixture.write(item.path + QStringLiteral("/child"), "payload");
+        const auto current = fixture.item(QStringLiteral("tree"));
+        QString error;
+        omafiles::Store store(omafiles::defaultIndexPath());
+        QVERIFY(store.lockAndLoad(&error));
+        omafiles::Record row;
+        row.path = item.path + QStringLiteral("/child");
+        row.tags = {QStringLiteral("erased")};
+        store.put(row);
+        row.path = original;
+        row.tags = {QStringLiteral("retained")};
+        store.put(row);
+        QVERIFY(store.commit(&error));
+        error = omafiles::Trash::erase(current);
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QVERIFY(store.load(&error));
+        QVERIFY(!store.contains(item.path + QStringLiteral("/child")));
+        QCOMPARE(store.get(original).tags, QStringList{QStringLiteral("retained")});
+    }
+
+    void keepsTrashInformationWhenRecursiveEraseFails()
+    {
+        if (::geteuid() == 0)
+            QSKIP("root can read protected fixture directories");
+        TrashFixture fixture;
+        fixture.add(QStringLiteral("tree"), fixture.metadata(fixture.home.path() + QStringLiteral("/original")), true);
+        const QString nested = fixture.root + QStringLiteral("/files/tree/nested");
+        QVERIFY(QDir().mkpath(nested));
+        fixture.write(nested + QStringLiteral("/file"), "payload");
+        QCOMPARE(::chmod(QFile::encodeName(nested).constData(), 0000), 0);
+        const auto item = fixture.item(QStringLiteral("tree"));
+        const QString error = omafiles::Trash::erase(item);
+        QCOMPARE(::chmod(QFile::encodeName(nested).constData(), 0700), 0);
+        QVERIFY2(error.contains(QStringLiteral("information file was kept")), qPrintable(error));
+        QVERIFY(QFile::exists(item.info));
+        QVERIFY(QFile::exists(nested + QStringLiteral("/file")));
+    }
+
+    void refusesTrashRestoreIntoAnUnavailableDeclaredRoot()
+    {
+        TrashFixture fixture;
+        const QString mount = fixture.home.path() + QStringLiteral("/mount");
+        QVERIFY(QDir().mkpath(mount));
+        fixture.add(QStringLiteral("entry"), fixture.metadata(mount + QStringLiteral("/original")));
+        const auto item = fixture.item(QStringLiteral("entry"));
+        const auto before = omafiles::setRoots({{QStringLiteral("archive"), mount, false, QStringLiteral("marker")}});
+        const QString error = omafiles::Trash::restore(item);
+        omafiles::setRoots(before);
+        QVERIFY2(error.contains(QStringLiteral("declared and not here")), qPrintable(error));
+        QVERIFY(QFile::exists(item.path));
+        QVERIFY(QFile::exists(item.info));
+        QVERIFY(!QFile::exists(item.original));
+    }
+
+    void skipsFileMountpointsWhileListingTrash()
+    {
+        TrashFixture fixture;
+        const QString fileMount = fixture.home.path() + QStringLiteral("/file-mount");
+        fixture.write(fileMount, "bind-mounted file fixture");
+        const auto listing = omafiles::Trash::list({fileMount});
+        QVERIFY2(listing.errors.isEmpty(), qPrintable(listing.errors.join(u'\n')));
+        QVERIFY(listing.items.isEmpty());
+        QVERIFY(!listing.watches.contains(fileMount));
+    }
+
+    void visitsNamesWithoutCopyingAscii_data()
+    {
+        QTest::addColumn<bool>("borrowDescriptor");
+        QTest::newRow("path") << false;
+        QTest::newRow("descriptor") << true;
+    }
+
+    void visitsNamesWithoutCopyingAscii()
+    {
+        QFETCH(bool, borrowDescriptor);
+        QTemporaryDir fixture;
+        QVERIFY(fixture.isValid());
+        const QStringList expected{QStringLiteral("ordinary.txt"), QStringLiteral("line\nwith-tab\t"),
+            QString(255, QLatin1Char('x')), QStringLiteral("\ufeffleading-bom"),
+            QStringLiteral("\u00c9cole.txt"), QStringLiteral("\U0001f642.txt")};
+        const auto removeExpected = qScopeGuard([&] {
+            for (const QString &name : expected) QFile::remove(fixture.filePath(name));
+        });
+        for (const QString &name : expected) {
+            QFile file(fixture.filePath(name));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+        }
+        const QList<QByteArray> invalid{"bad-\xff", "overlong-\xc0\xaf", "surrogate-\xed\xa0\x80",
+            "incomplete-\xf0\x9f", "overlong-three-\xe0\x80\x80"};
+        const QByteArray prefix = QFile::encodeName(fixture.path()) + '/';
+        const auto removeInvalid = qScopeGuard([&] {
+            for (const auto &name : invalid) ::unlink((prefix + name).constData());
+        });
+        for (const auto &name : invalid) {
+            const int fd = ::open((prefix + name).constData(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+            QVERIFY(fd >= 0);
+            ::close(fd);
+        }
+        const int descriptor = borrowDescriptor ? ::open(prefix.constData(), O_RDONLY | O_DIRECTORY) : -1;
+        const auto close = qScopeGuard([&] { if (descriptor >= 0) ::close(descriptor); });
+        QVERIFY(!borrowDescriptor || descriptor >= 0);
+        QStringList unnameable, actual;
+        QString error;
+        omafiles::PathState state = omafiles::PathState::Unknown;
+        const auto visit = [&](const std::function<bool(QAnyStringView, unsigned char)> &visitor) {
+            return borrowDescriptor
+                ? omafiles::visitDirectory(descriptor, fixture.path(), visitor, &unnameable, &error, &state)
+                : omafiles::visitDirectory(fixture.path(), visitor, &unnameable, &error, &state);
+        };
+        QMap<QString, QPair<bool, bool>> views;
+        QVERIFY(visit([&](QAnyStringView name, unsigned char) {
+            const QString owned = name.toString();
+            actual.append(owned);
+            const bool latin1 = name.visit([](auto text) {
+                return std::is_same_v<decltype(text), QLatin1StringView>;
+            });
+            views.insert(owned, qMakePair(latin1, name.data() == g_readdirName));
+            return true;
+        }));
+        QVERIFY2(error.isEmpty(), qPrintable(error));
+        QCOMPARE(state, omafiles::PathState::Present);
+        QStringList sortedExpected = expected;
+        sortedExpected.sort(); actual.sort();
+        QCOMPARE(actual, sortedExpected);
+        for (const QString &name : expected) {
+            const bool ascii = std::all_of(name.cbegin(), name.cend(),
+                [](QChar ch) { return ch.unicode() < 0x80; });
+            QCOMPARE(views.value(name).first, ascii);
+            QCOMPARE(views.value(name).second, ascii);
+        }
+        QStringList rejected;
+        for (const auto &name : invalid) rejected.append(omafiles::escapedBytes(name));
+        rejected.sort(); unnameable.sort();
+        QCOMPARE(unnameable, rejected);
+        if (borrowDescriptor) QVERIFY(::lseek(descriptor, 0, SEEK_SET) >= 0);
+        int visits = 0;
+        QVERIFY(visit([&](QAnyStringView, unsigned char) { ++visits; return false; }));
+        QCOMPARE(visits, 1);
+        if (borrowDescriptor) QVERIFY(::fcntl(descriptor, F_GETFD) >= 0);
+    }
+
+    void visitsBorrowedDirectoryDescriptorsWithTheSharedReader()
+    {
+        QTemporaryDir fixture;
+        QVERIFY(fixture.isValid());
+        QFile file(fixture.path() + QStringLiteral("/entry"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        const QByteArray unnamed = QFile::encodeName(fixture.path()) + "/bad-\xff";
+        const int created = ::open(unnamed.constData(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+        QVERIFY(created >= 0);
+        ::close(created);
+        const int descriptor = ::open(QFile::encodeName(fixture.path()).constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        const auto cleanup = qScopeGuard([&] {
+            if (descriptor >= 0)
+                ::close(descriptor);
+            ::unlink(unnamed.constData());
+        });
+        QVERIFY(descriptor >= 0);
+        QStringList names, unnameable;
+        QString error;
+        omafiles::PathState state = omafiles::PathState::Unknown;
+        const bool complete = omafiles::visitDirectory(descriptor, QStringLiteral("diagnostic-only"),
+            [&](QAnyStringView name, unsigned char) { names.append(name.toString()); return true; },
+            &unnameable, &error, &state);
+        QCOMPARE(::fcntl(descriptor, F_GETFD), 0);
+        QVERIFY(complete);
+        QCOMPARE(state, omafiles::PathState::Present);
+        QCOMPARE(names, QStringList{QStringLiteral("entry")});
+        QCOMPARE(unnameable, QStringList{QStringLiteral("bad-\\xff")});
+        QVERIFY(::lseek(descriptor, 0, SEEK_SET) >= 0);
+        g_readdirFailsOnCall = 1;
+        const bool interrupted = omafiles::visitDirectory(descriptor, QStringLiteral("diagnostic-only"),
+            [](QAnyStringView, unsigned char) { return true; }, nullptr, &error, &state);
+        g_readdirFailsOnCall = 0;
+        QVERIFY(!interrupted);
+        QCOMPARE(state, omafiles::PathState::Unknown);
+        QVERIFY(error.contains(QStringLiteral("diagnostic-only")));
+        QVERIFY(error.contains(omafiles::systemReason(EIO)));
+        error.clear();
+        QVERIFY(!omafiles::visitDirectory(-1, QStringLiteral("bad-descriptor"),
+            [](QAnyStringView, unsigned char) { return true; }, nullptr, &error, &state));
+        QCOMPARE(state, omafiles::PathState::Unknown);
+        QVERIFY(error.contains(omafiles::systemReason(EBADF)));
+    }
+
 };
 
 QTEST_MAIN(StoreTest)

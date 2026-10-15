@@ -12,6 +12,7 @@ import omafiles
 Item {
     id: icon
 
+    property bool hasPreview: false
     property string kind: "file"
     property color ink: Theme.foreground
 
@@ -22,6 +23,7 @@ Item {
 
     Canvas {
         id: canvas
+        visible: !icon.hasPreview
         anchors.fill: parent
         antialiasing: true
         onPaint: {
@@ -44,7 +46,16 @@ Item {
             }
 
             const k = icon.kind
-            if (k === "folder" || k === "parent") {
+            if (k === "undo") {
+                ctx.beginPath()
+                ctx.moveTo(6, 2)
+                ctx.lineTo(2, 6)
+                ctx.lineTo(6, 10)
+                ctx.moveTo(2, 6)
+                ctx.lineTo(10, 6)
+                ctx.arc(10, 10, 4, -Math.PI / 2, Math.PI / 2)
+                ctx.stroke()
+            } else if (k === "folder" || k === "parent") {
                 ctx.beginPath()
                 ctx.moveTo(1.5, 5.2)
                 ctx.lineTo(1.5, 4.2)

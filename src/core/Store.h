@@ -109,6 +109,7 @@ public:
     void remove(const QString &path);
 
     QVector<Record> records() const;
+    QMap<QString, Record> recordSnapshot() const { return m_rows; }
 
 private:
     QString m_path;

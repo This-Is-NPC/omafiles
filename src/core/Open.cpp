@@ -76,6 +76,13 @@ QStringList executableDirs()
     return searchPath("PATH", QStringLiteral("/bin:/usr/bin"));
 }
 
+QStringList desktopDataDirs()
+{
+    QStringList roots{dataHome()};
+    roots += searchPath("XDG_DATA_DIRS", QStringLiteral("/usr/local/share:/usr/share"));
+    return roots;
+}
+
 QString findExecutable(const QString &name)
 {
     const auto runnable = [](const QString &path) {
@@ -103,8 +110,7 @@ namespace {
 // its applications where it says it does.
 QStringList applicationDirs()
 {
-    QStringList roots{dataHome()};
-    roots += searchPath("XDG_DATA_DIRS", QStringLiteral("/usr/local/share:/usr/share"));
+    const QStringList roots = desktopDataDirs();
 
     QStringList out;
     for (const QString &root : std::as_const(roots)) {
@@ -613,6 +619,27 @@ bool desktopScript(const OpenRequest &request, QString *error)
 bool desktopLauncher(const OpenRequest &request, QString *error)
 {
     switch (request.kind) {
+    case OpenRequest::SetDirectoryDefault: {
+        QProcess process;
+        process.start(QStringLiteral("xdg-mime"), request.arguments);
+        if (!process.waitForFinished(30000) || process.exitStatus() != QProcess::NormalExit
+            || process.exitCode() != 0) {
+            if (process.state() != QProcess::NotRunning) {
+                process.kill();
+                process.waitForFinished();
+            }
+            if (error)
+                *error = QStringLiteral("xdg-mime default failed: %1")
+                    .arg(process.errorString() + QLatin1Char(' ')
+                         + QString::fromUtf8(process.readAllStandardError()).trimmed());
+            return false;
+        }
+        if (queryDefaultDesktop(QStringLiteral("inode/directory")) == QStringLiteral("omafiles.desktop"))
+            return true;
+        if (error)
+            *error = QStringLiteral("xdg-mime did not select omafiles.desktop");
+        return false;
+    }
     case OpenRequest::Share:
         return desktopShare(request.path, error);
     case OpenRequest::Terminal:
@@ -646,6 +673,12 @@ Launcher setLauncher(Launcher launcher)
     Launcher previous = installedLauncher();
     installedLauncher() = launcher ? std::move(launcher) : Launcher(desktopLauncher);
     return previous;
+}
+
+bool setDirectoryDefault(QString *error)
+{
+    return installedLauncher()(OpenRequest{OpenRequest::SetDirectoryDefault, {}, {},
+        {QStringLiteral("default"), QStringLiteral("omafiles.desktop"), QStringLiteral("inode/directory")}}, error);
 }
 
 bool openLocalPath(const QString &path, QString *error)

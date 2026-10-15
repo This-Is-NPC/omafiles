@@ -1,11 +1,14 @@
 #pragma once
 
 #include "IndexModel.h"
+#include "DirectoryListing.h"
+#include "DirectoryWork.h"
+#include <QCache>
 #include "Workspace.h"
 
 #include <QAbstractListModel>
 #include <QFileInfo>
-#include <QFileSystemWatcher>
+#include "EntryWatcher.h"
 #include <QtQmlIntegration/qqmlintegration.h>
 #include <QString>
 #include <QTimer>
@@ -39,6 +42,7 @@ class FolderModel : public QAbstractListModel
     Q_PROPERTY(bool atRoot READ atRoot NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(int count READ rowCount NOTIFY changed)
+    Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(int markedCount READ markedCount NOTIFY markedChanged)
     Q_PROPERTY(int taggedCount READ taggedCount NOTIFY changed)
     Q_PROPERTY(QString sortRole READ sortRole WRITE setSortRole NOTIFY sortChanged)
@@ -63,7 +67,14 @@ public:
         ModeRole
     };
 
-    explicit FolderModel(QObject *parent = nullptr);
+    explicit FolderModel(QObject *parent = nullptr,
+                         std::shared_ptr<const DirectoryWork> work = directoryWork());
+    ~FolderModel() override;
+    bool loading() const { return m_loading; }
+    int listingReads() const { return m_listingReads; }
+    int queryEntriesExamined() const { return m_queryEntriesExamined; }
+    int metadataReads() const { return m_metadataReads; }
+    qsizetype directoryIndexCapacity() const { return m_visible.capacity(); }
 
     IndexModel *source() const { return m_index; }
     void setSource(IndexModel *index);
@@ -192,7 +203,9 @@ public:
     Q_INVOKABLE QStringList tagsFor(const QString &path) const;
     Q_INVOKABLE QString pathAt(int row) const;
     Q_INVOKABLE QString kindAt(int row) const;
+    Q_INVOKABLE int previewRow(int from, int direction) const;
     Q_INVOKABLE void reload();
+    Q_INVOKABLE void refreshMetadata(int row);
 
     /// Everything the details panel shows about one row, in one read. Empty map
     /// for a row that is not there, so QML can test it with a single truthiness
@@ -226,8 +239,10 @@ signals:
     void recentChanged();
     void queryChanged();
     void changed();
+    void metadataChanged();
     void markedChanged();
     void sortChanged();
+    void loadingChanged();
 
 private:
     struct Entry {
@@ -249,9 +264,24 @@ private:
         QString mode;
     };
 
+    struct DirectoryResult {
+        std::shared_ptr<const DirectoryListing> listing;
+        QVector<int> visible;
+        int rangeSize = -1;
+        bool parent = false;
+        int tagged = 0;
+        int examined = 0;
+    };
+    int directoryIndex(int row) const;
+    Entry rowAt(int row, bool metadata = false) const;
+    static Entry describeFile(const QFileInfo &info, const QString &name, const QStringList &tags);
+    static bool accepts(const Entry &row, const QVariantMap &criteria);
+    static bool lessThan(const Entry &a, const Entry &b, const QString &role, bool ascending);
+    void startDirectoryQuery();
+    void cancelDirectoryQuery();
+    void setLoading(bool loading);
     bool validRow(int row) const;
     void rebuild();
-    void listDirectory();
     void listTag();
     /// The tags that still divide the files under `m_facets`, and those files.
     void listFacets();
@@ -275,6 +305,7 @@ private:
     void watch();
     void marksChanged();
 
+    const std::shared_ptr<const DirectoryWork> m_work;
     IndexModel *m_index = nullptr;
     TabState *m_tab = nullptr;
     QString m_filter;
@@ -289,10 +320,29 @@ private:
     bool m_sortAscending = true;
     QString m_error;
     QVector<Entry> m_rows;
+    bool m_directoryMode = false;
+    bool m_loading = false;
+    bool m_scanNeeded = true;
+    int m_directoryTagged = 0;
+    int m_listingReads = 0;
+    int m_queryEntriesExamined = 0;
+    QString m_previousNeedle;
+    bool m_previousNameOnly = false;
+    bool m_previousHidden = false;
+    bool m_previousAscending = true;
+    mutable int m_metadataReads = 0;
+    std::shared_ptr<const DirectoryListing> m_listing;
+    std::shared_ptr<std::atomic_bool> m_cancellation;
+    QVector<int> m_visible;
+    int m_rangeSize = -1;
+    bool m_rangeParent = false;
+    mutable QCache<int, Entry> m_metadata{128};
+    QTimer m_query;
     /// The folder on screen, watched so it stays the folder on disk. One
     /// directory and never a tree: an inotify watch is a per-user resource, and
     /// what a list has to be honest about is the list.
-    QFileSystemWatcher m_watcher;
+    EntryWatcher m_watcher;
+    QString m_watched;
     /// Coalesces the watcher. A single copy or save is several filesystem
     /// events, and the list wants the state after them, once.
     QTimer m_settle;

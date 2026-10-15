@@ -14,6 +14,8 @@ namespace omafiles {
 /// The directories `PATH` names, or glibc's `execvp` default where it is unset.
 /// An entry that is not UTF-8 is skipped: it names no directory here.
 QStringList executableDirs();
+/// The user and system XDG data directories, in desktop search order.
+QStringList desktopDataDirs();
 /// `name` as a runnable regular file on `PATH`, the way `execvp` finds it, or
 /// empty.
 QString findExecutable(const QString &name);
@@ -52,7 +54,7 @@ struct OpenApp {
 /// entry `OpenWith` picked, or the script `Script` runs, and empty for every
 /// other kind. `arguments` is what a script is handed: the paths it is about.
 struct OpenRequest {
-    enum Kind { Open, Share, Terminal, Editor, OpenWith, Script };
+    enum Kind { Open, Share, Terminal, Editor, OpenWith, Script, SetDirectoryDefault };
     Kind kind = Open;
     QString path;
     QString application;
@@ -94,6 +96,8 @@ using Launcher = std::function<bool(const OpenRequest &request, QString *error)>
 /// Installs `launcher` and returns the one it replaced, so a caller can put back
 /// what it found. An empty `launcher` restores the desktop.
 Launcher setLauncher(Launcher launcher);
+
+bool setDirectoryDefault(QString *error);
 
 bool openLocalPath(const QString &path, QString *error);
 bool canShareLocalSend();

@@ -107,7 +107,7 @@ void run(Views *self, const QStringList &arguments)
             return;
         if (ok)
             alive->reload();
-        else
+        if (!error.isEmpty())
             alive->say(error);
     });
 }
@@ -151,8 +151,7 @@ void Views::forget(const QString &name)
 
 void Views::say(const QString &message)
 {
-    m_error = message;
-    emit changed();
+    emit notice(message);
 }
 
 QVariantMap Views::at(int row) const

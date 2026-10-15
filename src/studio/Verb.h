@@ -7,9 +7,11 @@
 
 namespace omafiles {
 
-/// What a finished run of `omafiles` had to say: whether it did what was asked,
-/// what it printed, and the first line of why not.
-using VerbReceipt = std::function<void(bool ok, const QString &output, const QString &error)>;
+/// A CLI result: success, stdout, and stderr notes or a refusal.
+using VerbReceipt = std::function<void(bool ok, const QString &output, const QString &diagnostics)>;
+
+/// Keep successful CLI notes beside the window's summary.
+QString verbNotice(bool ok, const QString &success, const QString &diagnostics);
 
 /// One request to run a verb of the command line.
 ///
@@ -29,7 +31,10 @@ VerbRunner setVerbRunner(VerbRunner runner);
 /// The `omafiles` binary this window speaks to, or empty where there is none.
 QString verbProgram();
 
-/// Runs `omafiles <arguments>` and calls `done` when it exits.
+/// The journaled file or tag verb, or empty for other commands.
+QString journalVerb(const QStringList &arguments);
+
+/// Runs `omafiles <arguments>`; journaled commands request JSON receipts.
 ///
 /// Nothing blocks. `reindex` over a home directory is minutes of walking, and a
 /// window that stops answering the keyboard for it is a window that looks

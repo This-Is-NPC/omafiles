@@ -8,6 +8,8 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMutex>
+#include <QMutexLocker>
 
 #include <cstdlib>
 #include <sys/stat.h>
@@ -17,6 +19,12 @@
 namespace omafiles {
 
 namespace {
+
+QMutex &tableMutex()
+{
+    static QMutex mutex;
+    return mutex;
+}
 
 QVector<Root> &table()
 {
@@ -125,13 +133,15 @@ QString defaultRootsPath()
     return QDir(configHome()).filePath(QStringLiteral("omafiles/roots.jsonl"));
 }
 
-const QVector<Root> &roots()
+QVector<Root> roots()
 {
+    const QMutexLocker lock(&tableMutex());
     return table();
 }
 
 QVector<Root> setRoots(QVector<Root> declared)
 {
+    const QMutexLocker lock(&tableMutex());
     QVector<Root> previous = table();
     table() = std::move(declared);
     return previous;
@@ -197,8 +207,11 @@ bool loadRoots(const QString &path, QString *error)
         }
         declared.append(root);
     }
-    setRoots(declared);
-    readRespelled() = respelled;
+    {
+        const QMutexLocker lock(&tableMutex());
+        table() = std::move(declared);
+        readRespelled() = respelled;
+    }
     return true;
 }
 
@@ -209,6 +222,7 @@ bool loadRoots(QString *error)
 
 bool rootsRespelled()
 {
+    const QMutexLocker lock(&tableMutex());
     return readRespelled();
 }
 
@@ -235,33 +249,33 @@ bool saveRoots(const QString &path, const QVector<Root> &declared, QString *erro
     return true;
 }
 
-const Root *rootById(const QString &id)
+std::optional<Root> rootById(const QString &id)
 {
     for (const Root &root : roots()) {
         if (root.id == id)
-            return &root;
+            return root;
     }
-    return nullptr;
+    return std::nullopt;
 }
 
-const Root *rootFor(const QString &absolutePath)
+std::optional<Root> rootFor(const QString &absolutePath)
 {
-    const Root *best = nullptr;
+    std::optional<Root> best;
     for (const Root &root : roots()) {
         if (!isUnderDirectory(absolutePath, root.path) && absolutePath != root.path)
             continue;
         // The longest match, so a root declared inside another one takes the
         // rows under it rather than losing them to the one above.
         if (!best || root.path.size() > best->path.size())
-            best = &root;
+            best = root;
     }
     return best;
 }
 
-const Root *rootAt(const QString &absolutePath)
+std::optional<Root> rootAt(const QString &absolutePath)
 {
-    const Root *root = rootFor(absolutePath);
-    return root && root->path == absolutePath ? root : nullptr;
+    const auto root = rootFor(absolutePath);
+    return root && root->path == absolutePath ? root : std::nullopt;
 }
 
 // Three answers, weakest last.
@@ -296,7 +310,7 @@ QString unreachableReason(const QString &path, const Root &root)
 
 void splitByRoot(const QString &absolutePath, QString *rootId, QString *relative)
 {
-    const Root *root = rootFor(absolutePath);
+    const auto root = rootFor(absolutePath);
     if (!root) {
         if (rootId)
             rootId->clear();
@@ -314,7 +328,7 @@ void splitByRoot(const QString &absolutePath, QString *rootId, QString *relative
 
 QString joinRoot(const QString &rootId, const QString &relative)
 {
-    const Root *root = rootById(rootId);
+    const auto root = rootById(rootId);
     if (!root)
         return {};
     if (relative == QLatin1String("."))

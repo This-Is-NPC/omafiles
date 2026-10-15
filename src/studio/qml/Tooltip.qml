@@ -4,27 +4,24 @@ import QtQuick
 import QtQuick.Controls.Basic as C
 import omafiles
 
-// The name of a control and the key that works it.
-//
-// It opens below the control rather than beside it, because beside is where the
-// next control is: on a toolbar, a tip explaining one button covers the two next
-// to it, so pointing at the thing you want hides where it is.
-//
-// And it waits before opening. A tip that appears the instant the pointer
-// crosses a control is a panel that flashes over the window every time you move
-// the mouse across the top of it; the pause is what makes it an answer to a
-// question rather than an interruption.
-C.Popup {
+// Delayed, nonfocusable help for a control.
+C.ToolTip {
     id: tip
 
-    property string text: ""
     property Item host: null
+    objectName: "controlTooltip"
 
+    popupType: C.Popup.Item
+    width: Math.max(0, Math.min(420, ruler.advanceWidth + 14, parent ? parent.width - 12 : 420))
+    height: Math.max(0, Math.min(label.implicitHeight + 14, parent ? parent.height - 12 : 300))
+    onWidthChanged: if (opened) position()
+    onHeightChanged: if (opened) position()
     padding: 7
     modal: false
     dim: false
     focus: false
     closePolicy: C.Popup.NoAutoClose
+    delay: 480
 
     background: Rectangle {
         color: Theme.background
@@ -33,32 +30,77 @@ C.Popup {
         radius: Theme.rounding
     }
 
-    contentItem: Text {
+    TextMetrics {
+        id: ruler
         text: tip.text
-        color: Theme.foreground
         font.family: Theme.fontFamily
         font.pixelSize: 11
-        renderType: Text.NativeRendering
+    }
+    contentItem: OverlayScroll {
+        id: scroll
+        contentHeight: label.implicitHeight
+        HoverHandler {
+            id: tipHover
+            parent: scroll
+            onHoveredChanged: {
+                if (hovered)
+                    exitDelay.stop()
+                else
+                    tip.dismiss()
+            }
+        }
+        Text {
+            id: label
+            width: scroll.width
+            text: tip.text
+            wrapMode: Text.WrapAnywhere
+            color: Theme.foreground
+            font.family: Theme.fontFamily
+            font.pixelSize: 11
+            renderType: Text.NativeRendering
+        }
+    }
+    function handleKey(event) {
+        return tip.opened && scroll.handleKey(event)
+    }
+    Connections {
+        target: tip.parent
+        function onWidthChanged() { if (tip.opened) tip.position() }
+        function onHeightChanged() { if (tip.opened) tip.position() }
+    }
+
+    Connections {
+        target: tip.host
+        function onXChanged() { if (tip.opened) tip.position() }
+        function onYChanged() { if (tip.opened) tip.position() }
     }
 
     Timer {
-        id: hold
-        interval: 480
-        onTriggered: tip.place()
+        id: exitDelay
+        interval: 200
+        onTriggered: if (!tipHover.hovered) tip.close()
     }
 
     /// Ask for the tip. It appears once the pointer has stayed put.
     function request(item) {
         if (!item || tip.text === "")
             return
+        exitDelay.stop()
         tip.host = item
-        hold.restart()
+        tip.place()
     }
 
     /// Take it back, whether it had appeared yet or not.
+    function cancel() {
+        exitDelay.stop()
+        close()
+    }
+
     function dismiss() {
-        hold.stop()
-        tip.close()
+        if (!tip.opened)
+            tip.close()
+        else if (!tipHover.hovered)
+            exitDelay.restart()
     }
 
     function place() {
@@ -68,12 +110,17 @@ C.Popup {
         const overlay = C.Overlay.overlay
         if (overlay)
             parent = overlay
-        const target = parent ? parent : item
-        const under = item.mapToItem(target, Math.round((item.width - implicitWidth) / 2),
-                                      item.height + 6)
-        const limit = target.width ? target.width - implicitWidth - 6 : under.x
-        x = Math.max(6, Math.min(under.x, limit))
-        y = Math.max(0, under.y)
+        scroll.contentY = 0
+        position()
         open()
+    }
+    function position() {
+        const item = tip.host
+        const target = tip.parent
+        if (!item || !target)
+            return
+        const under = item.mapToItem(target, Math.round((item.width - width) / 2), item.height + 6)
+        x = Math.max(6, Math.min(under.x, target.width - width - 6))
+        y = Math.max(6, Math.min(under.y, target.height - height - 6))
     }
 }

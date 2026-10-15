@@ -60,13 +60,6 @@ class TabState : public QObject
 public:
     explicit TabState(QString kind, QObject *parent = nullptr);
 
-    /// The folder a tab opens in: the home directory, unless the command
-    /// line named one. Static and set by `main` before the engine runs,
-    /// because the first tab is made by the QML the engine loads and there
-    /// is no instance to hand a path to before that.
-    static void setStartPath(const QString &path);
-    static QString startPath();
-
     QString kind() const { return m_kind; }
     QString title() const;
     QString selectedTag() const { return m_selectedTag; }
@@ -103,6 +96,7 @@ public:
     void setSelectedTag(const QString &tag);
     void setSelectedNode(const QString &id);
     void setCwd(const QString &path);
+    void setLocation(const QString &directory, const QString &cursor);
     void setFilter(const QString &text);
     void setViewMode(const QString &mode);
     void setShowHidden(bool show);
@@ -197,7 +191,8 @@ public:
     TabState *current() const;
     void setCurrentIndex(int index);
 
-    TabState *addTab(const QString &kind);
+    TabState *addTab(const QString &kind, const QString &directory = {},
+                     const QString &cursor = {});
     void closeTab(int index);
     Q_INVOKABLE void stepTab(int delta);
 
@@ -283,6 +278,8 @@ signals:
     void focusedPaneChanged();
     void currentTabChanged();
     void columnsChanged();
+    void propertiesRequested(const QString &text);
+    void presentationRequested(const QString &startupId);
 
 private:
     static qsizetype paneCountFn(QQmlListProperty<PaneState> *list);

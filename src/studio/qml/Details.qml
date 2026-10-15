@@ -10,13 +10,12 @@ import omafiles
 // of the panel is that you do not have to widen a column, switch to the details
 // view, or open the file to read it.
 //
-// Nothing here takes the keyboard. It is a readout, and a Tab stop that only
-// ever reports is a Tab stop in the way of the next one. The mode bits take a
-// click; the keyboard reaches the same change through the Permissions sheet.
+// Readouts do not take Tab; permission bits and tag actions do.
 Item {
     id: details
 
     property var entry: ({})
+    signal tagActivated(string tag)
     readonly property bool has: entry && entry.path !== undefined
 
     implicitHeight: body.implicitHeight
@@ -185,8 +184,12 @@ Item {
 
                 Repeater {
                     model: details.has ? details.entry.tags : []
-                    Rectangle {
+                    FocusableControl {
                         id: tagChip
+                        objectName: "detailsTagChip"
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Edit tag " + tagChip.modelData
+                        onActivated: details.tagActivated(tagChip.modelData)
                         required property string modelData
                         height: 18
                         width: mark.implicitWidth + 10

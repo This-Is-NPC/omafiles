@@ -2,9 +2,15 @@
 
 #include <QObject>
 #include <QString>
+#include <QUrl>
 #include <QtQmlIntegration/qqmlintegration.h>
 
+class QMimeData;
+
 namespace omafiles {
+
+QStringList localFilePaths(const QList<QUrl> &urls);
+QMimeData *fileMimeData(const QStringList &paths, bool cut);
 
 /// The clipboard, as one call.
 ///

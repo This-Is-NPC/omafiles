@@ -1,11 +1,13 @@
 #pragma once
 
 #include <QFile>
+#include <QAnyStringView>
 #include <QHash>
 #include <QString>
 #include <QStringList>
 
 #include <optional>
+#include <functional>
 
 class QUrl;
 
@@ -201,5 +203,21 @@ QString relativeTo(const QString &path, const QString &directory);
 /// answers with the failure and not with what it collected.
 bool readDirectory(const QString &directory, QStringList *names, QStringList *unnameable,
                    QString *error, PathState *state = nullptr);
+/// Visits nameable entries with their dirent type, stopping successfully when
+/// `visitor` returns false. Error and unnameable-name handling match readDirectory.
+/// Names live only during the callback: ASCII borrows Latin1 bytes, Unicode is UTF16.
+bool visitDirectory(const QString &directory,
+                    const std::function<bool(QAnyStringView, unsigned char)> &visitor,
+                    QStringList *unnameable, QString *error, PathState *state = nullptr);
+
+
+/// Visits a borrowed directory descriptor, using `directory` only in diagnostics.
+bool visitDirectory(int descriptor, const QString &directory,
+                    const std::function<bool(QAnyStringView, unsigned char)> &visitor,
+                    QStringList *unnameable, QString *error, PathState *state = nullptr);
+
+// Borrowed descriptor removal and anchored directory traversal never follow links.
+int openDirectoryNoFollow(const QString &path);
+QString removeTreeAt(int parent, const QByteArray &name);
 
 } // namespace omafiles

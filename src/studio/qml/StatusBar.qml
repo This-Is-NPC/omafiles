@@ -30,8 +30,15 @@ Rectangle {
     /// One line, because a message that shares the line with the key hints is
     /// a message that gets clipped.
     property string message: ""
-    readonly property bool alarm: message !== ""
+    property bool editing: false
+    readonly property bool alarm: message !== "" && !editing
     property var hints: []
+    property alias nextHintFocus: hintStrip.nextFocus
+    property alias previousHintFocus: hintStrip.previousFocus
+    readonly property Item firstHint: hintStrip.firstControl
+    readonly property Item lastHint: hintStrip.lastControl
+    signal receiptRequested()
+    signal hintRequested(string key)
 
     readonly property string spoken: {
         const parts = []
@@ -55,7 +62,7 @@ Rectangle {
         return parts.join(", ")
     }
 
-    height: 26
+    height: bar.alarm ? 26 : Math.max(26, hintStrip.implicitHeight + 4)
     color: Theme.panel
 
     Accessible.role: Accessible.StaticText
@@ -67,6 +74,9 @@ Rectangle {
         anchors.leftMargin: 12
         anchors.verticalCenter: parent.verticalCenter
         spacing: 14
+        visible: !bar.editing
+        width: bar.editing ? 0 : Math.min(implicitWidth, Math.max(0, bar.width * (bar.alarm ? 0.45 : 0.35) - 24))
+        clip: true
 
         Label {
             quiet: true
@@ -109,21 +119,31 @@ Rectangle {
         }
     }
 
-    // The message takes the whole right side when there is one.
-    Label {
+    FocusableControl {
+        id: receipt
+        objectName: "statusReceipt"
         visible: bar.alarm
         anchors.left: facts.right
         anchors.leftMargin: 16
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        color: Theme.urgent
-        font.pixelSize: 11
-        text: bar.message
-        horizontalAlignment: Text.AlignRight
+        height: 22
+        tooltipCaption: bar.message
+        Accessible.name: "Read receipt: " + bar.message
+        onActivated: bar.receiptRequested()
+        Label {
+            anchors.fill: parent
+            verticalAlignment: Text.AlignVCenter
+            horizontalAlignment: Text.AlignRight
+            color: Theme.urgent
+            font.pixelSize: 11
+            text: bar.message
+        }
     }
 
     Hints {
+        id: hintStrip
         visible: !bar.alarm
         anchors.left: facts.right
         anchors.leftMargin: 16
@@ -131,5 +151,6 @@ Rectangle {
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
         model: bar.hints
+        onRequested: function (key) { bar.hintRequested(key) }
     }
 }

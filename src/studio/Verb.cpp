@@ -29,12 +29,15 @@ QString firstLine(const QString &text)
 // this menu into a no-op that reported success; `OMAFILES_JSON` would turn the
 // receipt this reads into a document it does not parse; `OMAFILES_YES` is the
 // window's to give per verb, not the environment's to give for all of them.
-QProcessEnvironment childEnvironment()
+QProcessEnvironment childEnvironment(bool journal)
 {
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     env.remove(QStringLiteral("OMAFILES_JSON"));
     env.remove(QStringLiteral("OMAFILES_DRY_RUN"));
     env.remove(QStringLiteral("OMAFILES_YES"));
+    env.remove(QStringLiteral("OMAFILES_STUDIO_JOURNAL"));
+    if (journal)
+        env.insert(QStringLiteral("OMAFILES_STUDIO_JOURNAL"), QStringLiteral("1"));
     return env;
 }
 
@@ -48,14 +51,15 @@ void processRunner(const QStringList &arguments, VerbReceipt done)
     }
 
     auto *proc = new QProcess;
-    proc->setProcessEnvironment(childEnvironment());
+    const bool journal = !journalVerb(arguments).isEmpty();
+    proc->setProcessEnvironment(childEnvironment(journal));
     QObject::connect(proc, &QProcess::finished, proc,
                      [proc, done, arguments](int code, QProcess::ExitStatus status) {
         const QString output = QString::fromUtf8(proc->readAllStandardOutput());
         const QString diagnostics = QString::fromUtf8(proc->readAllStandardError());
         proc->deleteLater();
         if (status == QProcess::NormalExit && code == 0) {
-            done(true, output, QString());
+            done(true, output, diagnostics.trimmed());
             return;
         }
         // The command line says why on stderr and says it well, so that line is
@@ -78,7 +82,7 @@ void processRunner(const QStringList &arguments, VerbReceipt done)
         proc->deleteLater();
         done(false, QString(), QStringLiteral("omafiles: %1").arg(said));
     });
-    proc->start(program, arguments);
+    proc->start(program, journal ? QStringList{QStringLiteral("--json")} + arguments : arguments);
 }
 
 // A function-local static, for the reason `Open.cpp` gives about its own: the
@@ -91,6 +95,13 @@ VerbRunner &installedRunner()
 }
 
 } // namespace
+
+QString journalVerb(const QStringList &arguments)
+{
+    const QString verb = arguments.value(0) == QLatin1String("--yes") ? arguments.value(1) : arguments.value(0);
+    return verb == QLatin1String("tag") || verb == QLatin1String("mv")
+        || verb == QLatin1String("cp") || verb == QLatin1String("trash") ? verb : QString();
+}
 
 VerbRunner setVerbRunner(VerbRunner runner)
 {
@@ -112,6 +123,13 @@ QString verbProgram()
     if (QFileInfo(beside).isExecutable())
         return beside;
     return findExecutable(QStringLiteral("omafiles"));
+}
+
+QString verbNotice(bool ok, const QString &success, const QString &diagnostics)
+{
+    if (!ok)
+        return diagnostics;
+    return diagnostics.trimmed().isEmpty() ? success : success + QStringLiteral("; ") + diagnostics.trimmed();
 }
 
 void runVerb(const QStringList &arguments, VerbReceipt done)

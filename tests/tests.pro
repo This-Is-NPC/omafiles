@@ -31,3 +31,6 @@ HEADERS += \
     ../src/core/Roots.h \
     ../src/core/View.h \
     ../src/core/Recent.h
+
+HEADERS += ../src/core/Trash.h
+SOURCES += ../src/core/Trash.cpp
