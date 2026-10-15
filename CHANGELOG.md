@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/This-Is-NPC/omafiles/compare/v0.2.0...v0.2.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **pkg:** install on current Arch and attach the source archive ([e5a230a](https://github.com/This-Is-NPC/omafiles/commit/e5a230a0f3985ecc9b657f62b36b1579c164e9f8))
+* **pkg:** pin each Qt module to its own version ([dc3a41a](https://github.com/This-Is-NPC/omafiles/commit/dc3a41af5a010d1c38f8433b210048a817163d4f))
+
 ## [0.2.0](https://github.com/This-Is-NPC/omafiles/compare/v0.1.0...v0.2.0) (2026-10-15)
 
 
