@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "7a0e84214d6af293457fcb4a702830c8527da4fd",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "omafiles",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "draft": false,
+      "prerelease": false,
+      "bump-minor-pre-major": true,
+      "extra-files": [
+        "qmake/version.pri",
+        "omafiles.usage.kdl",
+        "docs/cli.md",
+        "pkgbuild/PKGBUILD"
+      ]
+    }
+  }
+}

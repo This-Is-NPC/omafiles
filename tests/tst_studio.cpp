@@ -58,6 +58,7 @@
 #include "HelperProcess.h"
 #include "Preview.h"
 #include "../src/preview/Protocol.h"
+#include "omafiles_version.h"
 #include <QPdfWriter>
 #include <signal.h>
 #include <sched.h>
@@ -12226,6 +12227,8 @@ void TestStudio::thumbnailsOnlyVisibleRowsInEveryFileView()
         QTRY_VERIFY(requestedCount() <= capacity);
         focusRow("image-000.png");
         QTRY_VERIFY(requestedCount() > 0);
+        // The preview must keep the thumbnails already shown, so one is shown first.
+        QTRY_VERIFY(hasReady());
         key('i');
         auto *sheet = window()->findChild<QQuickItem *>("previewSheet");
         QVERIFY(sheet);

@@ -15,6 +15,7 @@ fi
 /usr/bin/python3 "$root/tests/test_write_scope.py"
 /usr/bin/python3 "$root/tests/test_benchmark.py"
 /usr/bin/python3 "$root/tests/test_link_check.py"
+/usr/bin/python3 "$root/tests/test_install_script.py"
 /usr/bin/python3 "$root/tests/test_benchmark_observer.py"
 python3 "$root/tests/test_incremental_build.py"
 /usr/bin/python3 "$root/tests/test_portal_install.py"

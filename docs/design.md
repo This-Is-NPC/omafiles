@@ -181,7 +181,7 @@ mise run shots              # Regenerate docs/img screenshots from the studio
 
 Use `mise run check` for the full gate.
 
-Git hooks can be installed with `mise run hooks:install`. They run the gate before each commit, refusing commits that fail.
+Git hooks can be installed with `mise run hooks:install`. The pre-commit hook runs the gate and refuses a commit that fails it. The pre-push hook runs `scripts/local-check`: a red gate refuses the push, and a green one posts the `local-check` commit status on GitHub.
 
 ### Usage documentation
 
@@ -190,6 +190,17 @@ The CLI's help text and documentation are generated from `omafiles.usage.kdl` us
 ```bash
 mise run usage:gen          # Regenerate docs/cli.md from the usage spec
 ```
+
+### Releases
+
+Releases are cut by [release-please](https://github.com/googleapis/release-please) from the Conventional Commits merged into `master` (`release-please-config.json`, `.release-please-manifest.json`, `.github/workflows/release.yml`). Before 1.0, `feat` and breaking changes raise the minor version and `fix` the patch. The version is written once in `qmake/version.pri` and copied, with an `x-release-please-version` mark, into `omafiles.usage.kdl`, `docs/cli.md` and `pkgbuild/PKGBUILD`; `tests/test_cli.py` checks that every copy matches `omafiles --version`.
+
+1. `master` requires the `local-check` status on an up-to-date branch, refuses force pushes and deletion, and lets administrators bypass the rule. Nothing on GitHub runs the gate: it needs the system Qt toolchain.
+2. Merge pull requests with a merge commit and an empty body (`gh pr merge N --merge --body ""`). A squash merge loses the commit types release-please reads.
+3. release-please opens or updates the `chore(master): release X.Y.Z` pull request. Its commits were pushed by a bot, so check its branch out and run `mise run local-check`, or `scripts/local-check --post-only --state=success` after gating that tree by hand.
+4. Merging it creates the tag and the GitHub release. The `package` job builds `pkgbuild/PKGBUILD` from the tag with `scripts/package` in an Arch container and attaches the package and its `SHA256SUMS`, which `install.sh` downloads and checks ([How to install and remove](how-to-install-and-remove.md)).
+
+`mise run package` builds the same package from the committed `HEAD` into `build/arch/pkg`. `pkgbuild/PKGBUILD` is the local twin of the recipe in `omarchy-pkgs`, which builds the same files from the tarball of a tag.
 
 ## 8. Performance and what was measured
 

@@ -8,9 +8,16 @@ Tags on files with a CLI and a Qt Quick window over the same text index. Nothing
 
 ## Install
 
-Not published as an Omarchy default yet. A pre-built binary is not currently available.
+On Arch or Omarchy, x86_64:
 
-To build from source, see [the design page](docs/design.md).
+```bash
+curl -fsSL https://raw.githubusercontent.com/This-Is-NPC/omafiles/master/install.sh | bash
+```
+
+It downloads the latest release's package, checks it against the release's
+`SHA256SUMS` and installs it with `pacman -U`; `sudo pacman -R omafiles` takes it
+off again. [How to install and remove](docs/how-to-install-and-remove.md) covers
+versions, a dry run and updates.
 
 ## Start here
 
@@ -75,7 +82,7 @@ Full keyboard controls are documented in the sections above. Pointer actions wor
 
 ## Requirements
 
-- Qt 6: `qt6-base`, `qt6-declarative`, `qt6-pdf`, `qt6-multimedia`
+- Qt 6: `qt6-base`, `qt6-declarative`, `qt6-webengine` (QtPdf), `qt6-multimedia`
 - `libarchive` for archive compression, extraction and previews
 - `kwindowsystem` (KF6) for portal parent-window integration on Wayland and X11
 - `xdg-utils` for `omafiles open`

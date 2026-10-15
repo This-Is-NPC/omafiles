@@ -1,43 +1,21 @@
 #!/usr/bin/env bash
-# Push gate — installed by `mise run hooks:install`.
-# Execs `scripts/check.sh`, same definition of green as pre-commit.
-# Skips when only deletions are pushed. Bypass: `git push --no-verify`.
+# Push gate, installed by `mise run hooks:install`.
+#
+# Runs scripts/local-check --pre-push once per commit being pushed: a red gate
+# refuses the push, a green one posts the `local-check` status master requires
+# before a merge. Tags and deletions carry no new tree and pass. Skip with
+# OMAFILES_SKIP_LOCAL_CHECK=1, or `git push --no-verify`.
 set -uo pipefail
 
-remote_name="${1:-the remote}"
-
-root="$(git rev-parse --show-toplevel 2>/dev/null)" || root=""
-if [ -z "$root" ]; then
-  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-fi
+root="$(git rev-parse --show-toplevel)" || exit 1
 cd "$root" || exit 1
 
-absent_object="0000000000000000000000000000000000000000"
-publishing=0
-while read -r local_ref local_sha _remote_ref remote_sha; do
-  [ -z "${local_ref:-}" ] && continue
-  if [ "${local_sha:-$absent_object}" != "$absent_object" ]; then
-    publishing=1
-  fi
+zero="0000000000000000000000000000000000000000"
+checked=""
+while read -r _local_ref local_sha remote_ref _remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  case "$remote_ref" in refs/tags/*) continue ;; esac
+  case " $checked " in *" $local_sha "*) continue ;; esac
+  OMAFILES_LOCAL_CHECK_SHA="$local_sha" scripts/local-check --pre-push </dev/null || exit $?
+  checked="$checked $local_sha"
 done
-
-if [ "$publishing" -eq 0 ]; then
-  echo "pre-push: no new commit is going to ${remote_name} — the gate did not run."
-  exit 0
-fi
-
-if [ ! -x "scripts/check.sh" ]; then
-  echo "pre-push: PUSH REFUSED — scripts/check.sh is missing or not executable." >&2
-  exit 1
-fi
-
-echo "pre-push: running \`scripts/check.sh\` — the push depends on it."
-started=$SECONDS
-scripts/check.sh
-status=$?
-elapsed=$((SECONDS - started))
-if [ "$status" -ne 0 ]; then
-  echo "pre-push: PUSH REFUSED — the gate failed in ${elapsed}s. Reproduce with: scripts/check.sh" >&2
-  exit 1
-fi
-echo "pre-push: the gate passed in ${elapsed}s — push cleared."

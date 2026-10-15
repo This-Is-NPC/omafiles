@@ -305,5 +305,11 @@ pinned CPUs and memory; it never measures or compares another
 application. Its method and results are in `docs/benchmark.md` and
 `docs/benchmark-results.md`.
 
+Releases come from release-please: merge pull requests into `master` with a
+merge commit, and the release workflow attaches the package `pkgbuild/PKGBUILD`
+builds and its `SHA256SUMS`, which `install.sh` installs. The pre-push hook runs
+`scripts/local-check`, which posts the `local-check` status `master` requires.
+`docs/design.md` §7 has the whole flow.
+
 Guides: `docs/README.md` maps every page; `docs/design.md` is for
 contributors. Checks and how to run them: `docs/design.md` §9.

@@ -27,7 +27,7 @@ fi
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
-"${usage[@]}" g markdown -f "$kdl" --out-file "$tmp"
+"$root/scripts/usage-markdown.sh" "$tmp"
 
 if ! cmp -s "$out" "$tmp"; then
   echo "usage-check: $out is stale (run scripts/usage-gen.sh)" >&2

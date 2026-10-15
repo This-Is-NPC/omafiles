@@ -21,7 +21,7 @@ class UsageToolTest(unittest.TestCase):
         scripts = self.project / "scripts"
         scripts.mkdir(parents=True)
         for name in ("usage.py", "test-environment.py", "write_scope.py",
-                     "usage-check.sh", "usage-gen.sh"):
+                     "usage-check.sh", "usage-gen.sh", "usage-markdown.sh"):
             shutil.copy2(ROOT / "scripts" / name, scripts / name)
         (self.project / "mise.toml").write_text('[tools]\nusage = "6.6.0"\nrust = "stable"\n')
         self.env = os.environ.copy()
