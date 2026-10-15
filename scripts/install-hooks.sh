@@ -31,4 +31,5 @@ for hook in "${required_hooks[@]}"; do
 done
 
 echo "Hooks installed: core.hooksPath=$hooks_path"
-echo "  pre-commit and pre-push both exec 'scripts/check.sh' and refuse when it is red."
+echo "  pre-commit execs 'scripts/check.sh' and refuses when it is red."
+echo "  pre-push runs scripts/local-check: a red gate refuses the push, a green one posts local-check."

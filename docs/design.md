@@ -181,7 +181,7 @@ mise run shots              # Regenerate docs/img screenshots from the studio
 
 Use `mise run check` for the full gate.
 
-Git hooks can be installed with `mise run hooks:install`. They run the gate before each commit, refusing commits that fail.
+Git hooks can be installed with `mise run hooks:install`. The pre-commit hook runs the gate and refuses a commit that fails it. The pre-push hook runs `scripts/local-check`: a red gate refuses the push, and a green one posts the `local-check` commit status on GitHub.
 
 ### Usage documentation
 

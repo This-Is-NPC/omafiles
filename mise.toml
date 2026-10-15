@@ -30,7 +30,7 @@ description = "Runs the local gate (docs current, links resolve, QML clean, pict
 run = "scripts/check.sh"
 
 [tasks."hooks:install"]
-description = "Installs versioned git hooks that exec scripts/check.sh"
+description = "Installs versioned git hooks: pre-commit runs the gate, pre-push runs local-check"
 run = "scripts/install-hooks.sh"
 
 [tasks.shots]
@@ -44,3 +44,7 @@ run = "scripts/qml-check.sh"
 [tasks."usage:gen"]
 description = "Regenerates docs/cli.md from omafiles.usage.kdl"
 run = "scripts/usage-gen.sh"
+
+[tasks."local-check"]
+description = "Runs the gate on HEAD and posts the local-check status master requires"
+run = "scripts/local-check"
