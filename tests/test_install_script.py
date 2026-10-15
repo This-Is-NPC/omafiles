@@ -46,6 +46,16 @@ class InstallScriptTest(unittest.TestCase):
         self.assertRegex(result.stdout, rf"^sudo pacman -U \S+/{PACKAGE}\n$")
         self.assertIn(f"downloading {PACKAGE}", result.stderr)
 
+    def test_the_source_archive_beside_the_package_is_not_installed(self):
+        self.publish(b"package")
+        source = b"source"
+        (self.release / "omafiles-0.2.0.tar.gz").write_bytes(source)
+        sums = self.release / "SHA256SUMS"
+        sums.write_text(f"{hashlib.sha256(source).hexdigest()}  omafiles-0.2.0.tar.gz\n" + sums.read_text())
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertRegex(result.stdout, rf"^sudo pacman -U \S+/{PACKAGE}\n$")
+
     def test_a_package_that_does_not_match_its_checksum_is_refused(self):
         self.publish(b"package", digest="0" * 64)
         result = self.install()

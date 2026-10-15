@@ -56,9 +56,16 @@ jobs:
           chown -R builder "$GITHUB_WORKSPACE"
           su builder -c "cd '$GITHUB_WORKSPACE' && scripts/package"
 
-      - name: Attach the package and SHA256SUMS to the release
+      # The source archive is what a recipe building from source downloads;
+      # SHA256SUMS names it beside the package so its checksum can be read
+      # without fetching it.
+      - name: Attach the package, the source archive and SHA256SUMS to the release
         run: |
+          version="${TAG#v}"
+          git archive --format=tar.gz --prefix="omafiles-$version/" \
+            -o "build/arch/pkg/omafiles-$version.tar.gz" HEAD
           cd build/arch/pkg
-          sha256sum omafiles-[0-9]*.pkg.tar.zst > SHA256SUMS
+          sha256sum omafiles-[0-9]*.pkg.tar.zst "omafiles-$version.tar.gz" > SHA256SUMS
           cat SHA256SUMS
-          gh release upload "$TAG" omafiles-[0-9]*.pkg.tar.zst SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" omafiles-[0-9]*.pkg.tar.zst "omafiles-$version.tar.gz" SHA256SUMS \
+            --clobber --repo "$GITHUB_REPOSITORY"
