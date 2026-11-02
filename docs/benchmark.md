@@ -55,8 +55,10 @@ it read-only. The million-file tree is never created directly in `/tmp`.
 Only resources registered by this invocation and carrying its ownership label
 are removed. A durable journal records ownership before creation. The outer
 supervisor retries cleanup in a fresh isolated process if SIGINT/SIGTERM kills
-the measurement sandbox. Partial JSON reports remain marked incomplete. A
-cleanup failure returns an error and retains the ownership journal for recovery;
+the measurement sandbox. Partial JSON reports remain marked incomplete. When a
+Docker removal command times out, the harness inspects the resource once: an
+absent resource counts as removed, and one that still exists or cannot be
+inspected is a cleanup failure. A cleanup failure returns an error and retains the ownership journal for recovery;
 the command never prunes unrelated containers, volumes or images. SIGKILL of
 the outer supervisor or host failure cannot execute a cleanup handler.
 

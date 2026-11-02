@@ -157,7 +157,12 @@ class OwnedDocker:
         if (labels or {}).get(LABEL) != self.token:
             raise RuntimeError(f"Refusing to remove unowned {kind}: {name}")
         args = ("volume", "rm", name) if kind == "volume" else ("rm", "--force", name)
-        self.docker(*args, timeout=300 if kind == "volume" else 60)
+        try:
+            self.docker(*args, timeout=300 if kind == "volume" else 60)
+        except subprocess.TimeoutExpired:
+            # A timed-out client does not say whether the daemon finished the removal.
+            if self.inspect(kind, name) is not None:
+                raise RuntimeError(f"Owned {kind} still exists after removal timed out: {name}") from None
 
     def cleanup(self):
         errors = []

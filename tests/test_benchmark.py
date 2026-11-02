@@ -329,6 +329,33 @@ class BenchmarkTest(unittest.TestCase):
         self.assertIn("Cannot connect", docker.cleanup()[0])
         self.assertEqual(docker.containers, ["owned"])
 
+    def test_removal_timeout_is_judged_by_the_resource_that_remains(self):
+        for kind in ("container", "volume"):
+            for outcome in ("removed", "kept", "unreachable"):
+                fake = FakeDocker()
+                docker = runner.OwnedDocker(fake)
+                name = docker.volume() if kind == "volume" else docker.container(["image"])
+                attempted = []
+                def timed_out(command, **kwargs):
+                    if "rm" in command:
+                        attempted.append(command)
+                        if outcome == "removed":
+                            fake(command, **kwargs)
+                        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+                    if outcome == "unreachable" and attempted:
+                        return subprocess.CompletedProcess(command, 1, "", "Cannot connect to Docker")
+                    return fake(command, **kwargs)
+                docker.call = timed_out
+                with self.subTest(kind=kind, outcome=outcome):
+                    errors = docker.cleanup()
+                    names = docker.volumes if kind == "volume" else docker.containers
+                    if outcome == "removed":
+                        self.assertEqual((errors, names), ([], []))
+                    else:
+                        self.assertEqual(len(errors), 1)
+                        self.assertIn("still exists" if outcome == "kept" else "Cannot connect", errors[0])
+                        self.assertEqual(names, [name])
+
     def test_durable_journal_precedes_creation_and_recovers_orphans(self):
         fake = FakeDocker()
         with tempfile.TemporaryDirectory(dir="/tmp") as temporary:
