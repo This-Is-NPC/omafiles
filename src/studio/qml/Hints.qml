@@ -16,7 +16,11 @@ Item {
     signal requested(string key)
 
     ListModel { id: actions }
-    onModelChanged: {
+    // Rebuilt once the change that asked for it is done: the model is computed
+    // from where focus is, and removing the focused hint inside that
+    // computation would move focus while it is still being read.
+    onModelChanged: Qt.callLater(hints.rebuild)
+    function rebuild() {
         for (let i = 0; i < model.length; ++i) {
             const action = { shortcut: model[i].key, caption: model[i].label }
             if (i < actions.count) actions.set(i, action)

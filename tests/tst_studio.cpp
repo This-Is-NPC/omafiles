@@ -13759,6 +13759,9 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
                     && item->property("tooltipCaption").toString() == label) return item;
         return nullptr;
     };
+    // Footer actions change the region, the region rebuilds the footer, and
+    // the rebuild must not feed back into the region while it is written.
+    QTest::failOnWarning(QRegularExpression(QStringLiteral("Binding loop detected")));
     const QSize original = window()->size();
     const auto resize = qScopeGuard([&] { window()->resize(original); });
     window()->resize(420, 300); settle();
@@ -13766,6 +13769,15 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     auto *folder = qobject_cast<FolderModel *>(filesRoot()->property("folder").value<QObject *>());
     QVERIFY(folder); folder->clearMarks();
     auto *menu = itemsNamed("fileMenu").first();
+    // Submitting a path through its footer action first leaves the region's
+    // bindings in the order that fed the footer back into the region.
+    openInlinePrompt("path");
+    auto *status = itemsNamed("statusBar").first();
+    QTRY_VERIFY(status->property("lastHint").value<QQuickItem *>());
+    status->property("lastHint").value<QQuickItem *>()->forceActiveFocus();
+    key(Qt::Key_Return);
+    QVERIFY(!window()->property("editingPath").toBool());
+    focusRow("one.txt");
     for (int activation = 0; activation < 3; ++activation) {
         auto *button = hint("menu"); QVERIFY(button);
         window()->update(); QTest::qWait(30);
@@ -13790,8 +13802,14 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     QVERIFY(tapItem(window(), mark)); settle();
     QCOMPARE(folder->markedCount(), 0);
     auto *filter = hint("filter"); QVERIFY(filter);
+    filter->forceActiveFocus();
     QVERIFY(tapItem(window(), filter)); settle();
     QVERIFY(window()->property("filtering").toBool());
+    QCOMPARE(window()->property("focusRegion").toString(), QStringLiteral("filter"));
+    key('x');
+    QCOMPARE(tab()->property("filter").toString(), QStringLiteral("x"));
+    key(Qt::Key_Backspace);
+    QCOMPARE(tab()->property("filter").toString(), QString());
     auto *keep = hint("keep"); QVERIFY(keep);
     QVERIFY(tapItem(window(), keep)); settle();
     QVERIFY(!window()->property("filtering").toBool());
