@@ -10183,6 +10183,9 @@ void TestStudio::preservesTextSelectionInResultEditors()
     QFETCH(bool, palette);
     QFETCH(int, width);
     QFETCH(bool, selected);
+    // Restoring the fixture after adding 32 tags shrinks the dock's tag list
+    // to seven rows; no row it built ahead may be cancelled by a stale index.
+    QTest::failOnWarning(QRegularExpression(QStringLiteral("DelegateModel")));
     const QSize original = window()->size();
     const auto restore = qScopeGuard([&] {
         for (const QString &name : {QStringLiteral("tagSheet"), QStringLiteral("commandPalette")})
