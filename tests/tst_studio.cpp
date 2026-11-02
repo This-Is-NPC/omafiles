@@ -398,6 +398,7 @@ private slots:
     void scrollsBoundedSheetsAndTooltips();
     void routesSidebarKeysByScrollRange_data();
     void routesSidebarKeysByScrollRange();
+    void movesFocusOffAHiddenDetailsControl();
     void declinesNavigationWithoutScrollRange_data();
     void declinesNavigationWithoutScrollRange();
     void preservesTextSelectionInResultEditors_data();
@@ -10037,11 +10038,46 @@ void TestStudio::routesSidebarKeysByScrollRange()
         if (navigationKey == Qt::Key_Home) QCOMPARE(cursor(), 0);
         if (navigationKey == Qt::Key_End) QCOMPARE(cursor(), 120);
         QCOMPARE(scroll->property("contentY").toReal(), 0.0);
-        if (navigationKey != Qt::Key_Home) QVERIFY(control->hasActiveFocus());
+        // The parent row has no mode, so Home hides the focused bit; the
+        // keyboard moves on to a control that is still drawn.
+        if (navigationKey == Qt::Key_Home) QTRY_VERIFY(!bits->isVisible());
+        else QVERIFY(control->hasActiveFocus());
     }
     QCOMPARE(QFileInfo(path).permissions(), permissions);
-    if (overflowing || navigationKey != Qt::Key_Home)
-        QTRY_VERIFY(hasFocusOutline(window(), overflowing ? scroll : control, m_theme->accent()));
+    auto *focus = window()->activeFocusItem();
+    QVERIFY(focus && focus->isVisible());
+    QTRY_VERIFY(hasFocusOutline(window(), overflowing ? scroll : focus, m_theme->accent()));
+}
+
+// A details control hidden under the keyboard hands it to the next control
+// that is drawn: the parent row has no mode, so its permission bits hide.
+void TestStudio::movesFocusOffAHiddenDetailsControl()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QFile file(directory.filePath(QStringLiteral("one.txt")));
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.close();
+    tab()->setCwd(directory.path());
+    auto *folder = filesRoot()->property("folder").value<QObject *>();
+    QTRY_COMPARE_WITH_TIMEOUT(folder->property("count").toInt(), 2, asyncTimeout);
+    QVERIFY(QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(1))));
+    auto *dock = window()->property("activeDock").value<QQuickItem *>();
+    QVERIFY(dock);
+    auto *bits = dock->findChild<QQuickItem *>("detailsMode");
+    QVERIFY(bits);
+    auto *control = bits->property("firstControl").value<QQuickItem *>();
+    QVERIFY(control);
+    QTRY_VERIFY_WITH_TIMEOUT(control->isVisible() && control->isEnabled(), asyncTimeout);
+    control->forceActiveFocus();
+    QTRY_VERIFY(control->hasActiveFocus());
+
+    key(Qt::Key_Home);
+    QCOMPARE(cursor(), 0);
+    QTRY_VERIFY(!bits->isVisible());
+    auto *focus = window()->activeFocusItem();
+    QVERIFY2(focus && focus->isVisible(), "the keyboard stayed on a hidden control");
+    QTRY_VERIFY(hasFocusOutline(window(), focus, m_theme->accent()));
 }
 
 void TestStudio::declinesNavigationWithoutScrollRange_data()
