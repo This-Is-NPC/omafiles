@@ -15,10 +15,11 @@ validation environment. With `--build`, it copies that directory's CLI, Studio
 and helper binaries into a frozen read-only snapshot. It compiles the external
 Qt observer separately; no benchmark instrumentation enters product builds.
 Output is JSON with raw per-run evidence and a Markdown table beside it. The
-default omafiles output is a uniquely named JSON file in `/tmp`; `--output`
-selects a path inside the repository or `/tmp`. Symbolic links and output files
-with multiple hard links are refused. Output filenames must end in `.json` or
-`.json.gz`. Existing reports at an explicitly selected path are replaced.
+default output is a uniquely named gzip-compressed `.json.gz` file in `/tmp`;
+`--output` selects a path inside the repository or `/tmp`. Output filenames
+must end in `.json` (uncompressed) or `.json.gz` (compressed). Symbolic links
+and output files with multiple hard links are refused. Existing reports at an
+explicitly selected path are replaced.
 
 ## Requirements and isolation
 
