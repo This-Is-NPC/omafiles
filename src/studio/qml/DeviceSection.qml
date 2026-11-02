@@ -4,7 +4,7 @@ import QtQuick
 import omafiles
 
 Column {
-    id: section
+    id: deviceSection
     property real maximumHeight: 160
     property alias list: devices
     readonly property Item focusTarget: devices.count > 0 ? devices : heading
@@ -32,7 +32,7 @@ Column {
     Component.onCompleted: updateRows()
     Connections {
         target: Devices
-        function onChanged() { section.updateRows() }
+        function onChanged() { deviceSection.updateRows() }
     }
     spacing: 5
 
@@ -43,11 +43,11 @@ Column {
         height: 24
         handCursor: true
         tabFocusable: devices.count === 0 || activeFocus
-        pointerFocus: section.focusTarget
+        pointerFocus: deviceSection.focusTarget
         Accessible.name: "Devices"
-        onActiveFocusChanged: if (activeFocus) section.focusEntered()
-        onActivated: section.focusTarget.forceActiveFocus()
-        Keys.onPressed: function (event) { section.keyRequested(event) }
+        onActiveFocusChanged: if (activeFocus) deviceSection.focusEntered()
+        onActivated: deviceSection.focusTarget.forceActiveFocus()
+        Keys.onPressed: function (event) { deviceSection.keyRequested(event) }
         Label { anchors.verticalCenter: parent.verticalCenter; quiet: true; text: "devices" }
         Label { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; quiet: true; text: "d" }
     }
@@ -56,7 +56,7 @@ Column {
         id: devices
         objectName: "sidebarDevices"
         width: parent.width
-        height: Math.min(contentHeight, section.maximumHeight)
+        height: Math.min(contentHeight, deviceSection.maximumHeight)
         visible: count > 0
         activeFocusOnTab: count > 0 || activeFocus
         clip: true
@@ -69,28 +69,28 @@ Column {
         currentIndex: count > 0 ? 0 : -1
         Accessible.role: Accessible.List
         Accessible.name: "Devices"
-        Keys.onPressed: function (event) { section.keyRequested(event) }
+        Keys.onPressed: function (event) { deviceSection.keyRequested(event) }
         function reveal() {
             if (currentIndex >= 0) positionViewAtIndex(currentIndex, ListView.Contain)
-            section.selectionChanged()
+            deviceSection.selectionChanged()
         }
         onCurrentIndexChanged: {
-            if (!section.updating) {
+            if (!deviceSection.updating) {
                 const row = Devices.entries[currentIndex]
-                section.selectedId = row ? row.id : ""
+                deviceSection.selectedId = row ? row.id : ""
                 Qt.callLater(reveal)
             }
         }
         onHeightChanged: Qt.callLater(reveal)
         onCountChanged: {
-            if (section.updating) return
+            if (deviceSection.updating) return
             if (currentIndex >= count) currentIndex = count - 1
             if (!count && activeFocus) heading.forceActiveFocus()
             Qt.callLater(reveal)
         }
         onActiveFocusChanged: if (activeFocus) {
             if (currentIndex < 0 && count > 0) currentIndex = 0
-            section.focusEntered()
+            deviceSection.focusEntered()
             reveal()
         }
         ImmediateWheel { anchors.fill: parent; view: devices; step: 32 }
@@ -141,12 +141,12 @@ Column {
                     onClicked: {
                         devices.currentIndex = row.index
                         devices.forceActiveFocus()
-                        section.activated(row.modelData.id)
+                        deviceSection.activated(row.modelData.id)
                     }
                     onContextRequested: function (position) {
                         devices.currentIndex = row.index
                         const at = row.mapToItem(null, position.x, position.y)
-                        section.menuRequested(row.modelData.id, at.x, at.y)
+                        deviceSection.menuRequested(row.modelData.id, at.x, at.y)
                     }
                 }
             }
@@ -163,7 +163,7 @@ Column {
                 onClicked: {
                     devices.currentIndex = row.index
                     const at = menuButton.mapToItem(null, 0, menuButton.height)
-                    section.menuRequested(row.modelData.id, at.x, at.y)
+                    deviceSection.menuRequested(row.modelData.id, at.x, at.y)
                 }
             }
         }

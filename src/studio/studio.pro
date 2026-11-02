@@ -3,7 +3,8 @@ OMAFILES_SOURCE_ROOT = $$clean_path($$PWD/../..)
 include($$PWD/../../qmake/layout.pri)
 
 QT       += core gui qml quick dbus concurrent
-CONFIG   += qtquickcompiler c++17 qmltypes
+CONFIG   += qtquickcompiler c++17
+include($$PWD/../../qmake/qmltypes.pri)
 
 # So the QML types this ships are registered by the build rather than by a line
 # in main(), and so `qmllint` can see them: a type registered in code is

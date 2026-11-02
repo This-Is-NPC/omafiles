@@ -20,16 +20,16 @@ Rectangle {
     /// list in front of you is already the vocabulary, narrowed, and a second
     /// copy of it beside that one is a second thing to read.
     property bool showTags: true
-    property alias tagsList: tagsList
-    property alias viewsList: viewsList
+    property alias tagsList: tagsListView
+    property alias viewsList: viewsListView
     property alias devicesList: devices.list
     readonly property Item devicesFocusTarget: devices.focusTarget
     property bool walkingDevices: false
     signal deviceMenuRequested(string id, real x, real y)
     signal deviceActivated(string id)
     property bool expanded: false
-    readonly property Item tagsFocusTarget: tagsList.count > 0 ? tagsList : tagsHeading
-    readonly property Item viewsFocusTarget: viewsList.count > 0 ? viewsList : viewsHeading
+    readonly property Item tagsFocusTarget: tagsListView.count > 0 ? tagsListView : tagsHeading
+    readonly property Item viewsFocusTarget: viewsListView.count > 0 ? viewsListView : viewsHeading
     signal tagActivated(string tag)
     signal tagMenuRequested(int row, real x, real y)
     signal tagEditRequested()
@@ -49,7 +49,7 @@ Rectangle {
     }
 
     function revealSelection() {
-        const list = walking ? tagsList : walkingViews ? viewsList : walkingDevices ? devices.list : null
+        const list = walking ? tagsListView : walkingViews ? viewsListView : walkingDevices ? devices.list : null
         const heading = walking ? tagsHeading : walkingDevices ? devices : viewsHeading
         if (!list)
             return
@@ -136,11 +136,11 @@ Rectangle {
             highlightMoveDuration: 0
             highlightResizeDuration: 0
             reuseItems: true
-            id: viewsList
+            id: viewsListView
             objectName: "sidebarViews"
             activeFocusOnTab: count > 0
             Keys.onPressed: function (event) { dock.keyRequested(event) }
-            onActiveFocusChanged: dock.focusList(viewsList)
+            onActiveFocusChanged: dock.focusList(viewsListView)
             width: parent.width
             // Its own contents, and never more than a third of the panel: the
             // vocabulary underneath has to stay reachable however many views
@@ -158,10 +158,10 @@ Rectangle {
             Accessible.name: "Views"
 
             Rectangle {
-                parent: viewsList
+                parent: viewsListView
                 anchors.fill: parent
                 color: "transparent"
-                border.width: viewsList.activeFocus ? 1 : 0
+                border.width: viewsListView.activeFocus ? 1 : 0
                 border.color: Theme.accent
                 z: 2
             }
@@ -174,7 +174,7 @@ Rectangle {
                 required property string asks
                 required property int index
                 readonly property bool onCursor: dock.walkingViews
-                                                 && viewsList.currentIndex === index
+                                                 && viewsListView.currentIndex === index
 
                 width: ListView.view.width
                 height: 25
@@ -265,11 +265,11 @@ Rectangle {
             highlightMoveDuration: 0
             highlightResizeDuration: 0
             reuseItems: true
-            id: tagsList
+            id: tagsListView
             objectName: "sidebarTags"
             activeFocusOnTab: count > 0
             Keys.onPressed: function (event) { dock.keyRequested(event) }
-            onActiveFocusChanged: dock.focusList(tagsList)
+            onActiveFocusChanged: dock.focusList(tagsListView)
             width: parent.width
             visible: dock.showTags
             height: dock.showTags ? Math.min(contentHeight,
@@ -285,10 +285,10 @@ Rectangle {
             Accessible.name: "Tags"
 
             Rectangle {
-                parent: tagsList
+                parent: tagsListView
                 anchors.fill: parent
                 color: "transparent"
-                border.width: tagsList.activeFocus ? 1 : 0
+                border.width: tagsListView.activeFocus ? 1 : 0
                 border.color: Theme.accent
                 z: 2
             }
@@ -300,7 +300,7 @@ Rectangle {
                 required property int count
                 required property int index
                 readonly property bool chosen: dock.tab && dock.tab.selectedTag === tag
-                readonly property bool onCursor: dock.walking && tagsList.currentIndex === index
+                readonly property bool onCursor: dock.walking && tagsListView.currentIndex === index
 
                 width: ListView.view.width
                 height: 25
