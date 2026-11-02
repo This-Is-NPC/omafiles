@@ -726,8 +726,9 @@ def supervise(argv, output):
         if output.is_file():
             document = load_json(output)
             document["cleanup_errors"] = errors
-            if status not in (0, 1):
-                document.update(status="incomplete", error=f"Benchmark process exited {status}")
+            if status:
+                document.update(status="incomplete",
+                                error=document.get("error") or f"Benchmark process exited {status}")
             if errors:
                 document["cleanup_journal"] = str(control)
             save(document, output)

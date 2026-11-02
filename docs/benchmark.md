@@ -209,6 +209,9 @@ refused before analysis. Zero successful samples for any metric is not a valid m
 
 Exit 0 means a complete measurement; exit 2 means an incomplete/inconclusive result, invalid input or
 cleanup failure. SIGINT/SIGTERM cancellation returns 130 after supervised cleanup.
+The measurement process exits 0 only for a report it marked complete. The outer
+supervisor marks the report incomplete for any other exit and keeps the error
+the report already records, or names the exit status when there is none.
 
 The A→B column is A/B for latency and RSS, and B−A percentage points for idle
 CPU. Zero/zero ratios are undefined. RSS A/B is a memory ratio, not a speedup.

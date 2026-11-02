@@ -712,6 +712,26 @@ class CompressedReportsTest(unittest.TestCase):
             self.assertEqual(result["runs"], document["runs"])
             self.assertEqual(result["identity"], document["identity"])
 
+    def test_supervisor_keeps_only_a_successful_child_complete(self):
+        cases = ((0, "complete", None, "complete", None),
+                 (1, "complete", None, "incomplete", "Benchmark process exited 1"),
+                 (2, "incomplete", "Fixture helper failed", "incomplete", "Fixture helper failed"),
+                 (2, "incomplete", None, "incomplete", "Benchmark process exited 2"))
+        for exit, written, error, status, reported in cases:
+            with self.subTest(exit=exit, error=error), tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+                output = Path(temporary) / "report.json.gz"
+                def child(output=output, written=written, error=error, exit=exit):
+                    runner.save(dict(self.document(), status=written, error=error), output)
+                    return exit
+                process = Mock()
+                process.wait.side_effect = child
+                with patch.object(runner.subprocess, "Popen", return_value=process), \
+                     patch.object(runner.signal, "signal"):
+                    self.assertEqual(runner.supervise([], output), exit)
+                result = runner.load_json(output)
+                self.assertEqual((result["status"], result["error"]), (status, reported))
+                self.assertEqual(len(result["runs"]), 10)
+
 
 class MemoryObservationTest(unittest.TestCase):
     def test_memory_capture_suspends_cyclic_gc_and_restores_callers_state(self):
