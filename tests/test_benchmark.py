@@ -40,7 +40,7 @@ def observation(config="A", fixture="1000", repeat=1, value=10, app="omafiles"):
     count = 2000 if fixture == "images-2000" else int(fixture)
     phases = {name: dict(status="complete", evidence=dict(event="complete", operation=name, ms=value,
               visible_count=1+parent if name == "filter" else count+parent))
-              for name in ("listing", "wheel", "open_filter", "filter", "thumbnail", "preview")}
+              for name in ("listing", "wheel", "open_filter", "filter", "thumbnail", "thumbnail_grid", "preview")}
     memory = memory_evidence(value, value + 2000)
     return dict(config=config, fixture=fixture, repeat=repeat, app=app, phases=phases, memory=memory,
                 events=[dict(event="first_frame", ms=value), dict(viewport_width=1180, viewport_height=720)]
@@ -58,7 +58,7 @@ def observation(config="A", fixture="1000", repeat=1, value=10, app="omafiles"):
 
 
 def identity():
-    return dict(method=3, memory_observer_cpu=2, image="image", architecture="arch", kernel="kernel", cpu_model="cpu",
+    return dict(method=4, memory_observer_cpu=2, image="image", architecture="arch", kernel="kernel", cpu_model="cpu",
                 configs={"A": dict(cpus=1, cpuset="0", memory="512m"),
                          "B": dict(cpus=2, cpuset="0,1", memory="1g")}, load_threshold=6,
                 runtime_sha256={k: "a"*64 for k in ("libQt6Core.so.6", "libQt6Quick.so.6", "libQt6Qml.so.6", "libc.so.6")},
@@ -91,6 +91,7 @@ def idle_observation(app, end_ticks=36, fixture="1000", config="A", repeat=1,
     measured.result["samples"] = []
     measured.process = SimpleNamespace(poll=lambda: None)
     measured.phase = lambda *args, **kwargs: 10
+    measured.observe = lambda *args, **kwargs: 10
     samples = iter(((0, 35), (895, 36), (1395.619202987291, 36),
                     (1396.1807700106874, 36), (end_ms, end_ticks),
                     (end_ms + 21, 37)))
@@ -355,6 +356,17 @@ class BenchmarkTest(unittest.TestCase):
                         self.assertEqual(len(errors), 1)
                         self.assertIn("still exists" if outcome == "kept" else "Cannot connect", errors[0])
                         self.assertEqual(names, [name])
+
+    def test_grid_completion_is_not_the_first_thumbnail_of_the_same_shortcut(self):
+        measured = session.Session.__new__(session.Session)
+        measured.serial, measured.result = 1, {"phases": {}}
+        measured.process = SimpleNamespace(poll=lambda: None)
+        measured.events = [dict(event="complete", serial=1, operation="thumbnail", ms=170)]
+        later = iter(([], [dict(event="complete", serial=1, operation="thumbnail_grid", ms=250)]))
+        measured.sample = lambda: measured.events.extend(next(later))
+        with patch.object(session.time, "sleep"):
+            self.assertEqual(measured.observe("thumbnail_grid", 30), 250)
+        self.assertEqual(measured.result["phases"]["thumbnail_grid"]["evidence"]["ms"], 250)
 
     def test_durable_journal_precedes_creation_and_recovers_orphans(self):
         fake = FakeDocker()

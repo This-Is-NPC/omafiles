@@ -2,9 +2,19 @@
 #include <QSaveFile>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <memory>
+#include <vector>
 #include <sys/inotify.h>
 #include <unistd.h>
 #include "probe.cpp"
+
+namespace omafiles {
+class Thumbnail : public QQuickItem {
+    Q_OBJECT
+public:
+    using QQuickItem::QQuickItem;
+};
+}
 
 class CommandReadWatch {
     int descriptor;
@@ -152,6 +162,61 @@ private slots:
         frame(&quick);
         QVERIFY(!pending.isEmpty());
         view->setProperty("contentY", 1280);
+        frame(&quick);
+        QVERIFY(pending.isEmpty());
+    }
+    void completesTheGridOnlyWhenEveryVisibleThumbnailWasRendered() {
+        QQuickWindow quick;
+        show(quick);
+        // A 300x200 viewport of 100x100 cells scrolled by half a row shows rows 0-2;
+        // the third row holds two of the eight cells.
+        QQuickItem view(quick.contentItem()), content(&view);
+        view.setSize({300, 200});
+        for (const auto &[name, value] : {std::pair{"cellWidth", 100}, {"cellHeight", 100}, {"contentY", 50},
+                                         {"originY", 0}, {"count", 8}})
+            view.setProperty(name, value);
+        view.setProperty("contentItem", QVariant::fromValue(&content));
+        std::vector<std::unique_ptr<QQuickItem>> cells, icons;
+        const auto cell = [&](int index, const char *kind) {
+            cells.push_back(std::make_unique<QQuickItem>(&content));
+            cells.back()->setProperty("index", index);
+            cells.back()->setProperty("kind", kind);
+            icons.push_back(std::make_unique<QQuickItem>(cells.back().get()));
+            icons.back()->setProperty("hasPreview", false);
+        };
+        cell(0, "parent");
+        for (int index = 1; index < 6; ++index) cell(index, "file");
+        omafiles::Thumbnail thumbnail(quick.contentItem());
+        thumbnail.setSize({20, 20});
+        thumbnail.setProperty("extent", 256);
+        thumbnail.setProperty("ready", true);
+        observer = observeCommands();
+        QVERIFY(observer);
+        pending = {{"operation", "thumbnail"}};
+        frame(&quick);
+        QCOMPARE(pending["operation"].toString(), QString("thumbnail_grid"));
+        icons[1]->setProperty("hasPreview", true);
+        frame(&quick);
+        frame(&quick);
+        QVERIFY2(!pending.isEmpty(), "one ready thumbnail does not fill the grid");
+        for (int index = 2; index < 6; ++index) icons[index]->setProperty("hasPreview", true);
+        frame(&quick);
+        frame(&quick);
+        QVERIFY2(!pending.isEmpty(), "the partial third row has no delegates yet");
+        cell(6, "file");
+        cell(7, "file");
+        frame(&quick);
+        frame(&quick);
+        QVERIFY2(!pending.isEmpty(), "partial-row thumbnails are still pending");
+        icons[6]->setProperty("hasPreview", true);
+        icons[7]->setProperty("hasPreview", true);
+        frame(&quick);
+        QVERIFY2(!pending.isEmpty(), "the first frame showing every thumbnail ready is unconfirmed");
+        icons[7]->setProperty("hasPreview", false);
+        frame(&quick);
+        icons[7]->setProperty("hasPreview", true);
+        frame(&quick);
+        QVERIFY2(!pending.isEmpty(), "a thumbnail that stopped being ready restarts confirmation");
         frame(&quick);
         QVERIFY(pending.isEmpty());
     }
