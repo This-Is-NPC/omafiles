@@ -28,7 +28,7 @@ struct DropPlan {
 };
 
 DropPlan planDrop(const QStringList &paths, const QString &directory,
-                  Qt::KeyboardModifiers modifiers)
+                  Qt::KeyboardModifiers modifiers, Qt::DropActions possible)
 {
     struct stat destination {};
     if (::stat(QFile::encodeName(directory).constData(), &destination) != 0)
@@ -44,7 +44,7 @@ DropPlan planDrop(const QStringList &paths, const QString &directory,
                         .arg(path, systemReason(errno))};
         same &= source.st_dev == destination.st_dev;
     }
-    return {fileDropAction(same, modifiers), {}};
+    return {fileDropAction(same, modifiers, possible), {}};
 }
 } // namespace
 
@@ -53,17 +53,17 @@ FileDragRunner setFileDragRunner(FileDragRunner runner)
     return std::exchange(dragRunner, std::move(runner));
 }
 
-Qt::DropAction fileDropAction(bool sameDevice, Qt::KeyboardModifiers modifiers)
+// An action the source does not offer becomes a copy, as QDropEvent::setDropAction does.
+Qt::DropAction fileDropAction(bool sameDevice, Qt::KeyboardModifiers modifiers,
+                              Qt::DropActions possible)
 {
     const bool copy = modifiers.testFlag(Qt::ControlModifier);
     const bool move = modifiers.testFlag(Qt::ShiftModifier);
-    if (copy && move)
-        return Qt::LinkAction;
-    if (copy)
-        return Qt::CopyAction;
-    if (move)
-        return Qt::MoveAction;
-    return sameDevice ? Qt::MoveAction : Qt::CopyAction;
+    const Qt::DropAction action = copy && move ? Qt::LinkAction
+        : copy ? Qt::CopyAction
+        : move || sameDevice ? Qt::MoveAction
+        : Qt::CopyAction;
+    return possible.testFlag(action) ? action : Qt::CopyAction;
 }
 
 void FileTransfer::startDrag(QQuickItem *source, const QStringList &paths)
@@ -109,7 +109,8 @@ bool FileTransfer::receive(const QList<QUrl> &urls, const QString &directory,
             emit requested(paths, directory, plan.action);
     });
     watcher->setFuture(QtConcurrent::run(planDrop, paths, directory,
-                                         Qt::KeyboardModifiers(modifiers)));
+                                         Qt::KeyboardModifiers(modifiers),
+                                         Qt::DropActions(possibleActions)));
     return true;
 }
 
