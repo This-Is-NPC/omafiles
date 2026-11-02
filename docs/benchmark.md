@@ -15,10 +15,11 @@ validation environment. With `--build`, it copies that directory's CLI, Studio
 and helper binaries into a frozen read-only snapshot. It compiles the external
 Qt observer separately; no benchmark instrumentation enters product builds.
 Output is JSON with raw per-run evidence and a Markdown table beside it. The
-default omafiles output is a uniquely named JSON file in `/tmp`; `--output`
-selects a path inside the repository or `/tmp`. Symbolic links and output files
-with multiple hard links are refused. Output filenames must end in `.json` or
-`.json.gz`. Existing reports at an explicitly selected path are replaced.
+default output is a uniquely named gzip-compressed `.json.gz` file in `/tmp`;
+`--output` selects a path inside the repository or `/tmp`. Output filenames
+must end in `.json` (uncompressed) or `.json.gz` (compressed). Symbolic links
+and output files with multiple hard links are refused. Existing reports at an
+explicitly selected path are replaced.
 
 ## Requirements and isolation
 
@@ -54,8 +55,10 @@ it read-only. The million-file tree is never created directly in `/tmp`.
 Only resources registered by this invocation and carrying its ownership label
 are removed. A durable journal records ownership before creation. The outer
 supervisor retries cleanup in a fresh isolated process if SIGINT/SIGTERM kills
-the measurement sandbox. Partial JSON reports remain marked incomplete. A
-cleanup failure returns an error and retains the ownership journal for recovery;
+the measurement sandbox. Partial JSON reports remain marked incomplete. When a
+Docker removal command times out, the harness inspects the resource once: an
+absent resource counts as removed, and one that still exists or cannot be
+inspected is a cleanup failure. A cleanup failure returns an error and retains the ownership journal for recovery;
 the command never prunes unrelated containers, volumes or images. SIGKILL of
 the outer supervisor or host failure cannot execute a cleanup handler.
 
@@ -119,9 +122,9 @@ Results measured with different observer versions are not comparable.
 
 ## Measurements
 
-Method 3 collects latency and RSS in separate sessions. Each session executes
+Method 4 collects latency and RSS in separate sessions. Each session executes
 the same startup, listing, idle and interaction workflow. The reported top-level
-frame/filter/wheel/settle/idle/thumbnail/preview values come only from the
+frame/filter/wheel/settle/idle/thumbnail/grid/preview values come only from the
 session marked `latency_only: true`, whose independent memory observer is
 disabled. Its frame probe and coarse CPU sampler remain enabled. The nested
 `memory_session` records the observed replay, including its timings, which are
@@ -151,7 +154,21 @@ and [Linux load averages](https://man7.org/linux/man-pages/man5/proc_loadavg.5.h
 | `peak_gui_rss_mib` | Peak sampled GUI resident set throughout startup and interactions | Independent 1 ms requested sampling, with recorded gaps/read spans; approximate kernel RSS counters, not PSS. |
 | `peak_tree_rss_mib` | Maximum concurrent app/descendant RSS sum from the independent observer | Distinct PIDs per snapshot; shared pages counted per process. Neither an exact instantaneous bound nor cgroup memory consumption. |
 | `thumbnail_ms` | Grid shortcut to a frame with a ready visible image thumbnail | First visible thumbnail, not completion of all 2k thumbnails. Images case only. |
-| `preview_ms` | Preview shortcut to a frame with a ready decoded image | Follows the thumbnail phase and may benefit from resident source data. Images case only. |
+| `thumbnail_grid_ms` | The same grid shortcut to the frame after the first frame in which every file cell in the grid viewport, including a partial last row, shows a ready thumbnail | Covers the visible cells, not all 2k images. Starts with an empty thumbnail cache. Images case only. |
+| `preview_ms` | Preview shortcut to a frame with a ready decoded image | Follows the grid phase and may benefit from resident source data. Images case only. |
+
+`thumbnail_ms` and `thumbnail_grid_ms` time one key press. The first ready
+thumbnail ends `thumbnail_ms`; the observer keeps watching the same window for
+the full grid. It takes the expected cells from the grid's geometry: cell size,
+viewport height, scroll position and model count give the rows the viewport
+shows, so a cell without a delegate keeps the grid pending. Each file cell needs
+a ready thumbnail. A value read when one frame is
+[swapped](https://doc.qt.io/qt-6/qquickwindow.html#frameSwapped) may have been
+set after that frame was synchronized, so the observer requests one more frame
+and completes on it only if every thumbnail is still ready. The grid has its own
+20-second deadline. Without a first thumbnail it is not observed, and the reason
+says so. The metric is omafiles-only and is not compared with other runs that
+lack it; results from method 3 have no `thumbnail_grid_ms`.
 
 Interactions begin only after expected listing count and filename are observed
 in a frame. Filter completion requires omafiles to observe the parent row plus
@@ -206,6 +223,9 @@ refused before analysis. Zero successful samples for any metric is not a valid m
 
 Exit 0 means a complete measurement; exit 2 means an incomplete/inconclusive result, invalid input or
 cleanup failure. SIGINT/SIGTERM cancellation returns 130 after supervised cleanup.
+The measurement process exits 0 only for a report it marked complete. The outer
+supervisor marks the report incomplete for any other exit and keeps the error
+the report already records, or names the exit status when there is none.
 
 The A→B column is A/B for latency and RSS, and B−A percentage points for idle
 CPU. Zero/zero ratios are undefined. RSS A/B is a memory ratio, not a speedup.
@@ -448,7 +468,7 @@ Current `memory.stat` anon/file/kernel counters cannot reconstruct the
 components at that historical peak. They and `memory.current`/`memory.peak`
 remain separately labeled diagnostics; none is substituted for process RSS.
 
-Method 3 records the observer source hash and CPU in the benchmark identity
+Method 4 records the observer source hash and CPU in the benchmark identity
 and validates the paired collection contract. Supplementary drivers use
 the same `measured_session` lifecycle and writable `/memory` control mount;
 the standalone session requires `--memory-control`. A direct container start

@@ -49,6 +49,7 @@ The table shows:
 - **peak_gui_rss_mib** — Peak resident memory of the GUI process alone
 - **peak_tree_rss_mib** — Peak resident memory summed across the app and its descendant processes
 - **thumbnail_ms** — Time to show the first ready thumbnail in the images fixture
+- **thumbnail_grid_ms** — Time until every thumbnail visible in the grid is ready, from the same key press
 - **preview_ms** — Time to show a decoded preview in the images fixture
 
 Results are shown separately for the first run and the median of subsequent runs, on both single-CPU (A) and dual-CPU (B) configurations. See [GUI benchmark](benchmark.md) for exactly what completes each metric and its limitations.

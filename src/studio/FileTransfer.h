@@ -14,7 +14,8 @@ namespace omafiles {
 using FileDragRunner = std::function<Qt::DropAction(QDrag *)>;
 FileDragRunner setFileDragRunner(FileDragRunner runner);
 
-Qt::DropAction fileDropAction(bool sameDevice, Qt::KeyboardModifiers modifiers);
+Qt::DropAction fileDropAction(bool sameDevice, Qt::KeyboardModifiers modifiers,
+                              Qt::DropActions possible);
 
 class FileTransfer : public QObject
 {

@@ -31,6 +31,11 @@ lock test's lower-bound measurement exercise their respective contracts, not
 background-work completion. Product helper memory, output, CPU and execution
 budgets remain separate from these test guards.
 
+`cancelsStaleTrashScans` holds a Trash scan inside its mount lookup and
+requests a fresh one with the global thread pool limited to one thread, the
+size Qt gives it under a one-CPU affinity mask. The fresh scan must complete
+while the stale one is still blocked, so the check covers one CPU on any host.
+
 `waitsForDelayedPlaybackAcknowledgement` uses a helper that acknowledges playback
 after six seconds. The assertion waits for the actual acknowledgement and checks
 the resulting state; it does not assert elapsed time. This controlled delay

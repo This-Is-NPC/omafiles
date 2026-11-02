@@ -21,6 +21,8 @@ For drops into this window:
 - Ctrl+Shift creates symbolic links.
 - Without a modifier, files on the destination's device move; files from another
   device copy. A set spanning devices copies.
+- An action the source does not offer copies instead. A source that offers
+  only copying always gets a copy, and its files stay where they are.
 
 The destination and file list are fixed when you release. Device checks and
 writes run asynchronously; the status bar reports completion or refusal.
