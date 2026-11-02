@@ -78,7 +78,10 @@ slot's single allowed CPU, keeping helpers on separate cores without pinning
 native decoders or the GUI thread.
 
 At most four decodes run at once. Qt's image allocation limit is configured to
-32 MiB at application startup, before thumbnail workers or cache readers start. External helpers share the 512 MiB admission budget described above.
+32 MiB at application startup, before thumbnail workers or cache readers start.
+An inherited `QT_IMAGEIO_MAXALLOC` does not change it: Qt reads that variable
+once, and the window hides it for that read and restores it for the
+applications it launches. External helpers share the 512 MiB admission budget described above.
 Completed display images are reduced to the actual icon size; the shared cache
 retains the standard 128/256-pixel tiers. Inputs above 64 megapixels, decoder allocations above 32 MiB
 and helper output above 8 MiB are refused; an in-process decoder finishes its

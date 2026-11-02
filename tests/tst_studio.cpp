@@ -751,6 +751,11 @@ void TestStudio::writeIndex()
     }
 }
 
+// Set before the application exists: the suite runs as if the user raised Qt's
+// decoder allocation limit, which neither the window nor the preview may obey.
+void raiseImageAllocationLimit() { qputenv("QT_IMAGEIO_MAXALLOC", "1024"); }
+Q_CONSTRUCTOR_FUNCTION(raiseImageAllocationLimit)
+
 void TestStudio::initTestCase()
 {
     QCOMPARE(QImageReader::allocationLimit(), 32);
@@ -13610,6 +13615,15 @@ void TestStudio::reportsPreviewFailureReasons_data()
     image.fill(Qt::red);
     QVERIFY(image.save(&buffer, "PNG"));
     QTest::newRow("truncated-image-body") << png.left(png.size() / 2) << QString("Cannot read this image:");
+    // 3000 × 3000 at 32 bits needs 34.3 MB, above the 32 MiB decoder limit and
+    // below the 1024 MiB this suite puts in QT_IMAGEIO_MAXALLOC.
+    QByteArray large;
+    QBuffer largeBuffer(&large);
+    QVERIFY(largeBuffer.open(QIODevice::WriteOnly));
+    QImage largeImage(3000, 3000, QImage::Format_RGB32);
+    largeImage.fill(Qt::red);
+    QVERIFY(largeImage.save(&largeBuffer, "PNG"));
+    QTest::newRow("over-allocation-limit") << large << QString("Cannot read this image:");
     const QByteArray palettePng = QByteArray::fromBase64(
         "iVBORw0KGgoAAAANSUhEUgAAAKAAAABkAQMAAAA7eKnMAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAADUExURf8AABniCTcAAAAHdElNRQfqCgsVKAZIaWfgAAAAJXRFWHRkYXRlOmNyZWF0ZQAyMDI2LTEwLTExVDIxOjQwOjA2KzAwOjAw3TUGdgAAACV0RVh0ZGF0ZTptb2RpZnkAMjAyNi0xMC0xMVQyMTo0MDowNiswMDowMKxovsoAAAAodEVYdGRhdGU6dGltZXN0YW1wADIwMjYtMTAtMTFUMjE6NDA6MDYrMDA6MDD7fZ8VAAAAGElEQVRIx2NgGAWjYBSMglEwCkbBKCAMAAg0AAHiHsIcAAAAAElFTkSuQmCC");
     QTest::newRow("truncated-palette-image") << palettePng.left(palettePng.size() / 2)
