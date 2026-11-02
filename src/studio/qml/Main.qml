@@ -1992,8 +1992,14 @@ Window {
                         - criteriaBar.height - filterBar.height - dividers
                 orientation: Qt.Horizontal
 
+                readonly property int handleWidth: 3
+                // A pane's least width, unless the split cannot hold every
+                // pane at it: then they share the width and none passes the edge.
+                readonly property real narrowest: Math.min(280,
+                    (width - handleWidth * (Workspace.paneCount - 1)) / Math.max(1, Workspace.paneCount))
+
                 handle: Rectangle {
-                    implicitWidth: 3
+                    implicitWidth: split.handleWidth
                     color: C.SplitHandle.pressed || C.SplitHandle.hovered
                            ? Theme.fill(Theme.accent, 0.5) : Theme.line
                 }
@@ -2005,6 +2011,7 @@ Window {
                         required property int index
                         pane: modelData
                         paneIndex: index
+                        narrowest: split.narrowest
                     }
                 }
             }
@@ -2845,7 +2852,7 @@ Window {
         color: Theme.background
         property var pane
         property int paneIndex
-        readonly property real narrowest: 280
+        required property real narrowest
         C.SplitView.minimumWidth: narrowest
         C.SplitView.preferredWidth: win.width / Math.max(1, Workspace.paneCount)
 

@@ -569,6 +569,7 @@ private slots:
     void reachesThePathBarWithTab();
     void pansTheGraphWithShiftHjk();
     void resizesTheSplitWithCtrlComma();
+    void fitsTheSplitInANarrowWindow();
     void runsTheCommandLineForWhatTheRowMenuChanges();
     void actsOnTheMarkedSetOnlyFromInsideIt();
     void copiesWhatTheRowIsToTheClipboard();
@@ -4680,6 +4681,36 @@ void TestStudio::resizesTheSplitWithCtrlComma()
         key(Qt::Key_Period, Qt::ControlModifier);
     QTRY_COMPARE(panes[0]->width(), 280.0);
     QVERIFY(panes[1]->x() + panes[1]->width() <= window()->width() + 0.5);
+}
+
+// A window too narrow for every pane's minimum shares its width between the
+// panes instead of pushing the last one past its edge.
+void TestStudio::fitsTheSplitInANarrowWindow()
+{
+    const QSize original = window()->size();
+    const int panesBefore = m_workspace->paneCount();
+    const auto restore = qScopeGuard([&] {
+        window()->resize(original);
+        if (panesBefore == 1)
+            key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+    });
+    window()->resize(420, 300);
+    if (panesBefore == 1)
+        key(Qt::Key_Backslash, Qt::ControlModifier);
+    QCOMPARE(m_workspace->paneCount(), 2);
+    for (const int focused : {1, 0}) {
+        m_workspace->setFocusedPane(focused);
+        key(Qt::Key_Period, Qt::ControlModifier);
+        for (QQuickItem *pane : itemsNamed(QStringLiteral("pane"))) {
+            const auto area = [pane] { return pane->mapRectToScene(pane->boundingRect()); };
+            QTRY_VERIFY2(area().width() > 0 && area().left() >= -0.5
+                             && area().right() <= window()->width() + 0.5,
+                         qPrintable(QStringLiteral("pane %1 spans x%2 to x%3 in a %4 px window")
+                                            .arg(pane->property("paneIndex").toInt())
+                                            .arg(area().left()).arg(area().right())
+                                            .arg(window()->width())));
+        }
+    }
 }
 
 // Half the row menu is a caller of the command line, and this is the check that
