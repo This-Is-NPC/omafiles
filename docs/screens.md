@@ -346,7 +346,7 @@ Picture: No picture yet.
 
 ## Drag and drop
 
-Drag a file from the list, details, or icons view. A marked row carries the marked set; an unmarked row carries that row alone. Drop onto a folder row, folder tab, or another application. The receiving application decides what to do. Dropping into this window: hold **Ctrl** to copy, **Shift** to move, or **Ctrl Shift** to link; without a modifier, files move on the same device and copy across devices.
+Drag a file from the list, details, or icons view. A marked row carries the marked set; an unmarked row carries that row alone. Drop onto a folder row, folder tab, or another application. The receiving application decides what to do. Dropping into this window: hold **Ctrl** to copy, **Shift** to move, or **Ctrl Shift** to link; without a modifier, files move on the same device and copy across devices. An action the source does not offer copies instead.
 
 Reach it: Click and drag a file.
 

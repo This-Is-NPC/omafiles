@@ -418,6 +418,7 @@ private slots:
     void editsTagsWithTouchAndPen();
     void exportsNativeFileDragsWithoutDeletingSources();
     void receivesLocalFileDropsWithConventionalActions();
+    void copiesDropsThatOfferOnlyCopying();
     void dropsIntoFolderRowsTabsAndOtherPanes();
     void linksClipboardFilesByKeyboard();
     void refusesDropsIntoVirtualViews();
@@ -9293,21 +9294,32 @@ void TestStudio::receivesLocalFileDropsWithConventionalActions()
     QSignalSpy refused(&transfer, &FileTransfer::refused);
     const QString one = m_tree.filePath("one.txt");
     const QString dir = m_tree.filePath("alpha");
+    const Qt::DropActions all = Qt::CopyAction | Qt::MoveAction | Qt::LinkAction;
+    const auto modifierSets = std::initializer_list<Qt::KeyboardModifiers>{Qt::NoModifier,
+        Qt::ControlModifier, Qt::ShiftModifier, Qt::ControlModifier | Qt::ShiftModifier};
     for (bool same : {false, true}) {
-        QCOMPARE(fileDropAction(same, Qt::ControlModifier), Qt::CopyAction);
-        QCOMPARE(fileDropAction(same, Qt::ShiftModifier), Qt::MoveAction);
-        QCOMPARE(fileDropAction(same, Qt::ControlModifier | Qt::ShiftModifier), Qt::LinkAction);
-        QCOMPARE(fileDropAction(same, Qt::NoModifier), same ? Qt::MoveAction : Qt::CopyAction);
+        QCOMPARE(fileDropAction(same, Qt::ControlModifier, all), Qt::CopyAction);
+        QCOMPARE(fileDropAction(same, Qt::ShiftModifier, all), Qt::MoveAction);
+        QCOMPARE(fileDropAction(same, Qt::ControlModifier | Qt::ShiftModifier, all), Qt::LinkAction);
+        QCOMPARE(fileDropAction(same, Qt::NoModifier, all), same ? Qt::MoveAction : Qt::CopyAction);
+        for (const auto modifiers : modifierSets)
+            QCOMPARE(fileDropAction(same, modifiers, Qt::CopyAction), Qt::CopyAction);
+        QCOMPARE(fileDropAction(same, Qt::ShiftModifier, Qt::CopyAction | Qt::LinkAction),
+                 Qt::CopyAction);
+        QCOMPARE(fileDropAction(same, Qt::ControlModifier | Qt::ShiftModifier,
+                                Qt::CopyAction | Qt::MoveAction), Qt::CopyAction);
     }
-    for (const auto modifiers : std::initializer_list<Qt::KeyboardModifiers>{Qt::NoModifier, Qt::ControlModifier, Qt::ShiftModifier,
-                                Qt::ControlModifier | Qt::ShiftModifier}) {
-        requested.clear();
-        QVERIFY(transfer.receive({QUrl::fromLocalFile(one), QUrl::fromLocalFile(one)}, dir,
-                                  modifiers, Qt::CopyAction | Qt::MoveAction));
-        QTRY_COMPARE(requested.size(), 1);
-        QCOMPARE(requested.first().at(0).toStringList(), QStringList{one});
-        QCOMPARE(requested.first().at(1).toString(), dir);
-        QCOMPARE(requested.first().at(2).toInt(), int(fileDropAction(true, modifiers)));
+    for (const Qt::DropActions possible : {Qt::DropActions(Qt::CopyAction), all}) {
+        for (const auto modifiers : modifierSets) {
+            requested.clear();
+            QVERIFY(transfer.receive({QUrl::fromLocalFile(one), QUrl::fromLocalFile(one)}, dir,
+                                      modifiers, possible));
+            QTRY_COMPARE(requested.size(), 1);
+            QCOMPARE(requested.first().at(0).toStringList(), QStringList{one});
+            QCOMPARE(requested.first().at(1).toString(), dir);
+            QCOMPARE(requested.first().at(2).toInt(),
+                     int(possible == all ? fileDropAction(true, modifiers, all) : Qt::CopyAction));
+        }
     }
     requested.clear();
     QVERIFY(transfer.receive({QUrl::fromLocalFile("/proc/self/status")}, dir, 0, Qt::CopyAction));
@@ -9346,7 +9358,8 @@ bool TestStudio::cancelPendingFileDrop()
 
 static bool sendFileDrop(QQuickItem *item, const QStringList &paths,
                          Qt::KeyboardModifiers modifiers = Qt::NoModifier,
-                         const QPointF &relative = QPointF(0.5, 0.5))
+                         const QPointF &relative = QPointF(0.5, 0.5),
+                         Qt::DropActions actions = Qt::CopyAction | Qt::MoveAction | Qt::LinkAction)
 {
     const QPointer<QQuickItem> target(item);
     const QPointer<QQuickWindow> window(item ? item->window() : nullptr);
@@ -9356,7 +9369,6 @@ static bool sendFileDrop(QQuickItem *item, const QStringList &paths,
     const QPointF point = target->mapToScene(QPointF(target->width() * relative.x(),
                                                    target->height() * relative.y()));
     std::unique_ptr<QMimeData> mime(fileMimeData(paths, false));
-    const Qt::DropActions actions = Qt::CopyAction | Qt::MoveAction | Qt::LinkAction;
     QDragEnterEvent enter(point.toPoint(), actions, mime.get(), Qt::LeftButton, modifiers);
     QCoreApplication::sendEvent(window, &enter);
     if (!enter.isAccepted())
@@ -9606,6 +9618,29 @@ void TestStudio::dropsIntoFolderRowsTabsAndOtherPanes()
     QCOMPARE(QFileInfo(link).symLinkTarget(), one);
     QVERIFY(QFileInfo::exists(one));
     QVERIFY(verbRuns().isEmpty());
+}
+
+void TestStudio::copiesDropsThatOfferOnlyCopying()
+{
+    const QString one = m_tree.filePath("one.txt");
+    const QString alpha = m_tree.filePath("alpha");
+    tab()->setCwd(alpha);
+    const auto restore = qScopeGuard([&] { tab()->setCwd(m_tree.path()); });
+    settle();
+    QQuickItem *floor = nullptr;
+    for (auto *area : itemsNamed("fileDropArea"))
+        if (area->isVisible() && area->property("directory").toString() == alpha
+            && area->height() > 100)
+            floor = area;
+    QVERIFY(floor);
+    for (const auto modifiers : {Qt::KeyboardModifiers(Qt::NoModifier),
+                                 Qt::KeyboardModifiers(Qt::ShiftModifier),
+                                 Qt::ControlModifier | Qt::ShiftModifier}) {
+        verbRuns().clear();
+        QVERIFY(sendFileDrop(floor, {one}, modifiers, QPointF(0.95, 0.95), Qt::CopyAction));
+        QTRY_COMPARE(verbRuns().size(), 1);
+        QCOMPARE(verbRuns().first(), (QStringList{"cp", "--", one, alpha}));
+    }
 }
 
 void TestStudio::linksClipboardFilesByKeyboard()
@@ -14973,6 +15008,10 @@ void TestStudio::cancelsStaleTrashScans()
     QVERIFY(writeLooknfeel(location + "/files/stale", "payload"));
     QVERIFY(writeLooknfeel(location + "/info/stale.trashinfo",
         "[Trash Info]\nPath=stale\nDeletionDate=2026-10-11T13:14:15\n"));
+    auto *pool = QThreadPool::globalInstance();
+    const int oldThreads = pool->maxThreadCount();
+    pool->setMaxThreadCount(1);
+    auto restoreThreads = qScopeGuard([&] { pool->setMaxThreadCount(oldThreads); });
     QSemaphore entered, release;
     auto releaseWorker = qScopeGuard([&] { release.release(); });
     Trash::setMountProvider([&] {
@@ -14994,7 +15033,7 @@ void TestStudio::cancelsStaleTrashScans()
     QTRY_VERIFY(!model->loading());
     QCOMPARE(model->count(), 0);
     release.release();
-    QThreadPool::globalInstance()->waitForDone();
+    pool->waitForDone();
     QCoreApplication::processEvents();
     QCOMPARE(model->count(), 0);
 }
