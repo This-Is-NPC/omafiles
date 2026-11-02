@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import time
 
-METRICS = ("frame_ms", "filter_ms", "wheel_ms", "peak_gui_rss_mib", "peak_tree_rss_mib", "settle_ms", "idle_cpu_percent", "thumbnail_ms", "preview_ms")
+METRICS = ("frame_ms", "filter_ms", "wheel_ms", "peak_gui_rss_mib", "peak_tree_rss_mib", "settle_ms", "idle_cpu_percent", "thumbnail_ms", "thumbnail_grid_ms", "preview_ms")
 
 
 from memory import process_tree, process_stat, wait_file, write, memory_metrics
@@ -104,12 +104,16 @@ class Session:
         temporary = self.directory / "command.next"
         temporary.write_text(json.dumps(payload))
         temporary.replace(self.directory / "command.json")
+        return self.observe(name, timeout)
+
+    def observe(self, name, timeout):
         begin = time.monotonic()
         deadline = begin + timeout
         while time.monotonic() < deadline:
             self.sample()
             for event in self.events:
-                if event.get("event") == "complete" and event.get("serial") == self.serial:
+                if (event.get("event") == "complete" and event.get("serial") == self.serial
+                        and event.get("operation") == name):
                     self.result["phases"][name] = {"status": "complete", "deadline_seconds": timeout, "elapsed_ms": (time.monotonic()-begin)*1000, "evidence": event}
                     return event["ms"]
             if self.process.poll() is not None:
@@ -162,6 +166,10 @@ class Session:
                 self.phase("first_row", 10, key="Home", label=first)
                 self.phase("select_row", 10, key="j" if parent else "Down")
                 self.result["thumbnail_ms"] = self.phase("thumbnail", 20, key="3" if parent else "Ctrl+3")
+                if self.result["thumbnail_ms"] is None:
+                    self.result["metric_reasons"]["thumbnail_grid_ms"] = "No first thumbnail; the full grid was not observed"
+                else:
+                    self.result["thumbnail_grid_ms"] = self.observe("thumbnail_grid", 20)
                 self.result["preview_ms"] = self.phase("preview", 10, key="i" if parent else "Space")
 
     def finish(self):
@@ -211,7 +219,7 @@ class Session:
         for name in METRICS:
             if self.result[name] is None:
                 phase = self.result["phases"].get(name.removesuffix("_ms"), {})
-                self.result["metric_reasons"].setdefault(name, "Not applicable to a non-image fixture" if name in ("thumbnail_ms", "preview_ms") and self.arguments.fixture != "images-2000" else phase.get("reason", "Measurement unavailable; inspect phase and process evidence"))
+                self.result["metric_reasons"].setdefault(name, "Not applicable to a non-image fixture" if name in ("thumbnail_ms", "thumbnail_grid_ms", "preview_ms") and self.arguments.fixture != "images-2000" else phase.get("reason", "Measurement unavailable; inspect phase and process evidence"))
                 if self.result["oom_kill_delta"]:
                     self.result["metric_reasons"][name] = "Cgroup recorded an OOM kill; " + self.result["metric_reasons"][name]
         cache = Path(self.env["XDG_CACHE_HOME"]) / "thumbnails"

@@ -25,8 +25,9 @@ from memory import cpu_core, memory_metrics, write as write_memory
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ("1000", "10000", "100000", "images-2000", "1000000")
 METRICS = ("frame_ms", "filter_ms", "wheel_ms", "peak_gui_rss_mib",
-           "peak_tree_rss_mib", "settle_ms", "idle_cpu_percent", "thumbnail_ms", "preview_ms")
-MEDIA = {"thumbnail_ms", "preview_ms"}
+           "peak_tree_rss_mib", "settle_ms", "idle_cpu_percent", "thumbnail_ms",
+           "thumbnail_grid_ms", "preview_ms")
+MEDIA = {"thumbnail_ms", "thumbnail_grid_ms", "preview_ms"}
 LABEL = "org.omafiles.benchmark"
 REPEATS = 5
 
@@ -157,7 +158,12 @@ class OwnedDocker:
         if (labels or {}).get(LABEL) != self.token:
             raise RuntimeError(f"Refusing to remove unowned {kind}: {name}")
         args = ("volume", "rm", name) if kind == "volume" else ("rm", "--force", name)
-        self.docker(*args, timeout=300 if kind == "volume" else 60)
+        try:
+            self.docker(*args, timeout=300 if kind == "volume" else 60)
+        except subprocess.TimeoutExpired:
+            # A timed-out client does not say whether the daemon finished the removal.
+            if self.inspect(kind, name) is not None:
+                raise RuntimeError(f"Owned {kind} still exists after removal timed out: {name}") from None
 
     def cleanup(self):
         errors = []
@@ -318,7 +324,7 @@ def normalize_evidence(run, identity):
         run["metric_reasons"] = {metric: reason for metric in METRICS}
     for metric in METRICS:
         name = metric.removesuffix("_ms")
-        if name not in ("wheel", "filter", "thumbnail", "preview") or run.get(metric) is None:
+        if name not in ("wheel", "filter", "thumbnail", "thumbnail_grid", "preview") or run.get(metric) is None:
             continue
         phase = run.get("phases", {}).get(name, {})
         evidence = phase.get("evidence", {})
@@ -398,7 +404,7 @@ def validate_observations(run):
         end = next((s for s in samples if s["elapsed_ms"] >= settled["elapsed_ms"] + 1000), None)
         expected["idle_cpu_percent"] = ((end["ticks"] - settled["ticks"]) / os.sysconf("SC_CLK_TCK")
             / ((end["elapsed_ms"] - settled["elapsed_ms"])/1000) * 100) if end else None
-    for metric in ("filter_ms", "wheel_ms", "thumbnail_ms", "preview_ms"):
+    for metric in ("filter_ms", "wheel_ms", "thumbnail_ms", "thumbnail_grid_ms", "preview_ms"):
         evidence = run.get("phases", {}).get(metric.removesuffix("_ms"), {}).get("evidence")
         if evidence not in events:
             expected[metric] = None
@@ -526,7 +532,7 @@ def save(document, path):
 def runtime_identity(image, docker, configs, staging, threshold):
     identity = json.loads(docker.docker("image", "inspect", image).stdout)[0]
     libraries = ("libQt6Core.so.6", "libQt6Quick.so.6", "libQt6Qml.so.6", "libc.so.6")
-    return {"method": 3, "image": identity["Id"], "architecture": platform.machine(),
+    return {"method": 4, "image": identity["Id"], "architecture": platform.machine(),
             "memory_observer_cpu": memory_cpu(configs),
             "kernel": platform.release(), "cpu_model": next(
                 line.split(":", 1)[1].strip() for line in Path("/proc/cpuinfo").read_text().splitlines()
@@ -721,8 +727,9 @@ def supervise(argv, output):
         if output.is_file():
             document = load_json(output)
             document["cleanup_errors"] = errors
-            if status not in (0, 1):
-                document.update(status="incomplete", error=f"Benchmark process exited {status}")
+            if status:
+                document.update(status="incomplete",
+                                error=document.get("error") or f"Benchmark process exited {status}")
             if errors:
                 document["cleanup_journal"] = str(control)
             save(document, output)

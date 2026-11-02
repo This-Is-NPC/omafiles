@@ -40,7 +40,7 @@ def observation(config="A", fixture="1000", repeat=1, value=10, app="omafiles"):
     count = 2000 if fixture == "images-2000" else int(fixture)
     phases = {name: dict(status="complete", evidence=dict(event="complete", operation=name, ms=value,
               visible_count=1+parent if name == "filter" else count+parent))
-              for name in ("listing", "wheel", "open_filter", "filter", "thumbnail", "preview")}
+              for name in ("listing", "wheel", "open_filter", "filter", "thumbnail", "thumbnail_grid", "preview")}
     memory = memory_evidence(value, value + 2000)
     return dict(config=config, fixture=fixture, repeat=repeat, app=app, phases=phases, memory=memory,
                 events=[dict(event="first_frame", ms=value), dict(viewport_width=1180, viewport_height=720)]
@@ -58,7 +58,7 @@ def observation(config="A", fixture="1000", repeat=1, value=10, app="omafiles"):
 
 
 def identity():
-    return dict(method=3, memory_observer_cpu=2, image="image", architecture="arch", kernel="kernel", cpu_model="cpu",
+    return dict(method=4, memory_observer_cpu=2, image="image", architecture="arch", kernel="kernel", cpu_model="cpu",
                 configs={"A": dict(cpus=1, cpuset="0", memory="512m"),
                          "B": dict(cpus=2, cpuset="0,1", memory="1g")}, load_threshold=6,
                 runtime_sha256={k: "a"*64 for k in ("libQt6Core.so.6", "libQt6Quick.so.6", "libQt6Qml.so.6", "libc.so.6")},
@@ -91,6 +91,7 @@ def idle_observation(app, end_ticks=36, fixture="1000", config="A", repeat=1,
     measured.result["samples"] = []
     measured.process = SimpleNamespace(poll=lambda: None)
     measured.phase = lambda *args, **kwargs: 10
+    measured.observe = lambda *args, **kwargs: 10
     samples = iter(((0, 35), (895, 36), (1395.619202987291, 36),
                     (1396.1807700106874, 36), (end_ms, end_ticks),
                     (end_ms + 21, 37)))
@@ -328,6 +329,44 @@ class BenchmarkTest(unittest.TestCase):
         docker.containers.append("owned")
         self.assertIn("Cannot connect", docker.cleanup()[0])
         self.assertEqual(docker.containers, ["owned"])
+
+    def test_removal_timeout_is_judged_by_the_resource_that_remains(self):
+        for kind in ("container", "volume"):
+            for outcome in ("removed", "kept", "unreachable"):
+                fake = FakeDocker()
+                docker = runner.OwnedDocker(fake)
+                name = docker.volume() if kind == "volume" else docker.container(["image"])
+                attempted = []
+                def timed_out(command, **kwargs):
+                    if "rm" in command:
+                        attempted.append(command)
+                        if outcome == "removed":
+                            fake(command, **kwargs)
+                        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+                    if outcome == "unreachable" and attempted:
+                        return subprocess.CompletedProcess(command, 1, "", "Cannot connect to Docker")
+                    return fake(command, **kwargs)
+                docker.call = timed_out
+                with self.subTest(kind=kind, outcome=outcome):
+                    errors = docker.cleanup()
+                    names = docker.volumes if kind == "volume" else docker.containers
+                    if outcome == "removed":
+                        self.assertEqual((errors, names), ([], []))
+                    else:
+                        self.assertEqual(len(errors), 1)
+                        self.assertIn("still exists" if outcome == "kept" else "Cannot connect", errors[0])
+                        self.assertEqual(names, [name])
+
+    def test_grid_completion_is_not_the_first_thumbnail_of_the_same_shortcut(self):
+        measured = session.Session.__new__(session.Session)
+        measured.serial, measured.result = 1, {"phases": {}}
+        measured.process = SimpleNamespace(poll=lambda: None)
+        measured.events = [dict(event="complete", serial=1, operation="thumbnail", ms=170)]
+        later = iter(([], [dict(event="complete", serial=1, operation="thumbnail_grid", ms=250)]))
+        measured.sample = lambda: measured.events.extend(next(later))
+        with patch.object(session.time, "sleep"):
+            self.assertEqual(measured.observe("thumbnail_grid", 30), 250)
+        self.assertEqual(measured.result["phases"]["thumbnail_grid"]["evidence"]["ms"], 250)
 
     def test_durable_journal_precedes_creation_and_recovers_orphans(self):
         fake = FakeDocker()
@@ -684,6 +723,26 @@ class CompressedReportsTest(unittest.TestCase):
             self.assertEqual(result["error"], "Benchmark process exited 2")
             self.assertEqual(result["runs"], document["runs"])
             self.assertEqual(result["identity"], document["identity"])
+
+    def test_supervisor_keeps_only_a_successful_child_complete(self):
+        cases = ((0, "complete", None, "complete", None),
+                 (1, "complete", None, "incomplete", "Benchmark process exited 1"),
+                 (2, "incomplete", "Fixture helper failed", "incomplete", "Fixture helper failed"),
+                 (2, "incomplete", None, "incomplete", "Benchmark process exited 2"))
+        for exit, written, error, status, reported in cases:
+            with self.subTest(exit=exit, error=error), tempfile.TemporaryDirectory(dir="/tmp") as temporary:
+                output = Path(temporary) / "report.json.gz"
+                def child(output=output, written=written, error=error, exit=exit):
+                    runner.save(dict(self.document(), status=written, error=error), output)
+                    return exit
+                process = Mock()
+                process.wait.side_effect = child
+                with patch.object(runner.subprocess, "Popen", return_value=process), \
+                     patch.object(runner.signal, "signal"):
+                    self.assertEqual(runner.supervise([], output), exit)
+                result = runner.load_json(output)
+                self.assertEqual((result["status"], result["error"]), (status, reported))
+                self.assertEqual(len(result["runs"]), 10)
 
 
 class MemoryObservationTest(unittest.TestCase):

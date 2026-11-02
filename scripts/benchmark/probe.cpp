@@ -3,6 +3,7 @@
 #include <QFile>
 #include <QFileSystemWatcher>
 #include <QGuiApplication>
+#include <QHash>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
@@ -14,6 +15,8 @@
 #include <dlfcn.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
+#include <functional>
 #include <time.h>
 
 // Keep the observer out of application helpers and decoder subprocesses.
@@ -24,6 +27,7 @@ static QElapsedTimer elapsed;
 static qint64 started;
 static int serial = 0;
 static bool firstFrame = false;
+static bool gridFilledBefore = false;
 
 static QPointer<QQuickWindow> mainWindow;
 static void frame(QQuickWindow *quick);
@@ -73,6 +77,34 @@ static bool mediaReady(QQuickItem *item, bool preview, QQuickWindow *quick) {
     }
     for (auto *child : item->childItems()) if (mediaReady(child, preview, quick)) return true;
     return false;
+}
+// Count file cells in the grid viewport, or -1 while any of them lacks a delegate or a ready thumbnail.
+static int gridThumbnails(QQuickItem *view) {
+    if (!view || !view->property("cellWidth").isValid()) return -1;
+    const qreal cellWidth = view->property("cellWidth").toReal(), cellHeight = view->property("cellHeight").toReal();
+    const qreal top = view->property("contentY").toReal() - view->property("originY").toReal();
+    const int columns = qMax(1, int(view->width() / cellWidth));
+    const int first = int(top / cellHeight) * columns;
+    const int last = qMin(view->property("count").toInt(), int(std::ceil((top + view->height()) / cellHeight)) * columns);
+    QHash<int, QQuickItem *> cells;
+    if (auto *content = view->property("contentItem").value<QQuickItem *>())
+        for (auto *cell : content->childItems())
+            if (cell->isVisible() && cell->property("index").isValid() && !cell->property("pooled").toBool())
+                cells.insert(cell->property("index").toInt(), cell);
+    const std::function<bool(QQuickItem *)> preview = [&preview](QQuickItem *item) {
+        if (item->property("hasPreview").toBool()) return true;
+        for (auto *child : item->childItems()) if (preview(child)) return true;
+        return false;
+    };
+    int files = 0;
+    for (int index = first; index < last; ++index) {
+        auto *cell = cells.value(index);
+        if (!cell) return -1;
+        if (cell->property("kind").toString() != "file") continue;
+        if (!preview(cell)) return -1;
+        ++files;
+    }
+    return files;
 }
 static void report(QJsonObject event) {
     event["elapsed_ms"] = elapsed.nsecsElapsed()/1e6;
@@ -130,9 +162,22 @@ static void frame(QQuickWindow *quick) {
     }
     if (operation == "wheel") ready = ready && view && view->property("contentY").toDouble() >= view->property("contentHeight").toDouble() - view->height() - 3;
     if (operation == "thumbnail" || operation == "preview") ready = mediaReady(quick->contentItem(), operation == "preview", quick);
+    QJsonObject event{{"event", "complete"}, {"serial", serial}, {"operation", operation}, {"visible_count", view ? view->property("count").toInt() : -1}};
+    if (operation == "thumbnail_grid") {
+        // Complete on the frame after the one that first showed every thumbnail ready.
+        const int thumbnails = gridThumbnails(view);
+        ready = thumbnails >= 0 && gridFilledBefore;
+        gridFilledBefore = thumbnails >= 0;
+        event["visible_thumbnails"] = thumbnails;
+        if (gridFilledBefore && !ready) quick->update();
+    }
     if (ready) {
-        report({{"event", "complete"}, {"serial", serial}, {"operation", operation}, {"ms", (elapsed.nsecsElapsed()-started)/1e6}, {"visible_count", view ? view->property("count").toInt() : -1}});
-        pending = {};
+        event["ms"] = (elapsed.nsecsElapsed()-started)/1e6;
+        report(event);
+        // The full-grid observation continues from the same shortcut as the first thumbnail.
+        pending = operation == "thumbnail" ? QJsonObject{{"operation", "thumbnail_grid"}} : QJsonObject{};
+        gridFilledBefore = false;
+        if (!pending.isEmpty()) quick->update();
     }
 }
 class StartupWindowObserver : public QObject {
