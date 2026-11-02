@@ -4627,44 +4627,59 @@ void TestStudio::pansTheGraphWithShiftHjk()
     settle();
 }
 
+// Ctrl+. widens and Ctrl+, narrows the focused pane on screen, whichever side
+// of the divider it is on: the pane beside it gives up or takes the width.
 void TestStudio::resizesTheSplitWithCtrlComma()
 {
     const int panesBefore = m_workspace->paneCount();
     if (panesBefore == 1)
         key(Qt::Key_Backslash, Qt::ControlModifier);
     QCOMPARE(m_workspace->paneCount(), 2);
+    const auto restore = qScopeGuard([&] {
+        if (panesBefore == 1)
+            key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+    });
 
-    const int focused = m_workspace->focusedPane();
-    QQuickItem *pane = nullptr;
+    QQuickItem *panes[2] = {nullptr, nullptr};
     for (QQuickItem *item : itemsNamed(QStringLiteral("pane"))) {
-        if (item->property("paneIndex").toInt() == focused) {
-            pane = item;
-            break;
-        }
+        const int index = item->property("paneIndex").toInt();
+        if (index == 0 || index == 1)
+            panes[index] = item;
     }
-    QVERIFY2(pane, "no QML pane item for the focused pane");
+    QVERIFY2(panes[0] && panes[1], "no QML pane items for the split");
 
-    const qreal before = pane->property("panePreferredWidth").toReal();
-    key(Qt::Key_Period, Qt::ControlModifier);
-    const qreal wider = pane->property("panePreferredWidth").toReal();
-    QVERIFY2(qAbs(wider - before - 40.0) < 0.5,
-             qPrintable(QStringLiteral("Ctrl+. width was %1, expected %2")
-                                .arg(wider)
-                                .arg(before + 40.0)));
+    for (const int focused : {0, 1}) {
+        m_workspace->setFocusedPane(focused);
+        QQuickItem *pane = panes[focused];
+        QQuickItem *other = panes[1 - focused];
+        QTRY_VERIFY(pane->width() >= 320.0 && other->width() >= 320.0);
 
-    key(Qt::Key_Comma, Qt::ControlModifier);
-    const qreal narrower = pane->property("panePreferredWidth").toReal();
-    QVERIFY2(qAbs(narrower - wider + 40.0) < 0.5,
-             qPrintable(QStringLiteral("Ctrl+, width was %1, expected %2")
-                                .arg(narrower)
-                                .arg(wider - 40.0)));
-    QVERIFY2(narrower >= 280.0,
-             qPrintable(QStringLiteral("Ctrl+, shrank the pane below 280: %1").arg(narrower)));
+        const qreal before = pane->width();
+        const qreal otherBefore = other->width();
+        key(Qt::Key_Period, Qt::ControlModifier);
+        QTRY_VERIFY2(qAbs(pane->width() - before - 40.0) < 0.5,
+                     qPrintable(QStringLiteral("Ctrl+. on pane %1: width %2, expected %3")
+                                        .arg(focused).arg(pane->width()).arg(before + 40.0)));
+        QTRY_VERIFY2(qAbs(other->width() - otherBefore + 40.0) < 0.5,
+                     qPrintable(QStringLiteral("Ctrl+. on pane %1: other width %2, expected %3")
+                                        .arg(focused).arg(other->width()).arg(otherBefore - 40.0)));
 
-    if (panesBefore == 1) {
-        key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
-        QCOMPARE(m_workspace->paneCount(), 1);
+        key(Qt::Key_Comma, Qt::ControlModifier);
+        QTRY_VERIFY2(qAbs(pane->width() - before) < 0.5,
+                     qPrintable(QStringLiteral("Ctrl+, on pane %1: width %2, expected %3")
+                                        .arg(focused).arg(pane->width()).arg(before)));
+        QTRY_VERIFY(qAbs(other->width() - otherBefore) < 0.5);
     }
+
+    // Holding either key stops where a pane reaches its minimum width.
+    m_workspace->setFocusedPane(1);
+    for (int i = 0; i < 40; ++i)
+        key(Qt::Key_Comma, Qt::ControlModifier);
+    QTRY_COMPARE(panes[1]->width(), 280.0);
+    for (int i = 0; i < 80; ++i)
+        key(Qt::Key_Period, Qt::ControlModifier);
+    QTRY_COMPARE(panes[0]->width(), 280.0);
+    QVERIFY(panes[1]->x() + panes[1]->width() <= window()->width() + 0.5);
 }
 
 // Half the row menu is a caller of the command line, and this is the check that

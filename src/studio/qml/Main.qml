@@ -1460,11 +1460,18 @@ Window {
         return false
     }
 
+    // The last pane fills what the others leave, so it is resized by moving
+    // the divider on its left: its neighbour takes the opposite step.
     function resizeFocusedPane(delta) {
-        const pane = paneItems[Workspace.focusedPane]
-        if (!pane)
+        const focused = Workspace.focusedPane
+        const last = Workspace.paneCount - 1
+        const pane = paneItems[focused === last ? focused - 1 : focused]
+        const fill = paneItems[last]
+        if (!pane || !fill || pane === fill)
             return false
-        pane.panePreferredWidth = Math.max(280, pane.panePreferredWidth + delta)
+        const step = focused === last ? -delta : delta
+        pane.resize(Math.max(pane.narrowest,
+                             Math.min(pane.width + step, pane.width + fill.width - fill.narrowest)))
         return true
     }
 
@@ -1998,7 +2005,6 @@ Window {
                         required property int index
                         pane: modelData
                         paneIndex: index
-                        C.SplitView.preferredWidth: panePreferredWidth
                     }
                 }
             }
@@ -2839,8 +2845,11 @@ Window {
         color: Theme.background
         property var pane
         property int paneIndex
-        property real panePreferredWidth: win.width / Math.max(1, Workspace.paneCount)
-        C.SplitView.minimumWidth: 280
+        readonly property real narrowest: 280
+        C.SplitView.minimumWidth: narrowest
+        C.SplitView.preferredWidth: win.width / Math.max(1, Workspace.paneCount)
+
+        function resize(width) { C.SplitView.preferredWidth = width }
 
         Component.onCompleted: win.paneItems[paneIndex] = paneRoot
 
