@@ -15008,6 +15008,10 @@ void TestStudio::cancelsStaleTrashScans()
     QVERIFY(writeLooknfeel(location + "/files/stale", "payload"));
     QVERIFY(writeLooknfeel(location + "/info/stale.trashinfo",
         "[Trash Info]\nPath=stale\nDeletionDate=2026-10-11T13:14:15\n"));
+    auto *pool = QThreadPool::globalInstance();
+    const int oldThreads = pool->maxThreadCount();
+    pool->setMaxThreadCount(1);
+    auto restoreThreads = qScopeGuard([&] { pool->setMaxThreadCount(oldThreads); });
     QSemaphore entered, release;
     auto releaseWorker = qScopeGuard([&] { release.release(); });
     Trash::setMountProvider([&] {
@@ -15029,7 +15033,7 @@ void TestStudio::cancelsStaleTrashScans()
     QTRY_VERIFY(!model->loading());
     QCOMPARE(model->count(), 0);
     release.release();
-    QThreadPool::globalInstance()->waitForDone();
+    pool->waitForDone();
     QCoreApplication::processEvents();
     QCOMPARE(model->count(), 0);
 }

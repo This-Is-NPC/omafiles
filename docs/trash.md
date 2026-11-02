@@ -6,6 +6,9 @@ The list combines the user's `$XDG_DATA_HOME/Trash` with the current user's
 `.Trash/<uid>` and `.Trash-<uid>` on mounted filesystems. Unmounted volumes
 appear when mounted and refreshed. Discovery runs in the background only while
 a Trash tab exists; switching away cancels its pending scan.
+A scan blocked on an unresponsive mount gives up its background worker slot
+until it returns, so a refresh and other background work never wait for it;
+its result is discarded once a newer scan has started.
 
 Each row shows the original path and local deletion date from its `.trashinfo`
 record. Long paths are elided to keep every row reachable; Enter or the row
