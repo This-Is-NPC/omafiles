@@ -3213,7 +3213,7 @@ Window {
             function selectRow(row, modifiers) {
                 Workspace.focusedPane = filesRoot.paneIndex
                 if (modifiers & Qt.ShiftModifier)
-                    folder.markRange(filesRoot.cursor, row)
+                    folderModel.markRange(filesRoot.cursor, row)
                 filesRoot.setCursor(row)
                 win.takeFocus()
             }
@@ -3244,7 +3244,7 @@ Window {
             // knows for certain.
             property int paneIndex: parent.paneIndex
             // qmllint enable missing-property
-            property alias folder: folder
+            property alias folder: folderModel
             property alias band: band
             readonly property string viewMode: filesRoot.tab ? filesRoot.tab.viewMode : "list"
             readonly property var view: viewMode === "icons" ? grid : listing
@@ -3275,11 +3275,11 @@ Window {
             property var entry: ({})
 
             function syncEntry() {
-                if (folder.loading) {
+                if (folderModel.loading) {
                     filesRoot.entry = ({})
                     return
                 }
-                filesRoot.entry = folder.entryAt(filesRoot.cursor)
+                filesRoot.entry = folderModel.entryAt(filesRoot.cursor)
             }
 
             // The one place the cursor moves. Clamped here so no caller has to
@@ -3296,17 +3296,17 @@ Window {
             }
 
             function setCursor(row) {
-                if (folder.count <= 0)
+                if (folderModel.count <= 0)
                     return
-                const clamped = Math.max(0, Math.min(row, folder.count - 1))
+                const clamped = Math.max(0, Math.min(row, folderModel.count - 1))
                 showCursor(clamped)
-                folder.rememberCursor(clamped)
+                folderModel.rememberCursor(clamped)
             }
 
             function restoreCursor() {
-                if (folder.loading)
+                if (folderModel.loading)
                     return
-                const row = folder.cursorRow()
+                const row = folderModel.cursorRow()
                 if (row < 0) {
                     filesRoot.entry = ({})
                     return
@@ -3347,7 +3347,7 @@ Window {
             // so switching tabs here changes the folder and everything said
             // about it together.
             FolderModel {
-                id: folder
+                id: folderModel
                 source: IndexModel
                 tab: filesRoot.tab
                 filter: filesRoot.tab ? filesRoot.tab.filter : ""
@@ -3385,19 +3385,19 @@ Window {
 
                     FileDropArea {
                         anchors.fill: parent
-                        directory: win.isFolderTab(filesRoot.tab) ? folder.directory : ""
+                        directory: win.isFolderTab(filesRoot.tab) ? folderModel.directory : ""
                         blocked: win.blocked
                     }
 
                     ListView {
                         id: listing
-                        reuseItems: !folder.loading
+                        reuseItems: !folderModel.loading
                         cacheBuffer: 0
                         onContentYChanged: filesRoot.deferThumbnails()
                         anchors.fill: parent
                         visible: filesRoot.viewMode !== "icons"
                         clip: true
-                        model: visible ? folder : null
+                        model: visible ? folderModel : null
                         boundsBehavior: Flickable.StopAtBounds
                         highlightResizeDuration: 0
                         readonly property int rowHeight: 30
@@ -3537,7 +3537,7 @@ Window {
 
                             FileIcon {
                                 id: rowIcon
-                                folder: folder
+                                folder: folderModel
                                 rowIndex: row.index
                                 path: row.path
                                 allowed: filesRoot.thumbnailsReady && !previewSheet.visible
@@ -3690,7 +3690,7 @@ Window {
                                 }
                                 onActivated: {
                                     filesRoot.selectRow(row.index, 0)
-                                    folder.activateRow(row.index)
+                                    folderModel.activateRow(row.index)
                                 }
                             }
                         }
@@ -3698,13 +3698,13 @@ Window {
 
                     GridView {
                         id: grid
-                        reuseItems: !folder.loading
+                        reuseItems: !folderModel.loading
                         cacheBuffer: 0
                         onContentYChanged: filesRoot.deferThumbnails()
                         anchors.fill: parent
                         visible: filesRoot.viewMode === "icons"
                         clip: true
-                        model: visible ? folder : null
+                        model: visible ? folderModel : null
                         cellWidth: 112
                         cellHeight: 92
                         boundsBehavior: Flickable.StopAtBounds
@@ -3771,7 +3771,7 @@ Window {
 
                                     FileIcon {
                                         id: cellIcon
-                                        folder: folder
+                                        folder: folderModel
                                         rowIndex: cell.index
                                         path: cell.path
                                         extent: 256
@@ -3816,7 +3816,7 @@ Window {
                                     }
                                     onActivated: {
                                         filesRoot.selectRow(cell.index, 0)
-                                        folder.activateRow(cell.index)
+                                        folderModel.activateRow(cell.index)
                                     }
                                 }
                             }
@@ -3833,7 +3833,7 @@ Window {
                         id: band
                         anchors.fill: parent
                         view: filesRoot.view
-                        folder: folder
+                        folder: folderModel
                         cellWidth: filesRoot.view === grid ? grid.cellWidth : listing.width
                         cellHeight: filesRoot.view === grid ? grid.cellHeight : listing.rowHeight
                         columns: filesRoot.view === grid

@@ -8,7 +8,8 @@ OMAFILES_SOURCE_ROOT = $$clean_path($$PWD/..)
 include($$PWD/../qmake/layout.pri)
 
 QT       += core gui qml quick qmltest testlib dbus concurrent
-CONFIG   += qtquickcompiler testcase c++17 console qmltypes
+CONFIG   += qtquickcompiler testcase c++17 console
+include($$PWD/../qmake/qmltypes.pri)
 
 # The same module name and version the studio registers, or the test binary and
 # the shipped one would disagree about what `import omafiles` means.
