@@ -3,7 +3,8 @@
 Open **Trash** from the `+` tab menu or press `:` (or `Ctrl p`) and choose
 **Open Trash**. It opens a separate tab, leaving your folder tabs intact.
 The list combines the user's `$XDG_DATA_HOME/Trash` with the current user's
-`.Trash/<uid>` and `.Trash-<uid>` on mounted filesystems. Unmounted volumes
+`.Trash/<uid>` and `.Trash-<uid>` on mounted filesystems (`<uid>` is a
+placeholder for the user's number). Unmounted volumes
 appear when mounted and refreshed. Discovery runs in the background only while
 a Trash tab exists; switching away cancels its pending scan.
 A scan, restore or empty blocked on an unresponsive mount gives up its
@@ -17,7 +18,11 @@ record. Long paths are elided to keep every row reachable; Enter or the row
 menu opens complete entry details in a scrollable dialog. The internal stored filename is not treated as the original name.
 Missing, malformed or unreadable metadata is shown explicitly; restoring such
 an entry is refused. An unreadable location is reported, rather than counted
-as an empty Trash. **Details** opens the complete operation receipt or scan
+as an empty Trash. A mount whose top directory you cannot search, such as
+`/boot`, `/run/credentials/*` or another user's `/run/user/<uid>`, holds no
+Trash of yours and is skipped without an error. A `.Trash` or `.Trash-<uid>`
+that exists on a mount you can search but cannot be read is reported.
+**Details** opens the complete operation receipt or scan
 error in a scrollable dialog.
 An operation receipt remains after its refresh and while the listing stays
 unchanged. A later change to entries, metadata or scan errors clears it.
