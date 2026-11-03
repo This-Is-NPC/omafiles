@@ -48,6 +48,11 @@ Rectangle {
         revealSelection()
     }
 
+    // A model reset keeps a cursor past the rows it left: back to the last one.
+    function keepCursor(list) {
+        if (list.currentIndex >= list.count) list.currentIndex = list.count - 1
+    }
+
     function revealSelection() {
         const list = walking ? tagsListView : walkingViews ? viewsListView : walkingDevices ? devices.list : null
         const section = walking ? tagsSection : walkingDevices ? devices : viewsSection
@@ -144,6 +149,7 @@ Rectangle {
                     activeFocusOnTab: count > 0
                     Keys.onPressed: function (event) { dock.keyRequested(event) }
                     onActiveFocusChanged: dock.focusList(viewsListView)
+                    onCountChanged: dock.keepCursor(viewsListView)
                     width: parent.width
                     // Its own contents, and never more than a third of the panel: the
                     // vocabulary underneath has to stay reachable however many views
@@ -255,6 +261,7 @@ Rectangle {
                     activeFocusOnTab: count > 0
                     Keys.onPressed: function (event) { dock.keyRequested(event) }
                     onActiveFocusChanged: dock.focusList(tagsListView)
+                    onCountChanged: dock.keepCursor(tagsListView)
                     width: parent.width
                     height: dock.showTags ? Math.min(contentHeight,
                         Math.max(Theme.rowHeight, scroll.height - tagsHeading.height)) : 0

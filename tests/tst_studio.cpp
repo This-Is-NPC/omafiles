@@ -395,6 +395,7 @@ private slots:
     void keepsCliNotesInWindowReceipts();
     void keepsFileSelectionVisibleAfterResize();
     void keepsSidebarSelectionVisibleInSmallWindows();
+    void keepsThePanelCursorInsideAShrunkList();
     void alignsPanelRowsOnOneEdgeAndOneCentre();
     void scrollsActualSheetsWithPageKeys();
     void scrollsLongOverlayListsWithPointerAndKeyboard();
@@ -5646,7 +5647,9 @@ void TestStudio::opensAndSavesAView()
     // A view is a row like any other row: `m` over it opens a menu, and the
     // menu is how one is taken off the panel. Without it a view could be made
     // from the window and only unmade from a prompt.
+    // The panel keeps its cursor from the last walk: start on the first view.
     key('v');
+    key(Qt::Key_Home);
     QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("views"));
     const int before = m_views->rowCount();
     key('m');
@@ -11280,6 +11283,64 @@ void TestStudio::keepsSidebarSelectionVisibleInSmallWindows()
     key(Qt::Key_Escape);
     auto *folder = qobject_cast<FolderModel *>(filesRoot()->property("folder").value<QObject *>());
     folder->clearMarks();
+}
+
+void TestStudio::keepsThePanelCursorInsideAShrunkList()
+{
+    // A view forgotten or a tag gone from the index can take the row the
+    // cursor stands on: the cursor comes back to the end of the list, so `m`
+    // over it still opens a menu.
+    auto *dock = qobject_cast<QQuickItem *>(window()->property("activeDock").value<QObject *>());
+    QVERIFY(dock);
+    auto *views = dock->property("viewsList").value<QQuickItem *>();
+    auto *tags = dock->property("tagsList").value<QQuickItem *>();
+    QVERIFY(views && tags);
+    QFile savedViews(m_desktop.filePath("config/omafiles/views.jsonl"));
+    QVERIFY(savedViews.open(QIODevice::ReadOnly));
+    const QByteArray originalViews = savedViews.readAll();
+    savedViews.close();
+    const auto restore = qScopeGuard([&] {
+        writeIndex(); m_index->reload();
+        if (savedViews.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            savedViews.write(originalViews); savedViews.close();
+        }
+        m_views->reload();
+    });
+
+    QVERIFY(savedViews.open(QIODevice::Append));
+    savedViews.write("{\"name\":\"forgotten\",\"tags\":[\"work\"]}\n");
+    savedViews.close();
+    m_views->reload();
+    settle();
+    key('v');
+    key(Qt::Key_End);
+    QCOMPARE(views->property("currentIndex").toInt(), m_views->rowCount() - 1);
+    QVERIFY(savedViews.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    savedViews.write(originalViews);
+    savedViews.close();
+    m_views->reload();
+    settle();
+    key('m');
+    QVERIFY2(window()->property("blocked").toBool(), "m over the last view opened nothing");
+    key(Qt::Key_Escape);
+    key('h');
+
+    putIndexRow(m_tree.filePath("one.txt"),
+                {QStringLiteral("notes"), QStringLiteral("work"),
+                 QStringLiteral("zz-gone"), QStringLiteral("zz-lost")});
+    m_index->reload();
+    settle();
+    key('t');
+    key(Qt::Key_End);
+    const int longer = tags->property("count").toInt();
+    writeIndex();
+    m_index->reload();
+    settle();
+    QVERIFY(tags->property("count").toInt() < longer);
+    key('m');
+    QVERIFY2(window()->property("blocked").toBool(), "m over the last tag opened nothing");
+    key(Qt::Key_Escape);
+    key('h');
 }
 
 // Every row of the panel follows one rule -- inset, icon, gap, text -- and each
