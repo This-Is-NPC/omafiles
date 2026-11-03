@@ -95,7 +95,7 @@ Rectangle {
                     objectName: "viewsHeading"
                     width: parent.width
                     pointerFocus: sidebar.viewsFocusTarget
-                    tabFocusable: Views.count === 0
+                    tabFocusable: Views.count === 0 || activeFocus
                     Accessible.role: Accessible.Grouping
                     Accessible.name: "Saved views"
                     text: "views"
@@ -206,7 +206,7 @@ Rectangle {
                     objectName: "tagsHeading"
                     width: parent.width
                     pointerFocus: sidebar.tagsFocusTarget
-                    tabFocusable: IndexModel.tagRowCount() === 0
+                    tabFocusable: tagsListView.count === 0 || activeFocus
                     Accessible.role: Accessible.Grouping
                     Accessible.name: "Tags"
                             text: "tags"
