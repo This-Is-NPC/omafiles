@@ -146,7 +146,7 @@ void TrashModel::restore(int row)
 
 bool TrashModel::prepareEmpty()
 {
-    if (m_busy || m_loading) return false;
+    if (m_busy) return false;
     m_emptySnapshot = m_items;
     return !m_emptySnapshot.isEmpty();
 }
