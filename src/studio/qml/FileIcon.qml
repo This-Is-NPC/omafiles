@@ -11,6 +11,7 @@ Icon {
     required property bool inViewport
     property bool moving: false
     property bool allowed: false
+    property bool cacheOnly: false
     property bool started: false
     onAllowedChanged: if (allowed && inViewport) started = true
     onInViewportChanged: {
@@ -31,6 +32,7 @@ Icon {
             path: icon.path
             extent: icon.extent
             requested: icon.inViewport && icon.allowed && !icon.moving
+            cacheOnly: icon.cacheOnly
         }
     }
 }
