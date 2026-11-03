@@ -165,7 +165,11 @@ Window {
 
     property var activeFilesRoot: null
     property var activeGraph: null
-    property var activeDock: null
+    /// The panel the keyboard talks to, while the focused pane's tab has one.
+    readonly property Sidebar activeSidebar: sidebar.holdsTags ? sidebar : null
+    /// The width one pane has with the panels beside it counted in: the panels
+    /// are dropped by it, so it must not change when they are.
+    readonly property real paneShare: width / Math.max(1, Workspace.paneCount)
     property bool filtering: false
     property bool editingPath: false
     /// What the bottom bar is asking for, or nothing: a name for a view, a new
@@ -188,10 +192,10 @@ Window {
         const item = activeFocusItem
         if (editingPath && insideOverlay(pathField, item)) return "path"
         if (filterBar.visible && insideOverlay(filterBar, item)) return "filter"
-        if (activeDock) {
-            if (item === activeDock.devicesFocusTarget || insideOverlay(activeDevicesList, item)) return "devices"
-            if (item === activeDock.tagsFocusTarget || insideOverlay(activeTagsList, item)) return "tags"
-            if (item === activeDock.viewsFocusTarget || insideOverlay(activeViewsList, item)) return "views"
+        if (activeSidebar) {
+            if (item === activeSidebar.devicesFocusTarget || insideOverlay(activeDevicesList, item)) return "devices"
+            if (item === activeSidebar.tagsFocusTarget || insideOverlay(activeTagsList, item)) return "tags"
+            if (item === activeSidebar.viewsFocusTarget || insideOverlay(activeViewsList, item)) return "views"
         }
         return "list"
     }
@@ -205,9 +209,9 @@ Window {
     readonly property var activeTab: Workspace.currentTab
     readonly property var activeFolder: activeFilesRoot ? activeFilesRoot.folder : null
     readonly property var activeListing: activeFilesRoot ? activeFilesRoot.view : null
-    readonly property var activeTagsList: activeDock ? activeDock.tagsList : null
-    readonly property var activeDevicesList: activeDock ? activeDock.devicesList : null
-    readonly property var activeViewsList: activeDock ? activeDock.viewsList : null
+    readonly property var activeTagsList: activeSidebar ? activeSidebar.tagsList : null
+    readonly property var activeDevicesList: activeSidebar ? activeSidebar.devicesList : null
+    readonly property var activeViewsList: activeSidebar ? activeSidebar.viewsList : null
     // A list is on screen. Two kinds of tab draw one: a folder, and a set of
     // tags read as folders. They share the view, the keys and the model, so
     // almost everything that asks this question means either of them.
@@ -515,7 +519,7 @@ Window {
         }
         if (onTrash) activeTrash.focusTarget.forceActiveFocus()
         else root.forceActiveFocus()
-        if (activeDock) activeDock.expanded = false
+        if (activeSidebar) activeSidebar.expanded = false
     }
 
     function openPreview(path) {
@@ -972,8 +976,8 @@ Window {
         // On the tag the listing is showing, when there is one: the way out of
         // a tag listing is the key that opened it, and hunting for the row
         // again is not a way out.
-        activeDock.expanded = true
-        activeDock.tagsFocusTarget.forceActiveFocus()
+        activeSidebar.expanded = true
+        activeSidebar.tagsFocusTarget.forceActiveFocus()
         const chosen = activeTab ? tagRow(activeTab.selectedTag) : -1
         if (chosen >= 0)
             activeTagsList.currentIndex = chosen
@@ -996,22 +1000,22 @@ Window {
     }
 
     function focusDevices() {
-        if (!activeDock) {
+        if (!activeSidebar) {
             Workspace.addTab("files")
             Qt.callLater(focusDevices)
             return
         }
-        activeDock.expanded = true
-        activeDock.devicesFocusTarget.forceActiveFocus()
+        activeSidebar.expanded = true
+        activeSidebar.devicesFocusTarget.forceActiveFocus()
     }
 
     function openDeviceMenu(id, x, y) {
-        if (!activeDock) return
-        activeDock.expanded = true
+        if (!activeSidebar) return
+        activeSidebar.expanded = true
         const entries = Devices.entries
         for (let row = 0; row < entries.length; ++row)
             if (entries[row].id === id) activeDevicesList.currentIndex = row
-        activeDock.devicesFocusTarget.forceActiveFocus()
+        activeSidebar.devicesFocusTarget.forceActiveFocus()
         deviceMenu.targetId = id
         deviceMenu.openAt(x, y)
     }
@@ -1022,8 +1026,8 @@ Window {
     function focusViews() {
         if (!activeViewsList)
             return
-        activeDock.expanded = true
-        activeDock.viewsFocusTarget.forceActiveFocus()
+        activeSidebar.expanded = true
+        activeSidebar.viewsFocusTarget.forceActiveFocus()
         if (Views.count > 0 && activeViewsList.currentIndex < 0)
             activeViewsList.currentIndex = 0
     }
@@ -1044,8 +1048,8 @@ Window {
     function openTagMenuAt(row, x, y) {
         if (!activeTagsList || IndexModel.tagAt(row) === "") return
         activeTagsList.currentIndex = row
-        activeDock.expanded = true
-        activeDock.tagsFocusTarget.forceActiveFocus()
+        activeSidebar.expanded = true
+        activeSidebar.tagsFocusTarget.forceActiveFocus()
         tagMenu.targetRow = row
         tagMenu.openAt(x, y)
     }
@@ -1228,8 +1232,8 @@ Window {
         IndexModel.clearNotice()
         if (activeViewsList) {
             activeViewsList.currentIndex = row
-            activeDock.expanded = true
-            activeDock.viewsFocusTarget.forceActiveFocus()
+            activeSidebar.expanded = true
+            activeSidebar.viewsFocusTarget.forceActiveFocus()
         }
         viewMenu.targetRow = row
         viewMenu.openAt(x, y)
@@ -1482,7 +1486,7 @@ Window {
         }
         if (text === "m" || event.key === Qt.Key_Menu
                 || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
-            const at = activeDock.mapToItem(root, 12, 64)
+            const at = activeSidebar.mapToItem(root, 12, 64)
             openTagMenuAt(tags.currentIndex, at.x, at.y)
             return true
         }
@@ -1967,8 +1971,10 @@ Window {
             Rule {}
 
             // ------------------------------------------------------- content
-            C.SplitView {
-                id: split
+            // Where to go on the left, the panes in the middle, what the
+            // focused pane's row is on the right: one of each panel for the
+            // window, both acting on the focused pane.
+            RowLayout {
                 width: parent.width
                 // Less the two Rule hairlines between the three bars. Named,
                 // because a third divider added above would otherwise push the
@@ -1976,29 +1982,98 @@ Window {
                 readonly property int dividers: 2
                 height: parent.height - header.height - status.height
                         - criteriaBar.height - filterBar.height - dividers
-                orientation: Qt.Horizontal
+                spacing: 0
 
-                readonly property int handleWidth: 3
-                // A pane's least width, unless the split cannot hold every
-                // pane at it: then they share the width and none passes the edge.
-                readonly property real narrowest: Math.min(280,
-                    (width - handleWidth * (Workspace.paneCount - 1)) / Math.max(1, Workspace.paneCount))
-
-                handle: Rectangle {
-                    implicitWidth: split.handleWidth
-                    color: C.SplitHandle.pressed || C.SplitHandle.hovered
-                           ? Theme.fill(Theme.accent, 0.5) : Theme.line
+                Sidebar {
+                    id: sidebar
+                    objectName: "sidebar"
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 220
+                    // The panel belongs to both list tabs: the views in it are
+                    // how you get anywhere, and a tags tab needs them as much
+                    // as a folder does.
+                    readonly property bool holdsTags: win.activeTab !== null && win.activeTab !== undefined
+                                                      && (win.activeTab.kind === "files"
+                                                          || win.activeTab.kind === "tags")
+                    // Dropped in a pane too narrow to hold it and a list at the
+                    // same time, and back for as long as its key is walking it,
+                    // because a key the sheet names without a condition has to
+                    // work at every size.
+                    visible: holdsTags && (win.paneShare >= 480 || expanded)
+                    tab: win.activeTab
+                    entry: details.entry
+                    walking: win.focusRegion === "tags"
+                    walkingDevices: win.focusRegion === "devices"
+                    walkingViews: win.focusRegion === "views"
+                    onKeyRequested: function (event) { win.handleKey(event) }
+                    onDeviceActivated: function (id) { Devices.act(id, "open") }
+                    onDeviceMenuRequested: function (id, x, y) { win.openDeviceMenu(id, x, y) }
+                    onTagEditRequested: win.startTagEdit("add")
+                    onViewActivated: function (row) { win.openView(row) }
+                    onViewMenuRequested: function (row, x, y) { win.openViewMenuAt(row, x, y) }
+                    onTagMenuRequested: function (row, x, y) { win.openTagMenuAt(row, x, y) }
+                    onTagActivated: function (name) {
+                        win.takeFocus()
+                        if (sidebar.tab)
+                            sidebar.tab.selectedTag = sidebar.tab.selectedTag === name ? "" : name
+                    }
                 }
 
-                Repeater {
-                    model: Workspace.panes
-                    delegate: Pane {
-                        required property var modelData
-                        required property int index
-                        pane: modelData
-                        paneIndex: index
-                        narrowest: split.narrowest
+                Rule {
+                    vertical: true
+                    visible: sidebar.visible
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 1
+                }
+
+                C.SplitView {
+                    id: split
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    orientation: Qt.Horizontal
+
+                    readonly property int handleWidth: 3
+                    // A pane's least width, unless the split cannot hold every
+                    // pane at it: then they share the width and none passes the edge.
+                    readonly property real narrowest: Math.min(280,
+                        (width - handleWidth * (Workspace.paneCount - 1)) / Math.max(1, Workspace.paneCount))
+
+                    handle: Rectangle {
+                        implicitWidth: split.handleWidth
+                        color: C.SplitHandle.pressed || C.SplitHandle.hovered
+                               ? Theme.fill(Theme.accent, 0.5) : Theme.line
                     }
+
+                    Repeater {
+                        model: Workspace.panes
+                        delegate: Pane {
+                            required property var modelData
+                            required property int index
+                            pane: modelData
+                            paneIndex: index
+                            narrowest: split.narrowest
+                        }
+                    }
+                }
+
+                Rule {
+                    vertical: true
+                    visible: details.visible
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 1
+                }
+
+                Details {
+                    id: details
+                    objectName: "detailsPanel"
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 252
+                    // Dropped whole in a pane too narrow to hold it and a list
+                    // at the same time: splitting the window is asking for two
+                    // lists, not for less of each.
+                    visible: sidebar.holdsTags && win.paneShare >= 640
+                    entry: win.activeFilesRoot ? win.activeFilesRoot.entry : ({})
+                    onTagActivated: function (tag) { win.startTagEdit("remove", details.entry.path, tag) }
                 }
             }
 
@@ -2871,15 +2946,8 @@ Window {
             }
         }
 
-        // The dock is a column of the pane, not a column of the view inside it,
-        // so it runs the whole height and the tab strip stops where it starts.
-        RowLayout {
-            anchors.fill: parent
-            spacing: 0
-
         ColumnLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            anchors.fill: parent
             spacing: 0
 
             // The tab strip, and on its right the controls that say how the
@@ -3077,100 +3145,6 @@ Window {
                 property var tab: paneRoot.pane.current
                 property int paneIndex: paneRoot.paneIndex
             }
-        }
-
-        Rule {
-            vertical: true
-            visible: dock.visible
-            Layout.fillHeight: true
-            Layout.preferredWidth: 1
-        }
-
-        Dock {
-            id: dock
-            onKeyRequested: function (event) { win.handleKey(event) }
-            onFocusEntered: {
-                Workspace.focusedPane = paneRoot.paneIndex
-            }
-            Layout.fillHeight: true
-            Layout.preferredWidth: 252
-            // The panel belongs to both list tabs: the views in it are how you
-            // get anywhere, and a tags tab needs them as much as a folder does.
-            readonly property bool holdsTags: paneRoot.pane.current
-                                              && (paneRoot.pane.current.kind === "files"
-                                                  || paneRoot.pane.current.kind === "tags")
-            showTags: dock.holdsTags
-            // Dropped whole in a pane too narrow to hold it and a list at the
-            // same time -- splitting the window is asking for two lists, not
-            // for two copies of the same tag vocabulary where the names should
-            // be -- and back for as long as `t` is walking it, because a key
-            // the sheet names without a condition has to work at every size.
-            visible: dock.holdsTags && (paneRoot.width >= 640 || dock.expanded)
-
-            tab: paneRoot.pane.current
-            // A Loader's payload has no static type -- it is whichever component
-            // is loaded -- so nothing can tell the linter that this one has an
-            // `entry`. The check is disabled for the line rather than for the
-            // file, and the runtime guard above is what actually keeps it safe.
-            // qmllint disable missing-property
-            entry: content.item && content.item.entry !== undefined ? content.item.entry : ({})
-            // qmllint enable missing-property
-            walking: win.focusRegion === "tags" && win.activeDock === dock
-            walkingDevices: win.focusRegion === "devices" && win.activeDock === dock
-            onDeviceActivated: function (id) { Workspace.focusedPane = paneRoot.paneIndex; Devices.act(id, "open") }
-            onDeviceMenuRequested: function (id, x, y) {
-                Workspace.focusedPane = paneRoot.paneIndex
-                win.activeDock = dock
-                win.openDeviceMenu(id, x, y)
-            }
-            walkingViews: win.focusRegion === "views" && win.activeDock === dock
-
-            onTagChipActivated: function (path, tag) {
-                Workspace.focusedPane = paneRoot.paneIndex
-                win.startTagEdit("remove", path, tag)
-            }
-            onTagEditRequested: {
-                Workspace.focusedPane = paneRoot.paneIndex
-                win.startTagEdit("add")
-            }
-            onViewActivated: function (row) { win.openView(row) }
-            onViewMenuRequested: function (row, x, y) {
-                Workspace.focusedPane = paneRoot.paneIndex
-                win.activeDock = dock
-                win.openViewMenuAt(row, x, y)
-            }
-
-            onTagMenuRequested: function (row, x, y) {
-                Workspace.focusedPane = paneRoot.paneIndex
-                win.activeDock = dock
-                win.openTagMenuAt(row, x, y)
-            }
-            onTagActivated: function (name) {
-                win.takeFocus()
-                if (dock.tab)
-                    dock.tab.selectedTag = dock.tab.selectedTag === name ? "" : name
-            }
-
-            // On the tab and not on the width: the panel the keyboard talks to
-            // is the one this pane's tab has, whether or not there is room to
-            // draw it yet.
-            function syncActive() {
-                if (dock.holdsTags && Workspace.currentTab === paneRoot.pane.current)
-                    win.activeDock = dock
-                else if (win.activeDock === dock)
-                    win.activeDock = null
-            }
-
-            Component.onCompleted: syncActive()
-            onHoldsTagsChanged: syncActive()
-            Component.onDestruction: if (win.activeDock === dock) win.activeDock = null
-
-            Connections {
-                target: Workspace
-                function onCurrentTabChanged() { dock.syncActive() }
-                function onFocusedPaneChanged() { dock.syncActive() }
-            }
-        }
         }
     }
 
@@ -3904,7 +3878,7 @@ Window {
                 // A tag node names files, so picking one lists them: a files tab
                 // scoped to that tag, holding every file that carries it
                 // wherever it lives, which is what picking the same tag in the
-                // dock does to the list beside it. A graph tab's own
+                // sidebar does to the list beside it. A graph tab's own
                 // selectedTag reaches nothing but the tab's title.
                 onNodeActivated: function (id, kind, label) {
                     if (kind === "file") {

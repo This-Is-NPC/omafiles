@@ -6,7 +6,7 @@ The studio window is 1180×720 pixels, its default size. Pictures are generated 
 
 ## Main window
 
-The main window shows files and folders in a list, details, or icon view. The path bar at the top shows the current location. Tabs open multiple folders in one pane. The sidebar on the right shows the current row's details, devices, saved views, and tags. The footer shows status and hints for available keys.
+The main window shows files and folders in a list, details, or icon view. The path bar at the top shows the current location. Tabs open multiple folders in one pane. The sidebar on the left holds where to go: saved views, devices, and tags, in that order. The details panel on the right shows what the current row is. Both follow the focused pane: a split window has one sidebar and one details panel. The details panel is dropped while a pane would be narrower than 640 pixels, and the sidebar while it would be narrower than 480; **v**, **d** and **t** bring the sidebar back while they walk it. The footer shows status and hints for available keys.
 
 Reach it: The main window opens when the application starts.
 
@@ -16,7 +16,7 @@ Picture: **img/01-studio.png**
 
 ## Details pane
 
-Press **2** to switch the file list to a table: name, then tags, type, size, and modified, one row per file. The row's tags, type, and other details always show in the sidebar too, next to the file list, whichever view is active.
+Press **2** to switch the file list to a table: name, then tags, type, size, and modified, one row per file. The row's tags, type, and other details always show in the details panel too, right of the file list, whichever view is active.
 
 Reach it: Press **2** in the main window, or click **details** in the row above the file list.
 

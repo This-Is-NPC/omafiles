@@ -13,8 +13,10 @@
         <file>qml/FileDropArea.qml</file>
         <file>qml/ColumnHead.qml</file>
         <file>qml/Details.qml</file>
-        <file>qml/Dock.qml</file>
+        <file>qml/Sidebar.qml</file>
         <file>qml/DeviceSection.qml</file>
+        <file>qml/PanelRow.qml</file>
+        <file>qml/SectionHeading.qml</file>
         <file>qml/Entry.qml</file>
         <file>qml/HelpSheet.qml</file>
         <file>qml/PreviewSheet.qml</file>

@@ -34,13 +34,10 @@ Column {
         target: Devices
         function onChanged() { deviceSection.updateRows() }
     }
-    spacing: Theme.spacingXs
-
-    FocusableControl {
+    SectionHeading {
         id: heading
         objectName: "devicesHeading"
         width: parent.width
-        height: Theme.controlHeight
         handCursor: true
         tabFocusable: devices.count === 0 || activeFocus
         pointerFocus: deviceSection.focusTarget
@@ -48,8 +45,8 @@ Column {
         onActiveFocusChanged: if (activeFocus) deviceSection.focusEntered()
         onActivated: deviceSection.focusTarget.forceActiveFocus()
         Keys.onPressed: function (event) { deviceSection.keyRequested(event) }
-        Label { anchors.verticalCenter: parent.verticalCenter; quiet: true; text: "devices" }
-        Label { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; quiet: true; text: "d" }
+        text: "devices"
+        key: "d"
     }
 
     ListView {
@@ -102,41 +99,38 @@ Column {
             border.color: Theme.accent
             z: 2
         }
-        delegate: Rectangle {
+        delegate: PanelRow {
             id: row
             objectName: "deviceRow"
             required property var modelData
             required property int index
             width: ListView.view.width
-            height: Theme.rowHeight
-            radius: Theme.rounding
             color: devices.activeFocus && devices.currentIndex === index ? Theme.fill(Theme.accent, 0.18)
-                 : hover.hovered ? Theme.fill(Theme.foreground, 0.06) : "transparent"
+                 : hovered ? Theme.fill(Theme.foreground, 0.06) : "transparent"
             Accessible.role: Accessible.ListItem
             Accessible.name: modelData.name
             Accessible.description: modelData.mounted ? "Mounted" : "Not mounted"
-            Icon {
-                id: icon
-                anchors.left: parent.left
-                anchors.leftMargin: Theme.spacingS
+            iconKind: "folder"
+            iconInk: row.modelData.mounted ? Theme.accent : Theme.dim
+            text: row.modelData.name
+            trailing: Chip {
+                id: menuButton
+                objectName: "deviceMenuButton"
                 anchors.verticalCenter: parent.verticalCenter
-                kind: "folder"
-                ink: row.modelData.mounted ? Theme.accent : Theme.dim
+                label: "⋮"
+                caption: "Device actions"
+                tabFocusable: false
+                onClicked: {
+                    devices.currentIndex = row.index
+                    const at = menuButton.mapToItem(null, 0, menuButton.height)
+                    deviceSection.menuRequested(row.modelData.id, at.x, at.y)
+                }
             }
-            Label {
-                anchors.left: icon.right
-                anchors.leftMargin: Theme.iconGap
-                anchors.right: menuButton.left
-                anchors.rightMargin: Theme.spacingXs
-                anchors.verticalCenter: parent.verticalCenter
-                text: row.modelData.name
-            }
-            HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
             Item {
                 anchors.left: parent.left
-                anchors.right: menuButton.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
+                width: row.trailingX
                 RowTapHandler {
                     onClicked: {
                         devices.currentIndex = row.index
@@ -150,27 +144,12 @@ Column {
                     }
                 }
             }
-            Chip {
-                id: menuButton
-                objectName: "deviceMenuButton"
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                width: Theme.rowHeight
-                height: Theme.rowHeight
-                label: "⋮"
-                caption: "Device actions"
-                tabFocusable: false
-                onClicked: {
-                    devices.currentIndex = row.index
-                    const at = menuButton.mapToItem(null, 0, menuButton.height)
-                    deviceSection.menuRequested(row.modelData.id, at.x, at.y)
-                }
-            }
         }
     }
     Label {
         objectName: "devicesStatus"
-        width: parent.width
+        x: Theme.inset
+        width: parent.width - 2 * Theme.inset
         visible: Devices.status !== "" || devices.count === 0
         text: Devices.status || "No removable devices"
         wrapMode: Text.Wrap
@@ -179,6 +158,7 @@ Column {
     }
     Chip {
         objectName: "cancelDeviceOperation"
+        x: Theme.inset
         visible: Devices.busy
         label: "Cancel device operation"
         onClicked: Devices.act("", "cancel")
