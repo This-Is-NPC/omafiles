@@ -1004,8 +1004,10 @@ Window {
             path = folder.pathAt(listing.currentIndex)
         const row = folder.rowForPath(path)
         const kind = folder.kindAt(row)
-        if (kind !== "file" && kind !== "dir")
+        if (kind !== "file" && kind !== "dir") {
+            IndexModel.setNotice("Tags go on files and folders: move the cursor to one, or to a marked row for the marked set")
             return
+        }
         tagSheet.openFor(folder.targetPaths(path), operation || "add", tag || "")
     }
 

@@ -13,8 +13,10 @@ editor with that tag selected for removal; choose Rename to replace it instead.
 No chip click changes tags until you apply the edit.
 
 An edit opened over a marked row acts on the marked set. An edit over an
-unmarked row acts on that row alone. The editor names the file or shows the
-number of selected files. Its targets are fixed when it opens. It accepts one
+unmarked row acts on that row alone. The `..` row is not a file, so an edit
+opened over it does not open the editor, even with marked rows: the status bar
+says to move the cursor to a file, a folder or a marked row. The editor names
+the file or shows the number of selected files. Its targets are fixed when it opens. It accepts one
 tag at a time; existing tags are suggestions, and a new name is equally valid.
 Up and Down choose a suggestion, Tab completes a typed prefix or chosen
 suggestion, and Enter accepts a chosen suggestion before applying. In Rename,
