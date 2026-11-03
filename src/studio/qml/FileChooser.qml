@@ -37,10 +37,7 @@ Window {
     function focusStops() {
         if (request && request.overwritePaths.length > 0)
             return [keepEditing, replaceFile];
-        const stops = saving ? [filename.focusTarget] : [files];
-        stops.push(up, home, hidden, help, location.focusTarget, search.focusTarget);
-        if (saving)
-            stops.push(files);
+        const stops = [up, home, hidden, help, location.focusTarget, search.focusTarget, files, filename.focusTarget];
         if (request && request.filters.length > 0)
             stops.push(filter);
         for (let i = 0; i < choiceRows.count; ++i) {
