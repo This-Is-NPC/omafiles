@@ -3156,6 +3156,10 @@ Window {
                                   ? trashView : filesView
                 property var tab: paneRoot.pane.current
                 property int paneIndex: paneRoot.paneIndex
+                // A new view takes the keyboard when the old one held it, or
+                // when the destroyed view left it on this Loader.
+                onLoaded: if (win.activeFocusItem === root || win.activeFocusItem === content)
+                              Qt.callLater(win.takeFocus)
             }
         }
     }
