@@ -219,6 +219,8 @@ The footer is one line in every mode. File counts and descriptive text sit on
 the left in a capped portion of the width; the hints sit on the right, listed
 most important first. When the window narrows, hints are dropped from the least
 important end; the first one, **? keys** wherever a mode has it, always stays.
+A receipt or an error sits after the counts and takes the room of the least
+important hints; it is shortened before it would push out the first hint.
 A dropped hint's key still works. At 420 × 300 the footer keeps the strip
 height and its text does not overlap.
 

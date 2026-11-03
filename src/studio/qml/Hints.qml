@@ -26,6 +26,9 @@ Item {
         }
         return count
     }
+    // The width the first hint needs, its focus ring included.
+    readonly property real firstWidth: controls.length > 0 && controls[0]
+        ? controls[0].implicitWidth + 2 * Theme.focusRing : 0
     signal requested(string key)
 
     ListModel { id: actions }

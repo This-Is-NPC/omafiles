@@ -675,6 +675,8 @@ private slots:
     void activatesFooterHintsByTouchAndKeyboard();
     void keepsEveryFooterActionReachable_data();
     void keepsEveryFooterActionReachable();
+    void keepsHintsBesideReceipts_data();
+    void keepsHintsBesideReceipts();
     void keepsTheViewControlsInNarrowPanes();
     void givesTheNameColumnPriority();
     void cancelsRowHoldOnMovement();
@@ -15846,6 +15848,61 @@ void TestStudio::preservesTagsWrittenBeforeTheOperationLock()
     Store store(defaultIndexPath());
     QVERIFY(store.load(&why));
     QCOMPARE(store.get(file).tags, tags);
+}
+
+void TestStudio::keepsHintsBesideReceipts_data()
+{
+    QTest::addColumn<QSize>("size");
+    QTest::addColumn<QString>("notice");
+    for (const QSize size : {QSize(1180, 720), QSize(420, 300)}) {
+        QTest::newRow(qPrintable(QString::number(size.width()))) << size << QStringLiteral("tagged 1 file work");
+        QTest::newRow(qPrintable(QString::number(size.width()) + "-long"))
+            << size << QStringLiteral("tagged 1 file ") + QString(300, 'w');
+    }
+}
+
+// A receipt shares the footer with the hints: it takes the room of the least
+// important ones, and `? keys` stays.
+void TestStudio::keepsHintsBesideReceipts()
+{
+    QFETCH(QSize, size);
+    QFETCH(QString, notice);
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { m_index->setNotice(QString()); window()->resize(original); });
+    window()->resize(size);
+    focusRow("one.txt");
+    m_index->setNotice(notice);
+    settle();
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    auto *status = itemsNamed("statusBar").first();
+    auto *receipt = itemsNamed("statusReceipt").first();
+    QVERIFY(receipt->isVisible());
+    const QRectF receiptRect = receipt->mapRectToScene(receipt->boundingRect());
+    QVERIFY(receiptRect.width() > 0);
+    QVERIFY(QRectF(QPointF(), window()->size()).contains(receiptRect));
+    QQuickItem *text = nullptr;
+    for (auto *child : receipt->findChildren<QQuickItem *>())
+        if (child->property("text").toString() == notice) text = child;
+    QVERIFY(text && text->isVisible() && text->width() > 0);
+    if (size.width() == 1180 && notice.size() < 40) QCOMPARE(text->width(), text->implicitWidth());
+    QList<QQuickItem *> buttons;
+    for (auto *item : itemsNamed("hintAction"))
+        if (status->isAncestorOf(item)) buttons.append(item);
+    const QVariantList hints = window()->property("hintsForRegion").toList();
+    QCOMPARE(buttons.size(), hints.size());
+    std::sort(buttons.begin(), buttons.end(), [](QQuickItem *a, QQuickItem *b) {
+        return a->property("index").toInt() < b->property("index").toInt(); });
+    QCOMPARE(buttons.first()->property("modelData").toMap().value("key").toString(), QStringLiteral("?"));
+    int shown = 0;
+    while (shown < buttons.size() && buttons[shown]->isVisible()) ++shown;
+    QVERIFY(shown >= 1);
+    for (int at = shown; at < buttons.size(); ++at) QVERIFY(!buttons[at]->isVisible());
+    for (auto *button : buttons.mid(0, shown)) {
+        const QRectF rect = button->mapRectToScene(button->boundingRect());
+        QVERIFY(QRectF(QPointF(), window()->size()).contains(rect));
+        QVERIFY2(rect.left() >= receiptRect.right(), qPrintable(button->property("tooltipCaption").toString()));
+    }
+    QVERIFY(status->property("spoken").toString().contains(notice + QStringLiteral(", ? keys")));
 }
 
 void TestStudio::keepsTextReceiptsForIndexMaintenance()
