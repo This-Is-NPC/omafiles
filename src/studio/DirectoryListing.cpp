@@ -11,17 +11,16 @@
 
 namespace omafiles {
 namespace {
-constexpr qsizetype nameBlockSize = 64 * 1024;
-
 template <typename String, typename View, typename Append>
 quint32 appendName(QVector<String> &blocks, View name, Append append)
 {
-    if (blocks.isEmpty() || blocks.last().size() + name.size() + 1 > nameBlockSize) {
+    constexpr qsizetype size = DirectoryListing::nameBlockSize;
+    if (blocks.isEmpty() || blocks.last().size() + name.size() + 1 > size) {
         blocks.append(String());
-        blocks.last().reserve(nameBlockSize);
+        blocks.last().reserve(size);
     }
     String &block = blocks.last();
-    const quint32 offset = quint32((blocks.size() - 1) * nameBlockSize + block.size());
+    const quint32 offset = quint32((blocks.size() - 1) * size + block.size());
     append(block, name);
     return offset;
 }
@@ -165,14 +164,31 @@ DirectoryNameQuery::DirectoryNameQuery(const QString &needle)
     : m_needle(needle),
       m_ascii(std::all_of(needle.cbegin(), needle.cend(),
                          [](QChar ch) { return ch.unicode() <= 0x7f; })),
-      m_pattern(m_ascii ? needle.toLatin1() : QByteArray()),
-      m_latin1(QLatin1StringView(m_pattern), Qt::CaseInsensitive)
+      m_pattern(m_ascii ? needle.toLatin1() : QByteArray())
 {
+    for (char &byte : m_pattern)
+        byte = char(asciiLower[uchar(byte)]);
 }
 
 bool DirectoryNameQuery::contains(QLatin1StringView name) const
 {
-    if (m_ascii) return m_latin1.indexIn(name) >= 0;
+    if (m_ascii) {
+        // Compact names are ASCII, so folding ASCII letters is Qt's case-insensitive
+        // match. Positions whose first and last bytes differ skip the middle.
+        const auto *text = reinterpret_cast<const uchar *>(name.data());
+        const auto *pattern = reinterpret_cast<const uchar *>(m_pattern.constData());
+        const qsizetype size = m_pattern.size();
+        if (size == 0) return true;
+        for (qsizetype at = 0; at + size <= name.size(); ++at) {
+            if (asciiLower[text[at]] != pattern[0]
+                || asciiLower[text[at + size - 1]] != pattern[size - 1])
+                continue;
+            qsizetype i = 1;
+            while (i < size - 1 && asciiLower[text[at + i]] == pattern[i]) ++i;
+            if (i >= size - 1) return true;
+        }
+        return false;
+    }
     // The listing bounds names to 255 units; preserve Qt's Unicode folding.
     QChar unicode[255];
     for (qsizetype i = 0; i < name.size(); ++i)

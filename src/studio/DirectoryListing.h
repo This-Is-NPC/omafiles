@@ -5,7 +5,6 @@
 #include <QAnyStringView>
 #include <QByteArray>
 #include <QStringView>
-#include <QLatin1StringMatcher>
 #include <QVector>
 
 #include <atomic>
@@ -27,8 +26,8 @@ private:
     bool contains(QStringView name) const;
     QString m_needle;
     bool m_ascii;
+    /// The ASCII needle in lower case.
     QByteArray m_pattern;
-    QLatin1StringMatcher m_latin1;
 };
 
 class DirectoryListing
@@ -41,10 +40,21 @@ public:
     qsizetype size() const { return m_spans.size(); }
     QAnyStringView name(qsizetype index) const;
     bool matches(qsizetype index, const DirectoryNameQuery &query, bool showHidden) const;
+    /// Starts loading the name of `index` into the cache.
+    void prefetch(qsizetype index) const
+    {
+        const quint32 offset = m_spans[index].offset();
+        if (m_spans[index].type() & Latin1)
+            __builtin_prefetch(m_latin1Names[offset / nameBlockSize].constData() + offset % nameBlockSize);
+        else
+            __builtin_prefetch(m_names[offset / nameBlockSize].constData() + offset % nameBlockSize);
+    }
     bool isDirectory(qsizetype index) const;
     bool isLink(qsizetype index) const;
     qsizetype nameStorageCapacityBytes() const;
     qsizetype entryStorageBytes() const;
+
+    static constexpr qsizetype nameBlockSize = 64 * 1024;
 
     QString directory;
     QString error;

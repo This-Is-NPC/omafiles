@@ -8117,7 +8117,8 @@ void TestStudio::preparesDirectoryQueriesWithoutChangingUnicodeMatching()
     }
     const auto listing = DirectoryListing::read(tree.path());
     QCOMPARE(listing.size(), names.size());
-    const QStringList needles{"", "foo", "FOO", ".txt", "SS", " ",
+    // "fxo" and "FOx." match FOO.txt at both ends but not in the middle.
+    const QStringList needles{"", "foo", "FOO", ".txt", "SS", " ", "fxo", "FOx.",
         QStringLiteral("\u212a"), QStringLiteral("\u017f"), QStringLiteral("\u03c3"),
         QStringLiteral("\u03bc"), QStringLiteral("\u00b5"), QStringLiteral("\u00df"),
         QStringLiteral("\U00010400"), QStringLiteral("\U00010428"), QStringLiteral("\U0001f642"),

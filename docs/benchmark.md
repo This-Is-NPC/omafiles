@@ -331,13 +331,22 @@ with the residual settling variation attributed to the shared observer.
 ## Directory filtering
 
 Folder queries search the whole immutable directory listing in a worker,
-including names outside the rendered window. ASCII queries prepare Qt's
-[QLatin1StringMatcher](https://doc.qt.io/qt-6/qlatin1stringmatcher.html) once per
-worker query. ASCII eligibility is checked once per query. The query owns the
-pattern bytes for the matcher's borrowed view.
+including names outside the rendered window. ASCII eligibility is checked once
+per query, and an ASCII query keeps its needle in lower case. Compact names are
+ASCII, so folding their ASCII letters gives Qt's case-insensitive result. Each
+candidate position compares the needle's first and last bytes before its middle,
+the filter of [Muła's substring search](http://0x80.pl/notesen/2016-11-28-simd-strfind.html),
+here one position at a time because names are at most 255 bytes.
 Unicode names or queries retain Qt's UTF-16 case-insensitive substring semantics;
 matching does not introduce normalization or accent stripping. Displayed names
 and paths retain their original spelling.
+
+Rows are in name order, names in the order the directory returned them. On a
+file system that returns entries in hash order, consecutive rows point at
+scattered names, and a scan of a million rows waits on a cache miss for nearly
+every one. The scan asks for the name 16 rows ahead with `__builtin_prefetch`,
+[GCC's prefetch builtin](https://gcc.gnu.org/onlinedocs/gcc/Other-Builtins.html#index-_005f_005fbuiltin_005fprefetch),
+so those loads overlap. It adds no storage.
 
 A name-only query can examine the previous accepted result when it extends the
 previous nonempty query under the same listing, hidden-file setting, sort

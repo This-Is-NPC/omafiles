@@ -27,6 +27,9 @@
 namespace omafiles {
 namespace {
 
+// Rows a directory scan reads ahead: sorted rows point at scattered names.
+constexpr qsizetype prefetchDistance = 16;
+
 QString formatSize(qint64 bytes)
 {
     if (bytes < 0)
@@ -1440,6 +1443,10 @@ void FolderModel::startDirectoryQuery()
                               QVector<Candidate> &describedRows, int &tagged, int &examined) {
             examined = int(end - begin);
             for (qsizetype row = begin; row < end; ++row) {
+                if (row + prefetchDistance < end) {
+                    const int ahead = narrowed ? candidates.at(row + prefetchDistance) : int(row + prefetchDistance);
+                    if (ahead >= 0) listing.prefetch(ahead);
+                }
                 const int i = narrowed ? candidates.at(row) : int(row);
                 if (i < 0) { --examined; continue; }
                 if (cancellation->load(std::memory_order_relaxed))
