@@ -54,8 +54,12 @@ edit that preference: select another backend before uninstalling.
 ## Using the chooser
 
 The same actions work with keyboard, mouse and touch. Tab and Shift Tab move
-between visible controls; focused controls remain visible when the window is
-small. Enter or Space activates a focused button. Esc cancels the request.
+between visible controls in the order they are shown, top to bottom: the up,
+home, hidden and help buttons, the path and search fields, the file list, the
+SaveFile filename field, the filter, the choices, **Mark row**, Cancel and the
+accept button, then round to the top. Focus starts on the filename field for
+SaveFile and on the list otherwise. Focused controls remain visible when the
+window is small. Enter or Space activates a focused button. Esc cancels the request.
 Click or tap a row to select it; double-click a folder to enter it. Enter on a
 folder navigates into it. For a directory request, Ctrl Enter or the accept
 button chooses the highlighted folder, or the current folder when no child

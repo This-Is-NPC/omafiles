@@ -18027,11 +18027,14 @@ void TestStudio::navigatesPortalChooser()
         while (item && item->objectName().isEmpty()) item = item->parentItem();
         return item ? item->objectName() : QString();
     };
-    QStringList expected{initial, "chooserUp", "chooserHome", "chooserHidden", "chooserHelp", "chooserLocation", "chooserSearch"};
-    if (method == "SaveFile") expected << "chooserFiles";
+    QStringList expected{"chooserUp", "chooserHome", "chooserHidden", "chooserHelp", "chooserLocation", "chooserSearch", "chooserFiles"};
+    if (method == "SaveFile") expected << "chooserFilename";
     expected << "chooserFilter" << "chooserBooleanChoice" << "chooserChoice";
     if (portal->current()->multiple) expected << "chooserMark";
     expected << "chooserCancel" << "chooserAccept";
+    const auto start = expected.indexOf(initial);
+    QVERIFY(start >= 0);
+    expected = expected.mid(start) + expected.first(start);
     QStringList seen;
     for (int i = 0; i < expected.size(); ++i) {
         QVERIFY(chooser->activeFocusItem());
@@ -18045,7 +18048,7 @@ void TestStudio::navigatesPortalChooser()
         QCOMPARE(focusName(chooser->activeFocusItem()), expected.at(i));
     }
     QTest::keyClick(chooser, Qt::Key_Tab, Qt::ShiftModifier);
-    QCOMPARE(focusName(chooser->activeFocusItem()), QStringLiteral("chooserAccept"));
+    QCOMPARE(focusName(chooser->activeFocusItem()), expected.last());
     QTest::keyClick(chooser, Qt::Key_Tab);
     QCOMPARE(focusName(chooser->activeFocusItem()), initial);
     auto *hidden = control("chooserHidden");
