@@ -93,7 +93,7 @@ FocusScope {
                 objectName: "trashEmpty"
                 label: "empty…"
                 key: "e"
-                usable: contents.count > 0 && !contents.loading && !contents.busy && !IndexModel.operationBusy
+                usable: contents.count > 0 && !contents.busy && !IndexModel.operationBusy
                 onClicked: trash.emptyRequested()
                 Keys.onTabPressed: function (event) { Focus.move(event, refreshButton, restoreButton) }
                 Keys.onBacktabPressed: function (event) { Focus.move(event, restoreButton) }

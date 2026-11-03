@@ -353,7 +353,8 @@ private slots:
     void navigatesArchiveControls();
     void browsesAndRestoresTrashByKeyboardAndPointer();
     void cancelsStaleTrashScans();
-    void restoresTrashEntryDuringRefresh();
+    void operatesOnTrashDuringRefresh_data();
+    void operatesOnTrashDuringRefresh();
     void listsFolderWhileUndoCaptureBlocks();
     void keepsTrashCursorOnReloadAndRestore();
     void reversesFreshControlGroups_data();
@@ -15099,6 +15100,27 @@ void TestStudio::browsesAndRestoresTrashByKeyboardAndPointer()
     QVERIFY(model);
     QTRY_VERIFY(!model->loading());
     QCOMPARE(model->count(), 2);
+    {
+        QSemaphore entered, release;
+        std::atomic_bool hold = true;
+        auto releaseWorker = qScopeGuard([&] { release.release(); });
+        Trash::setMountProvider([&] {
+            if (hold.exchange(false)) {
+                entered.release();
+                release.acquire();
+            }
+            return QStringList{};
+        });
+        auto unhold = qScopeGuard([] { Trash::setMountProvider([] { return QStringList{}; }); });
+        model->reload();
+        QTRY_VERIFY(entered.available() > 0);
+        QVERIFY(model->loading());
+        for (const auto &name : {QStringLiteral("trashRestore"), QStringLiteral("trashEmpty")})
+            QVERIFY2(itemsNamed(name).first()->property("usable").toBool(), qPrintable(name));
+        release.release();
+        QThreadPool::globalInstance()->waitForDone();
+    }
+    QTRY_VERIFY(!model->loading());
     QCOMPARE(model->data(model->index(0), TrashModel::OriginalRole).toString(), dir.filePath("first file.txt"));
     QCOMPARE(model->data(model->index(0), TrashModel::DeletedRole).toString(), QStringLiteral("2026-10-11T13:14:15"));
     window()->resize(420, 300);
@@ -15221,8 +15243,16 @@ void TestStudio::cancelsStaleTrashScans()
     QCOMPARE(model->count(), 0);
 }
 
-void TestStudio::restoresTrashEntryDuringRefresh()
+void TestStudio::operatesOnTrashDuringRefresh_data()
 {
+    QTest::addColumn<bool>("erase");
+    QTest::newRow("restore") << false;
+    QTest::newRow("empty") << true;
+}
+
+void TestStudio::operatesOnTrashDuringRefresh()
+{
+    QFETCH(bool, erase);
     QTemporaryDir fixture;
     QVERIFY(fixture.isValid());
     const QByteArray oldData = qgetenv("XDG_DATA_HOME");
@@ -15254,9 +15284,15 @@ void TestStudio::restoresTrashEntryDuringRefresh()
     QTRY_VERIFY(entered.available() > 0);
     entered.acquire();
     QVERIFY(model->loading());
-    model->restore(0);
+    if (erase) {
+        QVERIFY(model->prepareEmpty());
+        model->empty();
+    } else {
+        model->restore(0);
+    }
     QTRY_VERIFY(!model->busy() && !model->loading());
-    QVERIFY(QFileInfo::exists(mount + "/listed"));
+    QCOMPARE(QFileInfo::exists(mount + "/listed"), !erase);
+    QVERIFY(!QFileInfo::exists(location + "/files/listed"));
     QCOMPARE(model->count(), 0);
     release.release();
     QThreadPool::globalInstance()->waitForDone();
