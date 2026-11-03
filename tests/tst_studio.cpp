@@ -651,6 +651,7 @@ private slots:
     void traversesEveryPermissionControl();
     void traversesSidebarActions_data();
     void traversesSidebarActions();
+    void walksTheTagsHeadingOnlyWithoutTags();
     void auditsPreviewButtons_data();
     void auditsPreviewButtons();
     void auditsInlinePromptButtons_data();
@@ -15103,6 +15104,44 @@ void TestStudio::traversesSidebarActions()
         }
         qInfo().noquote() << "Inventory PASS sidebar" << identity.first << identity.second;
     }
+}
+
+// The tags heading is a Tab stop only while the tag list has no row to take
+// it, including when the tags arrive while the heading holds the keyboard.
+void TestStudio::walksTheTagsHeadingOnlyWithoutTags()
+{
+    const auto restore = qScopeGuard([&] { writeIndex(); m_index->reload(); settle(); });
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    QVERIFY(sidebar);
+    auto *heading = sidebar->findChild<QQuickItem *>(QStringLiteral("tagsHeading"));
+    auto *list = sidebar->findChild<QQuickItem *>(QStringLiteral("sidebarTags"));
+    QVERIFY(heading && list);
+    // Walks one whole Tab cycle from the file list.
+    const auto walk = [&] {
+        QMetaObject::invokeMethod(window(), "takeFocus");
+        focusRow("one.txt");
+        auto *first = window()->activeFocusItem();
+        bool visited = false;
+        for (int step = 0; step < 150 && !QTest::currentTestFailed(); ++step) {
+            key(Qt::Key_Tab);
+            visited = visited || heading->hasActiveFocus();
+            if (window()->activeFocusItem() == first) break;
+        }
+        if (window()->activeFocusItem() != first) return QStringLiteral("open");
+        return visited ? QStringLiteral("visited") : QStringLiteral("skipped");
+    };
+    QFile index(QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl")));
+    QVERIFY(index.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    index.close();
+    m_index->reload();
+    QTRY_COMPARE(list->property("count").toInt(), 0);
+    QCOMPARE(walk(), QStringLiteral("visited"));
+    QMetaObject::invokeMethod(window(), "focusTags"); settle();
+    QVERIFY(heading->hasActiveFocus());
+    writeIndex();
+    m_index->reload();
+    QTRY_VERIFY(list->property("count").toInt() > 0);
+    QCOMPARE(walk(), QStringLiteral("skipped"));
 }
 
 void TestStudio::auditsTagEditorControls_data()
