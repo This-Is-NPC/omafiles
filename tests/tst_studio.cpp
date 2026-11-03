@@ -353,6 +353,7 @@ private slots:
     void navigatesArchiveControls();
     void browsesAndRestoresTrashByKeyboardAndPointer();
     void cancelsStaleTrashScans();
+    void restoresTrashEntryDuringRefresh();
     void keepsTrashCursorOnReloadAndRestore();
     void reversesFreshControlGroups_data();
     void reversesFreshControlGroups();
@@ -15151,6 +15152,49 @@ void TestStudio::cancelsStaleTrashScans()
     QCOMPARE(model->count(), 0);
     release.release();
     pool->waitForDone();
+    QCoreApplication::processEvents();
+    QCOMPARE(model->count(), 0);
+}
+
+void TestStudio::restoresTrashEntryDuringRefresh()
+{
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const QByteArray oldData = qgetenv("XDG_DATA_HOME");
+    qputenv("XDG_DATA_HOME", (fixture.path() + "/data").toUtf8());
+    const QString mount = fixture.path() + "/mount";
+    const QString location = mount + "/.Trash-" + QString::number(::getuid());
+    QVERIFY(writeLooknfeel(location + "/files/listed", "payload"));
+    QVERIFY(writeLooknfeel(location + "/info/listed.trashinfo",
+        "[Trash Info]\nPath=listed\nDeletionDate=2026-10-11T13:14:15\n"));
+    QSemaphore entered, release;
+    std::atomic_bool hold = false;
+    auto releaseWorker = qScopeGuard([&] { release.release(); });
+    Trash::setMountProvider([&] {
+        if (hold.exchange(false)) {
+            entered.release();
+            release.acquire();
+        }
+        return QStringList{mount};
+    });
+    auto restore = qScopeGuard([&] {
+        Trash::setMountProvider([] { return QStringList{}; });
+        qputenv("XDG_DATA_HOME", oldData);
+    });
+    auto model = std::make_unique<TrashModel>();
+    QTRY_COMPARE(model->count(), 1);
+    QTRY_VERIFY(!model->loading());
+    hold = true;
+    model->reload();
+    QTRY_VERIFY(entered.available() > 0);
+    entered.acquire();
+    QVERIFY(model->loading());
+    model->restore(0);
+    QTRY_VERIFY(!model->busy() && !model->loading());
+    QVERIFY(QFileInfo::exists(mount + "/listed"));
+    QCOMPARE(model->count(), 0);
+    release.release();
+    QThreadPool::globalInstance()->waitForDone();
     QCoreApplication::processEvents();
     QCOMPARE(model->count(), 0);
 }

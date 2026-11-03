@@ -169,7 +169,7 @@ void TrashModel::empty()
 
 void TrashModel::operate(const QVector<Trash::Item> &items, bool erase)
 {
-    if (m_busy || (!erase && m_loading) || items.isEmpty()) return;
+    if (m_busy || items.isEmpty()) return;
     m_loading = false;
     if (m_scan) m_scan->store(true);
     m_busy = true;

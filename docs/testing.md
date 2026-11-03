@@ -36,6 +36,10 @@ requests a fresh one with the global thread pool limited to one thread, the
 size Qt gives it under a one-CPU affinity mask. The fresh scan must complete
 while the stale one is still blocked, so the check covers one CPU on any host.
 
+`restoresTrashEntryDuringRefresh` holds a Trash refresh the same way and
+requires a restore of a listed entry to complete during it, as when `r` is
+pressed while a watcher-driven refresh runs.
+
 `waitsForDelayedPlaybackAcknowledgement` uses a helper that acknowledges playback
 after six seconds. The assertion waits for the actual acknowledgement and checks
 the resulting state; it does not assert elapsed time. This controlled delay

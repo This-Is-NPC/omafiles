@@ -77,7 +77,7 @@ FocusScope {
                 objectName: "trashRestore"
                 label: "restore"
                 key: "r"
-                usable: contents.count > 0 && !contents.loading && !contents.busy && !IndexModel.operationBusy
+                usable: contents.count > 0 && !contents.busy && !IndexModel.operationBusy
                 onClicked: trash.restore()
                 Keys.onTabPressed: function (event) { Focus.move(event, emptyButton, list) }
                 Keys.onBacktabPressed: function (event) { Focus.move(event, list) }
