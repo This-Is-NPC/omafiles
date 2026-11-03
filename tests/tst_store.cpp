@@ -1438,6 +1438,27 @@ private slots:
         QVERIFY(!listing.watches.contains(fileMount));
     }
 
+    void skipsUnsearchableTopdirsButReportsUnreadableTrash()
+    {
+        TrashFixture fixture;
+        const QString closed = fixture.home.path() + QStringLiteral("/closed-mount");
+        const QString open = fixture.home.path() + QStringLiteral("/open-mount");
+        const QString unreadable = open + QStringLiteral("/.Trash-") + QString::number(::getuid());
+        QVERIFY(QDir().mkpath(closed));
+        QVERIFY(QDir().mkpath(unreadable));
+        QCOMPARE(::chmod(QFile::encodeName(closed).constData(), 0000), 0);
+        QCOMPARE(::chmod(QFile::encodeName(unreadable).constData(), 0000), 0);
+        auto reopen = qScopeGuard([&] {
+            ::chmod(QFile::encodeName(closed).constData(), 0700);
+            ::chmod(QFile::encodeName(unreadable).constData(), 0700);
+        });
+        auto listing = omafiles::Trash::list({closed});
+        QVERIFY2(listing.errors.isEmpty(), qPrintable(listing.errors.join(u'\n')));
+        listing = omafiles::Trash::list({open});
+        QCOMPARE(listing.errors.size(), 1);
+        QVERIFY2(listing.errors.first().contains(unreadable), qPrintable(listing.errors.first()));
+    }
+
     void visitsNamesWithoutCopyingAscii_data()
     {
         QTest::addColumn<bool>("borrowDescriptor");

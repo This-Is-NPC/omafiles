@@ -352,6 +352,7 @@ private slots:
     void navigatesArchiveControls_data();
     void navigatesArchiveControls();
     void browsesAndRestoresTrashByKeyboardAndPointer();
+    void showsTrashReceiptBesideAnUnsearchableMount();
     void cancelsStaleTrashScans();
     void operatesOnTrashDuringRefresh_data();
     void operatesOnTrashDuringRefresh();
@@ -16259,6 +16260,44 @@ void TestStudio::reversesFreshControlGroups()
     }
     key(Qt::Key_Tab, Qt::ShiftModifier);
     QVERIFY(!group->isAncestorOf(window()->activeFocusItem()));
+}
+
+void TestStudio::showsTrashReceiptBesideAnUnsearchableMount()
+{
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const QByteArray oldData = qgetenv("XDG_DATA_HOME");
+    qputenv("XDG_DATA_HOME", fixture.path().toUtf8());
+    const QDir dir(fixture.path());
+    const QString closed = dir.filePath("closed-mount");
+    QVERIFY(QDir().mkpath(closed));
+    QCOMPARE(::chmod(QFile::encodeName(closed).constData(), 0000), 0);
+    Trash::setMountProvider([closed] { return QStringList{closed}; });
+    auto cleanup = qScopeGuard([&] {
+        if (tab()->kind() == "trash") m_workspace->closeCurrentTab();
+        Trash::setMountProvider([] { return QStringList{}; });
+        ::chmod(QFile::encodeName(closed).constData(), 0700);
+        qputenv("XDG_DATA_HOME", oldData);
+    });
+    QVERIFY(writeLooknfeel(dir.filePath("Trash/files/kept.txt"), "payload"));
+    QVERIFY(writeLooknfeel(dir.filePath("Trash/info/kept.txt.trashinfo"),
+        "[Trash Info]\nPath=" + dir.filePath("kept.txt") + "\nDeletionDate=2026-10-11T13:14:15\n"));
+    QObject *status = m_engine->rootObjects().first()->findChild<QObject *>(QStringLiteral("statusBar"));
+    QVERIFY(status);
+    key(':');
+    for (char ch : QByteArray("open trash")) key(ch);
+    key(Qt::Key_Return);
+    QTRY_COMPARE(tab()->kind(), QStringLiteral("trash"));
+    QTRY_VERIFY(!itemsNamed("trashView").isEmpty());
+    auto *model = itemsNamed("trashView").first()->property("model").value<TrashModel *>();
+    QVERIFY(model);
+    QTRY_VERIFY(!model->loading());
+    QVERIFY2(model->error().isEmpty(), qPrintable(model->error()));
+    QCOMPARE(model->count(), 1);
+    key('r');
+    QTRY_VERIFY(QFileInfo::exists(dir.filePath("kept.txt")));
+    QTRY_VERIFY(!model->busy() && !model->loading());
+    QCOMPARE(status->property("message").toString(), QStringLiteral("Restored 1 item(s)."));
 }
 
 void TestStudio::browsesAndRestoresTrashByKeyboardAndPointer()
