@@ -26,9 +26,9 @@ Rectangle {
     /// folder counts. A graph tab has no FolderModel, so `0 tagged here` there
     /// is not a small number, it is an answer to a question nobody asked.
     property string note: ""
-    /// What the window could not do, from whichever model could not do it.
-    /// One line, because a message that shares the line with the key hints is
-    /// a message that gets clipped.
+    /// The receipt of the last action, or what the window could not do, from
+    /// whichever model said it. It sits between the facts and the hints and
+    /// takes the room of the least important hints; the first hint stays.
     property string message: ""
     property bool editing: false
     readonly property bool alarm: message !== "" && !editing
@@ -53,12 +53,10 @@ Rectangle {
             parts.push("tag " + bar.tag)
         if (bar.filter !== "")
             parts.push("/" + bar.filter)
-        if (bar.alarm) {
+        if (bar.alarm)
             parts.push(bar.message)
-        } else {
-            for (let i = 0; i < bar.hints.length; i++)
-                parts.push(bar.hints[i].key + " " + bar.hints[i].label)
-        }
+        for (let i = 0; i < bar.hints.length; i++)
+            parts.push(bar.hints[i].key + " " + bar.hints[i].label)
         return parts.join(", ")
     }
 
@@ -75,7 +73,7 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         spacing: Theme.spacingM
         visible: !bar.editing
-        width: bar.editing ? 0 : Math.min(implicitWidth, Math.max(0, bar.width * (bar.alarm ? 0.45 : 0.35) - Theme.spacingXl))
+        width: bar.editing ? 0 : Math.min(implicitWidth, Math.max(0, bar.width * 0.35 - Theme.spacingXl))
         clip: true
 
         Label {
@@ -125,17 +123,17 @@ Rectangle {
         visible: bar.alarm
         anchors.left: facts.right
         anchors.leftMargin: Theme.spacingL
-        anchors.right: parent.right
-        anchors.rightMargin: Theme.inset
         anchors.verticalCenter: parent.verticalCenter
+        width: Math.max(0, Math.min(receiptText.implicitWidth, bar.width - Theme.inset - Theme.spacingL
+                                    + 2 * Theme.focusRing - hintStrip.firstWidth - x))
         height: Theme.controlHeight
         tooltipCaption: bar.message
         Accessible.name: "Read receipt: " + bar.message
         onActivated: bar.receiptRequested()
         Label {
+            id: receiptText
             anchors.fill: parent
             verticalAlignment: Text.AlignVCenter
-            horizontalAlignment: Text.AlignRight
             color: Theme.urgent
             font.pixelSize: Theme.fontSmall
             text: bar.message
@@ -144,8 +142,7 @@ Rectangle {
 
     Hints {
         id: hintStrip
-        visible: !bar.alarm
-        anchors.left: facts.right
+        anchors.left: bar.alarm ? receipt.right : facts.right
         anchors.leftMargin: Theme.spacingL - Theme.focusRing
         anchors.right: parent.right
         anchors.rightMargin: Theme.inset - Theme.focusRing
