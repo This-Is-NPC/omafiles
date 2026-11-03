@@ -273,7 +273,9 @@ input runs in its own process: `src/archive/` (libarchive) and
 `src/devices/` (the GIO volume monitor, which links GLib/GIO only)
 speak line-delimited JSON over stdin and stdout; `src/preview/`
 (quick preview) sends length-prefixed binary packets over stdout and
-reads newline commands on stdin. `docs/design.md` describes the
+reads newline commands on stdin, and execs `src/preview-codecs/` in
+the same process for PDF, media and archives, so image and text
+previews never load those libraries. `docs/design.md` describes the
 model, state on disk and these protocols.
 
 The CLI's single source is `omafiles.usage.kdl`; `docs/cli.md` is

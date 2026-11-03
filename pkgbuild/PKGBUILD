@@ -78,7 +78,7 @@ package() {
   depends=("${pinned[@]}")
 
   local program
-  for program in omafiles omafiles-studio omafiles-preview omafiles-archive omafiles-devices; do
+  for program in omafiles omafiles-studio omafiles-preview omafiles-preview-codecs omafiles-archive omafiles-devices; do
     install -Dm755 "build/bin/$program" "$pkgdir/usr/bin/$program"
   done
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

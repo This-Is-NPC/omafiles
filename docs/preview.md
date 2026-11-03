@@ -59,9 +59,14 @@ Media uses Qt Multimedia and the installed codecs. Network playlists are not
 played. A failed preview can be retried by closing and reopening it; no failure
 marker or thumbnail-cache entry is written.
 
-The `omafiles-preview` helper is installed alongside the front ends by
-`mise run install`. File probing, parsing, rendering and media decoding happen
-in that separate process, started only when requested. There is one active
+The `omafiles-preview` and `omafiles-preview-codecs` helpers are installed
+alongside the front ends by `mise run install`. File probing, parsing, rendering
+and media decoding happen in a separate process, started only when requested.
+`omafiles-preview` detects the type, then decodes images and reads text itself;
+it links only Qt Core and Qt Gui. For a PDF, audio, video or archive it replaces
+itself, in the same process, with `omafiles-preview-codecs`, which links Qt PDF,
+Qt Multimedia and libarchive and reads the file the first helper opened. An image
+preview therefore does not load those libraries. There is one active
 preview process, no prefetch and no preview cache. Replacing a request cancels
 the old one before starting another. The GUI receives bounded plain text and
 raw image pixels, and does not decode the source file.

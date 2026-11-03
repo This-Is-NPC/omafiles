@@ -14054,6 +14054,10 @@ void TestStudio::previewsFilesWithinTheirBudgets()
     preview.setPath(write("huge.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100000\" height=\"100000\"><rect width=\"100000\" height=\"100000\" fill=\"red\"/></svg>"));
     QTRY_COMPARE(preview.kind(), QStringLiteral("error"));
     QVERIFY(preview.text().contains("megapixel"));
+    // SVG text needs the GUI application's fonts.
+    preview.setPath(write("label.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"40\" height=\"20\"><rect width=\"40\" height=\"20\" fill=\"red\"/><text x=\"2\" y=\"15\" font-size=\"12\">Tag</text></svg>"));
+    QTRY_COMPARE(preview.kind(), QStringLiteral("image"));
+    QVERIFY(preview.hasImage());
 
     const QString oversized = scratch.filePath("large.pdf");
     { QFile file(oversized); QVERIFY(file.open(QIODevice::WriteOnly)); file.write("%PDF-1.7\n"); QVERIFY(file.resize(17 * 1024 * 1024)); }
