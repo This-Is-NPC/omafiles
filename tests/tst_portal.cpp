@@ -424,6 +424,36 @@ private slots:
         }
         QVERIFY(!portal.current());
     }
+    void stripsAcceptLabelMnemonics_data()
+    {
+        QTest::addColumn<QString>("label");
+        QTest::addColumn<QString>("shown");
+        QTest::newRow("leading") << "_Save" << "Save";
+        QTest::newRow("inner") << "Sa_ve" << "Save";
+        QTest::newRow("literal") << "Save__as" << "Save_as";
+        QTest::newRow("mixed") << "a__b_c" << "a_bc";
+        QTest::newRow("triple") << "a___b" << "a_b";
+        QTest::newRow("several") << "_Save _as" << "Save as";
+        QTest::newRow("trailing") << "Save_" << "Save";
+        QTest::newRow("plain") << "Save" << "Save";
+    }
+    void stripsAcceptLabelMnemonics()
+    {
+        QFETCH(QString, label);
+        QFETCH(QString, shown);
+        const QList<TestChoice> choices { { "mode", "_Mode", { { "a", "_A" } }, "a" } };
+        Portal portal;
+        QVERIFY(portal.start(server));
+        auto pending = call("SaveFile",
+            { { "accept_label", label }, { "choices", QVariant::fromValue(choices) } });
+        QTRY_VERIFY(portal.current());
+        QCOMPARE(portal.current()->acceptLabel, shown);
+        const auto choice = portal.current()->choiceList().first().toMap();
+        QCOMPARE(choice["label"].toString(), "_Mode");
+        QCOMPARE(choice["options"].toList().first().toMap()["label"].toString(), "_A");
+        portal.current()->cancel();
+        completed(pending);
+    }
     void acceptsGioBytePaths_data()
     {
         QTest::addColumn<int>("length");
