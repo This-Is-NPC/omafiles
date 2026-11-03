@@ -6,8 +6,8 @@ import omafiles
 // A heading in the details table: a click sorts by it, a right-click asks for
 // the column menu.
 //
-// Every heading is flush left, `size` included, and so is every cell under it,
-// so no one column starts somewhere the rest do not.
+// A heading is flush left, or flush right over a numeric column such as `size`,
+// as the cells under it are.
 //
 // Not a Tab stop: sorting has `s` / `S`, and the column menu is in the command
 // palette.
@@ -18,6 +18,7 @@ Item {
     property string role: ""
     property string sortRole: ""
     property bool ascending: true
+    property bool alignRight: false
     signal picked
     signal menuAsked(real x, real y)
 
@@ -29,7 +30,7 @@ Item {
     Text {
         anchors.fill: parent
         verticalAlignment: Text.AlignVCenter
-        horizontalAlignment: Text.AlignLeft
+        horizontalAlignment: head.alignRight ? Text.AlignRight : Text.AlignLeft
         text: head.label + (head.active ? (head.ascending ? " ↑" : " ↓") : "")
         color: head.active ? Theme.foreground : Theme.dim
         opacity: head.active ? 0.9 : (hover.hovered ? 0.9 : 1)

@@ -3225,11 +3225,28 @@ Window {
                                                + Theme.iconGap
             /// The width of the mark dot ahead of a row's icon.
             readonly property real markColumn: Theme.spacingS
-            readonly property real tagsWidth: Math.max(90, Math.min(260, listArea.width * 0.26))
+            // The name has priority: it keeps at least `nameMinimum`, and the
+            // chosen columns that do not fit beside it are dropped in
+            // `dropOrder`. Past `nameMaximum` the extra goes to the tags.
+            readonly property real nameMinimum: Math.min(160, listArea.width * 0.4)
+            readonly property real nameMaximum: 420
+            readonly property var dropOrder: ["mode", "owner", "mtime", "type", "size", "tags"]
+            readonly property var shownColumns: {
+                let shown = Workspace.columns
+                for (const field of filesRoot.dropOrder) {
+                    if (filesRoot.nameWidthBeside(shown) >= filesRoot.nameMinimum)
+                        break
+                    shown = shown.filter(column => column !== field)
+                }
+                return shown
+            }
+            readonly property real tagsWidth: baseWidth("tags")
+                + (shownColumns.includes("tags")
+                   ? Math.max(0, nameWidthBeside(shownColumns) - nameMaximum) : 0)
 
-            function columnWidth(field) {
+            function baseWidth(field) {
                 switch (field) {
-                case "tags": return filesRoot.tagsWidth
+                case "tags": return Math.max(90, Math.min(260, listArea.width * 0.26))
                 case "type": return 62
                 case "size": return 74
                 case "mtime": return 128
@@ -3237,6 +3254,17 @@ Window {
                 case "mode": return 84
                 }
                 return 0
+            }
+
+            // What the name gets beside `columns` at their base widths, each
+            // with the gap ahead of it.
+            function nameWidthBeside(columns) {
+                return columns.reduce((room, field) => room - filesRoot.baseWidth(field) - Theme.spacingM,
+                                      listArea.width - filesRoot.nameIndent - Theme.inset)
+            }
+
+            function columnWidth(field) {
+                return field === "tags" ? filesRoot.tagsWidth : filesRoot.baseWidth(field)
             }
 
             readonly property int cursor: view ? view.currentIndex : -1
@@ -3414,7 +3442,7 @@ Window {
                                 spacing: Theme.spacingM
 
                                 Repeater {
-                                    model: Workspace.columns
+                                    model: filesRoot.shownColumns
                                     ColumnHead {
                                         id: columnHead
                                         required property string modelData
@@ -3422,6 +3450,7 @@ Window {
                                         height: headColumns.height
                                         width: filesRoot.columnWidth(columnHead.modelData)
                                         label: win.columnLabel(columnHead.modelData)
+                                        alignRight: columnHead.modelData === "size"
                                         // A field the tab cannot sort by is a heading
                                         // and nothing more.
                                         role: filesRoot.tab && filesRoot.tab.validSortRole(
@@ -3533,6 +3562,7 @@ Window {
                             // the tags run off the end of it.
                             Label {
                                 id: rowName
+                                objectName: "rowName"
                                 anchors.left: rowIcon.right
                                 anchors.leftMargin: Theme.iconGap
                                 anchors.right: row.details ? cells.left : tagArea.left
@@ -3543,7 +3573,7 @@ Window {
                             }
 
                             // The same columns as the headings, at the same widths,
-                            // each packed from the left where its heading starts.
+                            // each aligned as its heading is.
                             Row {
                                 id: cells
                                 visible: row.details
@@ -3553,7 +3583,7 @@ Window {
                                 spacing: Theme.spacingM
 
                                 Repeater {
-                                    model: row.details ? Workspace.columns : []
+                                    model: row.details ? filesRoot.shownColumns : []
                                     Loader {
                                         id: columnCell
                                         objectName: "columnCell"
@@ -3581,6 +3611,8 @@ Window {
                                             Label {
                                                 quiet: true
                                                 font.pixelSize: Theme.fontBody
+                                                horizontalAlignment: columnCell.modelData === "size"
+                                                                     ? Text.AlignRight : Text.AlignLeft
                                                 text: {
                                                     switch (columnCell.modelData) {
                                                     case "type": return row.type

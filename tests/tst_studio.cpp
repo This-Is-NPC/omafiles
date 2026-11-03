@@ -668,6 +668,7 @@ private slots:
     void keepsEveryFooterActionReachable_data();
     void keepsEveryFooterActionReachable();
     void keepsTheViewControlsInNarrowPanes();
+    void givesTheNameColumnPriority();
     void cancelsRowHoldOnMovement();
     void waitsForDelayedPlaybackAcknowledgement();
     void boundsPreviewImageTransfers_data();
@@ -6419,12 +6420,18 @@ void TestStudio::choosesTheDetailsColumnsAndKeepsThem()
     const QStringList defaults{QStringLiteral("tags"), QStringLiteral("type"),
                                QStringLiteral("size"), QStringLiteral("mtime")};
     QCOMPARE(m_workspace->columns(), defaults);
-    const auto restore = qScopeGuard([this, &defaults] {
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([this, &defaults, original] {
         for (const QString &field : m_workspace->columns())
             m_workspace->toggleColumn(field);
         for (const QString &field : defaults)
             m_workspace->toggleColumn(field);
+        window()->resize(original);
     });
+    // Wide enough that every field fits beside the name at its minimum, so
+    // the columns drawn are the columns chosen; dropping is
+    // givesTheNameColumnPriority's.
+    window()->resize(1600, 720);
     tab()->setViewMode(QStringLiteral("details"));
     settle();
 
@@ -15284,6 +15291,112 @@ void TestStudio::keepsTheViewControlsInNarrowPanes()
                 QVERIFY(handle->mapRectToScene(handle->boundingRect()).right() < controlsLeft);
     }
     QCOMPARE(panes, 2);
+}
+
+void TestStudio::givesTheNameColumnPriority()
+{
+    const QSize original = window()->size();
+    const int panesBefore = m_workspace->paneCount();
+    const auto restore = qScopeGuard([&] {
+        if (m_workspace->paneCount() > panesBefore)
+            key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+        tab()->setViewMode("list"); tab()->setSortRole("name"); tab()->setSortAscending(true);
+        window()->resize(original); QMetaObject::invokeMethod(window(), "takeFocus");
+    });
+    const QStringList chosen = m_workspace->columns();
+    QVERIFY(chosen.contains("tags") && chosen.contains("size") && chosen.contains("mtime"));
+    QList<qreal> lists;
+    // Window widths and pane counts that give lists from 160 to 1340 px; the
+    // sidebar and the details panel take 474 px beside a single pane.
+    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(1022, 1), qMakePair(1180, 1),
+                                         qMakePair(1593, 1), qMakePair(1814, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
+        window()->resize(layout.first, 600);
+        if (layout.second == 2 && m_workspace->paneCount() == 1) key(Qt::Key_Backslash, Qt::ControlModifier);
+        QCOMPARE(m_workspace->paneCount(), layout.second);
+        for (int pane = 0; pane < layout.second; ++pane)
+            m_workspace->paneAtIndex(pane)->property("current").value<QObject *>()->setProperty("viewMode", "details");
+        settle(); focusRow("one.txt");
+        for (auto *pane : itemsNamed("pane")) {
+            if (!pane->isVisible()) continue;
+            QList<QQuickItem *> rows;
+            for (auto *row : itemsNamed("fileRow"))
+                if (pane->isAncestorOf(row) && row->isVisible() && row->property("details").toBool()
+                        && !row->property("pooled").toBool()) rows.append(row);
+            QVERIFY(!rows.isEmpty());
+            const qreal list = rows.first()->width();
+            lists.append(list);
+            const qreal minimum = std::min(160.0, list * 0.4);
+            QStringList shown;
+            for (auto *row : rows) {
+                QQuickItem *name = nullptr;
+                QList<QQuickItem *> cells;
+                for (auto *child : row->childItems()) {
+                    if (child->objectName() == "rowName") name = child;
+                    for (auto *cell : child->childItems())
+                        if (cell->objectName() == "columnCell" && cell->isVisible()) cells.append(cell);
+                }
+                QVERIFY(name);
+                const QString where = QString("list %1 px, %2").arg(list).arg(row->property("name").toString());
+                QVERIFY2(name->width() >= minimum - 0.5, qPrintable(where + QString(": name %1 px").arg(name->width())));
+                QStringList fields;
+                QRectF previous = name->mapRectToItem(row, QRectF(0, 0, name->width(), name->height()));
+                QVERIFY2(previous.left() >= 0, qPrintable(where));
+                for (auto *cell : cells) {
+                    const QString field = cell->property("modelData").toString();
+                    fields.append(field);
+                    const QRectF rect = cell->mapRectToItem(row, QRectF(0, 0, cell->width(), cell->height()));
+                    QVERIFY2(rect.left() >= previous.right(), qPrintable(where + " " + field + " overlaps"));
+                    previous = rect;
+                    if (field == "size") {
+                        auto *text = cell->property("item").value<QQuickItem *>(); QVERIFY(text);
+                        QCOMPARE(text->property("horizontalAlignment").toInt(), int(Qt::AlignRight));
+                        QCOMPARE(text->width(), cell->width());
+                    }
+                }
+                QVERIFY2(previous.right() <= row->width(), qPrintable(where));
+                if (fields.contains("tags")) QVERIFY2(name->width() <= 420.5, qPrintable(where));
+                if (row == rows.first()) shown = fields;
+                QCOMPARE(fields, shown);
+            }
+            // Columns drop modified first, then type, size and tags, each with
+            // its heading; those left keep the chosen order.
+            QStringList expected = chosen;
+            for (const QString field : {"mode", "owner", "mtime", "type", "size", "tags"})
+                if (expected.size() > shown.size()) expected.removeAll(field);
+            QCOMPARE(shown, expected);
+            QStringList headings;
+            for (auto *head : itemsNamed("columnHead")) {
+                if (!pane->isAncestorOf(head) || !head->isVisible() || head->height() <= 0
+                        || head->property("label").toString() == "name") continue;
+                const QString field = head->property("role").toString();
+                headings.append(field);
+                QCOMPARE(head->property("alignRight").toBool(), field == "size");
+            }
+            std::sort(headings.begin(), headings.end());
+            QStringList sortedShown = shown; std::sort(sortedShown.begin(), sortedShown.end());
+            QCOMPARE(headings, sortedShown);
+            if (list >= 1340) QCOMPARE(shown, chosen);
+            if (list > 1000) QVERIFY(shown.contains("tags"));
+        }
+        if (layout.first == 640 && layout.second == 1) {
+            // A dropped column still sorts from the keyboard.
+            QVERIFY(!m_workspace->columns().isEmpty());
+            bool dropped = false;
+            for (auto *head : itemsNamed("columnHead"))
+                dropped |= head->isVisible() && head->property("role").toString() == "mtime";
+            QVERIFY(!dropped);
+            while (tab()->sortRole() != "mtime") key('s');
+            const bool ascending = tab()->sortAscending();
+            key('S');
+            QCOMPARE(tab()->sortAscending(), !ascending);
+            QCOMPARE(tab()->sortRole(), QStringLiteral("mtime"));
+            tab()->setSortRole("name"); tab()->setSortAscending(true); settle();
+        }
+    }
+    qInfo() << "list widths" << lists;
+    QVERIFY(std::any_of(lists.begin(), lists.end(), [](qreal list) { return list <= 300; }));
+    QVERIFY(std::any_of(lists.begin(), lists.end(), [](qreal list) { return list >= 1340; }));
+    QVERIFY(std::any_of(lists.begin(), lists.end(), [](qreal list) { return qAbs(list - 548) <= 1; }));
 }
 
 void TestStudio::preservesTagsWrittenBeforeTheOperationLock()
