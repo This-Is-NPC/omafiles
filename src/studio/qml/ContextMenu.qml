@@ -10,7 +10,7 @@ Item {
     property ListView list: null
     property Rectangle panel: null
     property TextMetrics labelRuler: null
-    property TextMetrics capRuler: null
+    property Column keyRuler: null
     readonly property Item focusTarget: menu.list
     signal chosen(string id)
 
@@ -20,12 +20,19 @@ Item {
     visible: false
     z: 90
 
+    // An action with `opensGroup` starts a group. The first entry shown from
+    // a group after another group carries `separated`, and its row draws the
+    // separator, so a separator is never a row of its own.
     readonly property var shown: {
         const out = []
+        let separated = false
         for (let i = 0; i < menu.actions.length; i++) {
             const item = menu.actions[i]
-            if (item.when === undefined || item.when === true)
-                out.push(item)
+            separated = separated || item.opensGroup === true
+            if (item.when === undefined || item.when === true) {
+                out.push(Object.assign({}, item, { separated: separated && out.length > 0 }))
+                separated = false
+            }
         }
         return out
     }
@@ -36,22 +43,23 @@ Item {
     function clampPanel() {
         if (!menu.panel)
             return
-        const margin = Theme.spacingS
+        const margin = Theme.inset
         panel.width = Math.min(panelWidth(), Math.max(0, menu.width - 2 * margin))
         panel.x = Math.max(margin, Math.min(panel.x, menu.width - panel.width - margin))
         panel.y = Math.max(margin, Math.min(panel.y, menu.height - panel.height - margin))
     }
 
-    // Measure labels without instantiating offscreen delegates.
+    // Measure labels without instantiating offscreen delegates; the keys are
+    // measured by the key ruler, which holds only their caps.
     function panelWidth() {
         let widest = 0
         for (let i = 0; i < menu.shown.length; i++) {
             labelRuler.text = menu.shown[i].label
-            capRuler.text = menu.shown[i].key || ""
-            widest = Math.max(widest, labelRuler.advanceWidth
-                              + (capRuler.text === "" ? 0 : capRuler.advanceWidth + Theme.spacingL))
+            widest = Math.max(widest, labelRuler.advanceWidth)
         }
-        return Math.max(200, Math.ceil(widest) + 2 * (Theme.spacingXs + Theme.spacingS))
+        const keys = keyRuler.implicitWidth
+        return Math.max(200, Math.ceil(widest + (keys > 0 ? keys + Theme.spacingL : 0))
+                             + 2 * (Theme.spacingXs + Theme.spacingS))
     }
 
     function openAt(x, y) {
@@ -64,6 +72,16 @@ Item {
         visible = true
         clampPanel()
         focusTarget.forceActiveFocus()
+    }
+
+    // Opens below the span from top to bottom, a row in this item's
+    // coordinates, or above it when the panel does not fit below.
+    function openBelow(x, top, bottom) {
+        openAt(x, bottom)
+        if (bottom + panel.height > menu.height - Theme.inset) {
+            panel.y = top - panel.height
+            clampPanel()
+        }
     }
 
     function close() {
@@ -86,7 +104,7 @@ Item {
             id: focusScope
             Component.onCompleted: {
                 menu.labelRuler = labelRuler
-                menu.capRuler = capRuler
+                menu.keyRuler = keyRuler
                 menu.panel = panel
                 menu.list = list
             }
@@ -97,10 +115,18 @@ Item {
                 font.pixelSize: Theme.fontBody
             }
 
-            TextMetrics {
-                id: capRuler
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
+            // Laid out, so it has a width, and never seen.
+            Column {
+                id: keyRuler
+                opacity: 0
+                onImplicitWidthChanged: menu.clampPanel()
+                Repeater {
+                    model: menu.visible ? menu.shown : []
+                    KeyCaps {
+                        required property var modelData
+                        keys: modelData.key || ""
+                    }
+                }
             }
 
             MouseArea {
@@ -144,8 +170,8 @@ Item {
                 id: panel
                 z: 1
                 width: 200
-                height: Math.max(0, Math.min(menu.height - 2 * Theme.spacingS,
-                                                 menu.shown.length * Theme.rowHeight + 2 * Theme.spacingXs))
+                height: list.wholeRows(menu.height - 2 * (Theme.inset + Theme.spacingXs))
+                        + 2 * Theme.spacingXs
                 onHeightChanged: menu.clampPanel()
                 radius: Theme.rounding
                 color: Theme.panel
@@ -186,6 +212,11 @@ Item {
                         Accessible.role: Accessible.MenuItem
                         Accessible.name: itemRow.modelData.label
 
+                        Rule {
+                            objectName: "menuSeparator"
+                            visible: itemRow.modelData.separated
+                            anchors.top: parent.top
+                        }
 
                         Text {
                             anchors.right: shortcut.left
@@ -199,15 +230,12 @@ Item {
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontBody
                         }
-                        Text {
+                        KeyCaps {
                             id: shortcut
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.right: parent.right
                             anchors.rightMargin: Theme.spacingS
-                            text: itemRow.modelData.key || ""
-                            color: Theme.dim
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSmall
+                            keys: itemRow.modelData.key || ""
                         }
                         // Hover selection follows actual movement, leaving touch drags to the list.
                         MouseArea {

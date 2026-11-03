@@ -8,7 +8,7 @@ When you delete a file with the Trash action, it goes to the system Trash, not p
 
 ## Open Trash in the window
 
-1. Press `:` or `Ctrl+P` to open the command palette
+1. Press `:` or `Ctrl p` to open the command palette
 2. Type `Trash` and press Enter on **Open Trash**
 3. Or click the `+` tab menu and choose **Open Trash**
 4. A new tab opens showing all deleted files
@@ -18,7 +18,7 @@ Navigate the Trash:
 - Use `j`/`k` or arrow keys to move to a file
 - Long paths are elided; press Enter or open the row menu to see the complete path
 - Press `F5` or choose **Refresh** to rescan the Trash
-- Press Escape to return to your folders
+- Press Esc to return to your folders
 
 ## Restore files
 

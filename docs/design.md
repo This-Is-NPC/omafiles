@@ -71,6 +71,17 @@ The window's colours and sizes come from one QML singleton, `Theme` (`src/studio
 
 `Label` draws `quiet` text at `fontSmall` and other text at `fontBody`. The scale is named the way KDE Kirigami's `Units` names its spacings and icon sizes; as in the GNOME HIG, spacing sits on a fixed grid (4 px here, where GNOME uses 6).
 
+### Key spelling
+
+Every key the window names is written one way, and `KeyCaps` (`src/studio/qml/KeyCaps.qml`) is the one component that draws it: the key sheet, the command palette, the menus and the footer. Tooltips print the same spelling as text after their caption. A spelling is the names of the keys pressed together, separated by one space, and alternatives are separated by ` / `; each name is a keycap and each alternative follows a thin slash.
+
+- Named keys: `Esc`, `Enter`, `Space`, `Tab`, `Bksp`, `Delete`, `Home`, `End`, `PgUp`, `PgDn`, `Menu`, `F2`, the arrows `← → ↑ ↓`; modifiers: `Ctrl`, `Shift`, `Alt`.
+- A letter in a chord is lowercase (`Ctrl t`, `Ctrl Shift w`); a capital stands for itself (`G`, `J K`).
+- No plus signs: `+` is only the key `+`.
+- Keys on one row that do the same thing are alternatives: `r / F2`, `m / Menu / Shift F10`. A key-sheet section never repeats a description.
+
+`spellsEveryKeyOneWay` in `tests/tst_studio.cpp` checks every spelling in the key map, the palette, the menus, the footer and the tooltips against these rules, and that every keycap on screen is drawn by `KeyCaps`.
+
 ### Helpers
 
 Three helper processes run separately when needed. Each is a small, focused CLI tool that communicates with the window over stdin/stdout.
@@ -142,7 +153,7 @@ A failed write commits what it could and reports the failure. A write to stdout 
 
 ### Default file manager
 
-Run `omafiles` from the command palette in the window (`Ctrl+P` or `:`), then choose **Make omafiles the default file manager**. This installs a desktop entry and a D-Bus FileManager1 service in `$XDG_DATA_HOME` and calls `xdg-mime default omafiles.desktop inode/directory`. The window keeps answering input while this runs in the background. Existing registrations are saved in `.omafiles-backup` files so they can be restored.
+Run `omafiles` from the command palette in the window (`Ctrl p` or `:`), then choose **Make omafiles the default file manager**. This installs a desktop entry and a D-Bus FileManager1 service in `$XDG_DATA_HOME` and calls `xdg-mime default omafiles.desktop inode/directory`. The window keeps answering input while this runs in the background. Existing registrations are saved in `.omafiles-backup` files so they can be restored.
 
 The desktop entry uses the absolute path to the studio executable. The D-Bus service activates the studio with that same executable. Both are installed by `mise run install` under `~/.local` or a custom prefix. See [desktop.md](desktop.md) for the complete desktop integration setup.
 

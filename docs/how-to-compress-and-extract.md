@@ -14,7 +14,7 @@ Select one or more files:
 Open the compression dialog:
 1. Press `m` to open the row menu, or right-click/touch hold on a selected file
 2. Choose **Compress…**
-3. Or use the command palette: press `:` or `Ctrl+P`, type `Compress` and press Enter
+3. Or use the command palette: press `:` or `Ctrl p`, type `Compress` and press Enter
 
 Choose format and destination:
 1. The sheet shows a destination path or folder
@@ -26,8 +26,8 @@ Choose format and destination:
 7. The archive appears in the folder when done
 
 Cancel:
-- Press Escape to cancel before the archive is published
-- During publication, pressing Escape stops after the current file but keeps what was already written
+- Press Esc to cancel before the archive is published
+- During publication, pressing Esc stops after the current file but keeps what was already written
 
 ## Extract an archive in the window
 
@@ -35,7 +35,7 @@ Open an archive:
 1. Navigate to an archive file (zip, tar.gz, tar.zst)
 2. Press `m`, right-click or touch hold
 3. Choose **Extract archive…**
-4. Or use the command palette: press `:` or `Ctrl+P`, type `Extract` and press Enter
+4. Or use the command palette: press `:` or `Ctrl p`, type `Extract` and press Enter
 
 Choose destination:
 1. The sheet shows the default destination (the archive's own folder)
@@ -50,7 +50,7 @@ Handle conflicts:
 - Choose **Replace** (overwrite), **Skip** (keep the existing file), **Keep both** (rename the incoming file), or **Apply to all** (use the same choice for all remaining conflicts)
 
 Cancel:
-- Press Escape during extraction to stop after the current file
+- Press Esc during extraction to stop after the current file
 
 ## What can go wrong
 

@@ -1,6 +1,6 @@
 # Trash
 
-Open **Trash** from the `+` tab menu or press `:` (or `Ctrl+P`) and choose
+Open **Trash** from the `+` tab menu or press `:` (or `Ctrl p`) and choose
 **Open Trash**. It opens a separate tab, leaving your folder tabs intact.
 The list combines the user's `$XDG_DATA_HOME/Trash` with the current user's
 `.Trash/<uid>` and `.Trash-<uid>` on mounted filesystems. Unmounted volumes
@@ -27,9 +27,9 @@ Use `j`/`k` or Up/Down to move, Home/End to reach the ends and Page Up/Down to
 scroll. The first row is selected when the tab opens. Refresh keeps the selected
 entry; restoring it selects a remaining neighbour. Space marks a row, `a` marks all and `A` clears marks. `r` or **restore**
 restores the marked entries, or the current row if none are marked. `m`, Menu,
-Shift+F10, right-click or pressing and holding a row by touch/pen opens its menu.
-Wheel and touch scroll the list. Tab and Shift+Tab visit its controls in both
-directions; Escape returns to the list. `F5` or **refresh** rereads the locations.
+Shift F10, right-click or pressing and holding a row by touch/pen opens its menu.
+Wheel and touch scroll the list. Tab and Shift Tab visit its controls in both
+directions; Esc returns to the list. `F5` or **refresh** rereads the locations.
 The command palette also offers **Restore from Trash** and **Empty Trash**.
 
 Restoration uses the recorded original path. An occupied destination is never
@@ -43,7 +43,7 @@ the restored entry. Index records retained at its original path remain there;
 records indexed at the stored Trash path are moved back with the entry,
 including descendants and index-only tags. Tags removed from the index by a
 trashing operation cannot be reconstructed by this browser. During the same
-window session, **Undo** (`Ctrl+Z`) for that trashing operation retains its
+window session, **Undo** (`Ctrl z`) for that trashing operation retains its
 captured tag records and can restore them; the browser and Undo share the
 Trash metadata and location checks. Independent changes make Undo refuse
 rather than overwrite them.

@@ -8,12 +8,12 @@ Making omafiles the default file manager means that double-clicking a folder in 
 
 ## In the window
 
-1. Press `:` or `Ctrl+P` to open the command palette
+1. Press `:` or `Ctrl p` to open the command palette
 2. Type `Make omafiles` and press Enter on **Make omafiles the default file manager**
 3. The action runs in the background; the window stays responsive
 4. A sheet appears showing what was installed
 5. Read the undo instructions in the sheet, in case you need to restore the previous file manager
-6. Press **Close** or Escape to dismiss it
+6. Press **Close** or Esc to dismiss it
 
 The sheet shows:
 - Where the desktop entry was installed

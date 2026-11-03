@@ -538,6 +538,13 @@ private slots:
     void roundsNothingWithoutAHyprlandConfig();
     void followsTheDesktopsRoundingIntoQml();
     void showsTheKeySheetAndMarksARow();
+    void spellsEveryKeyOneWay();
+    void mergesKeyRowsThatShareALabel();
+    void alignsTheKeySheetDescriptions();
+    void groupsTheRowMenu();
+    void opensTheRowMenuAtTheRowName();
+    void showsWholeRowsInOverlayLists_data();
+    void showsWholeRowsInOverlayLists();
     void survivesClosingAPaneWithoutComplaint();
     void noticesTheIndexChangingUnderIt();
     void watchesTheIndexOnAFreshInstall();
@@ -3457,6 +3464,318 @@ void TestStudio::showsTheKeySheetAndMarksARow()
     settle();
 }
 
+// The one key spelling (docs/design.md §3): names from this set or one
+// character, one space between the caps of an alternative, ` / ` between
+// alternatives, and lowercase letters in a chord. Returns what breaks it.
+static QString misspelledKey(const QString &spelling)
+{
+    static const QSet<QString> names{
+        "Ctrl", "Shift", "Alt", "Esc", "Enter", "Space", "Tab", "Bksp", "Delete", "Home",
+        "End", "PgUp", "PgDn", "Menu", "F2", "F5", "F10", "1…9"};
+    static const QSet<QString> modifiers{"Ctrl", "Shift", "Alt"};
+    for (const QString &alternative : spelling.split(QStringLiteral(" / "))) {
+        const QStringList caps = alternative.split(QLatin1Char(' '));
+        bool chord = false;
+        for (const QString &cap : caps)
+            chord = chord || modifiers.contains(cap);
+        for (const QString &cap : caps) {
+            if (cap.size() != 1 && !names.contains(cap))
+                return cap;
+            if (chord && cap.size() == 1 && cap.at(0).isUpper())
+                return cap;
+        }
+    }
+    return QString();
+}
+
+// Every key the window names is written in the one spelling, and every keycap
+// it draws is drawn by KeyCaps from that spelling: the key sheet, the palette,
+// a menu, the footer and the tooltips.
+void TestStudio::spellsEveryKeyOneWay()
+{
+    QObject *root = m_engine->rootObjects().first();
+    QStringList spellings;
+    for (const QVariant &group : root->property("keymap").toList())
+        for (const QVariant &entry : group.toMap().value("keys").toList())
+            spellings << entry.toMap().value("key").toString();
+    for (const QVariant &command : itemsNamed("commandPalette").first()->property("commands").toList())
+        spellings << command.toMap().value("key").toString();
+    for (const QVariant &hint : root->property("hintsForRegion").toList())
+        spellings << hint.toMap().value("key").toString();
+    QList<QQuickItem *> queue{window()->contentItem()};
+    int menus = 0;
+    int tooltips = 0;
+    while (!queue.isEmpty()) {
+        QQuickItem *item = queue.takeFirst();
+        queue.append(item->childItems());
+        if (item->metaObject()->indexOfProperty("tooltipKey") >= 0) {
+            spellings << item->property("tooltipKey").toString();
+            ++tooltips;
+        }
+        if (item->metaObject()->indexOfSignal("chosen(QString)") >= 0
+            && item->metaObject()->indexOfProperty("actions") >= 0) {
+            for (const QVariant &action : item->property("actions").toList())
+                spellings << action.toMap().value("key").toString();
+            ++menus;
+        }
+    }
+    QVERIFY2(menus >= 10 && tooltips >= 10, "the window named almost no keys");
+    for (const QString &spelling : std::as_const(spellings))
+        if (!spelling.isEmpty())
+            QVERIFY2(misspelledKey(spelling).isEmpty(),
+                     qPrintable(QStringLiteral("`%1` is not the one spelling: `%2`")
+                                    .arg(spelling, misspelledKey(spelling))));
+
+    // A drawn keycap belongs to a KeyCaps, and a KeyCaps draws its spelling.
+    const auto drawnFromTheSpelling = [&](const char *where) {
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        int drawn = 0;
+        for (QQuickItem *cap : itemsNamed("keyCap")) {
+            if (!cap->isVisible())
+                continue;
+            QQuickItem *owner = cap->parentItem();
+            while (owner && owner->objectName() != QLatin1String("keyCaps"))
+                owner = owner->parentItem();
+            QVERIFY2(owner, qPrintable(QStringLiteral("%1 draws `%2` outside KeyCaps")
+                                           .arg(where, cap->property("key").toString())));
+            QVERIFY2(!cap->property("key").toString().contains(QLatin1Char(' ')),
+                     qPrintable(QStringLiteral("%1 draws `%2` on one cap")
+                                    .arg(where, cap->property("key").toString())));
+            ++drawn;
+        }
+        QVERIFY2(drawn > 0, where);
+        for (QQuickItem *caps : itemsNamed("keyCaps")) {
+            if (!caps->isVisible())
+                continue;
+            QStringList names;
+            QList<QQuickItem *> below{caps};
+            while (!below.isEmpty()) {
+                QQuickItem *item = below.takeFirst();
+                if (item->objectName() == QLatin1String("keyCap"))
+                    names << item->property("key").toString();
+                below.append(item->childItems());
+            }
+            const QString keys = caps->property("keys").toString();
+            QCOMPARE(names.join(' '), QString(keys).replace(QStringLiteral(" / "), QStringLiteral(" ")));
+        }
+    };
+
+    focusRow(QStringLiteral("one.txt"));
+    drawnFromTheSpelling("the footer");
+    key('?');
+    drawnFromTheSpelling("the key sheet");
+    key(Qt::Key_Escape);
+    key(':');
+    drawnFromTheSpelling("the palette");
+    key(Qt::Key_Escape);
+    key('m');
+    QVERIFY(itemsNamed("fileMenu").first()->isVisible());
+    drawnFromTheSpelling("the row menu");
+    key(Qt::Key_Escape);
+    settle();
+}
+
+// The sheet says each thing once: keys that do the same thing share a row as
+// alternatives, `r / F2 rename`, rather than repeating the description.
+void TestStudio::mergesKeyRowsThatShareALabel()
+{
+    QObject *root = m_engine->rootObjects().first();
+    for (const QVariant &group : root->property("keymap").toList()) {
+        QSet<QString> labels;
+        for (const QVariant &entry : group.toMap().value("keys").toList()) {
+            const QString label = entry.toMap().value("label").toString();
+            QVERIFY2(!labels.contains(label),
+                     qPrintable(QStringLiteral("`%1` has two rows in %2")
+                                    .arg(label, group.toMap().value("title").toString())));
+            labels.insert(label);
+        }
+    }
+}
+
+// In each section of the sheet the keys sit in one column, as wide as its
+// widest keys, and every description starts on the same edge after it.
+void TestStudio::alignsTheKeySheetDescriptions()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    window()->resize(1180, 720);
+    focusRow(QStringLiteral("one.txt"));
+    key('?');
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    QHash<QQuickItem *, qreal> edges;
+    int rows = 0;
+    for (QQuickItem *entry : itemsNamed("helpEntry")) {
+        QQuickItem *line = entry->parentItem();
+        QQuickItem *section = line->parentItem();
+        const qreal edge = entry->mapToScene(QPointF()).x();
+        auto *caps = line->findChild<QQuickItem *>("keyCaps");
+        QVERIFY(caps);
+        QVERIFY2(caps->mapToScene(QPointF(caps->width(), 0)).x() <= edge,
+                 qPrintable(QStringLiteral("the keys of `%1` run into it")
+                                .arg(entry->property("text").toString())));
+        if (!edges.contains(section))
+            edges.insert(section, edge);
+        QVERIFY2(qAbs(edges.value(section) - edge) < 0.5,
+                 qPrintable(QStringLiteral("`%1` starts at %2, its section at %3")
+                                .arg(entry->property("text").toString()).arg(edge)
+                                .arg(edges.value(section))));
+        ++rows;
+    }
+    QVERIFY2(edges.size() >= 10 && rows >= 60, "the key sheet rendered almost nothing");
+    key(Qt::Key_Escape);
+    settle();
+}
+
+// The row menu is grouped: the first entry shown from each group after the
+// first draws a separator on its top edge, a group with nothing shown draws
+// none, and the separator is not a row, so `j` and `k` step entry by entry.
+void TestStudio::groupsTheRowMenu()
+{
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    QQuickItem *menu = itemsNamed("fileMenu").first();
+    QVERIFY(menu->isVisible());
+    int group = 0;
+    int shownGroup = -1;
+    QStringList expected;
+    for (const QVariant &action : menu->property("actions").toList()) {
+        const QVariantMap entry = action.toMap();
+        if (entry.value("opensGroup").toBool())
+            ++group;
+        if (entry.contains("when") && !entry.value("when").toBool())
+            continue;
+        if (shownGroup >= 0 && group != shownGroup)
+            expected << entry.value("id").toString();
+        shownGroup = group;
+    }
+    QVERIFY2(group >= 5 && expected.size() >= 4, "the row menu has almost no groups");
+    QStringList separated;
+    const QVariantList shown = menu->property("shown").toList();
+    for (const QVariant &entry : shown)
+        if (entry.toMap().value("separated").toBool())
+            separated << entry.toMap().value("id").toString();
+    QCOMPARE(separated, expected);
+
+    auto *list = menu->findChild<QQuickItem *>("overlayList");
+    QVERIFY(list);
+    for (int step = 0; step < shown.size(); ++step) {
+        QCOMPARE(list->property("currentIndex").toInt(), step);
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        auto *row = qobject_cast<QQuickItem *>(
+            list->property("currentItem").value<QObject *>());
+        QVERIFY(row);
+        auto *line = row->findChild<QQuickItem *>("menuSeparator");
+        QVERIFY(line);
+        QCOMPARE(line->isVisible(), shown.at(step).toMap().value("separated").toBool());
+        QCOMPARE(line->mapToItem(row, QPointF()).y(), 0.0);
+        key('j');
+    }
+    for (int step = shown.size() - 1; step > 0; --step) {
+        key('k');
+        QCOMPARE(list->property("currentIndex").toInt(), step - 1);
+    }
+    key(Qt::Key_Escape);
+    settle();
+}
+
+// `m` opens the row menu at the cursor row's name: below the row, or above it
+// when the menu does not fit below.
+void TestStudio::opensTheRowMenuAtTheRowName()
+{
+    const QSize original = window()->size();
+    const QString before = cwd();
+    QTemporaryDir tall;
+    QVERIFY(tall.isValid());
+    for (int i = 0; i < 60; ++i) {
+        QFile file(tall.filePath(QStringLiteral("row-%1.txt").arg(i, 2, 10, QLatin1Char('0'))));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+    }
+    const auto restore = qScopeGuard([&] {
+        window()->resize(original);
+        tab()->setCwd(before);
+        settle();
+    });
+    window()->resize(1180, 1600);
+    tab()->setCwd(tall.path());
+    tab()->setViewMode(QStringLiteral("list"));
+    settle();
+    QObject *root = m_engine->rootObjects().first();
+    QQuickItem *menu = itemsNamed("fileMenu").first();
+
+    for (const QString &name : {QStringLiteral("row-01.txt"), QStringLiteral("row-59.txt")}) {
+        focusRow(name);
+        QMetaObject::invokeMethod(root, "takeFocus");
+        settle();
+        key('m');
+        QVERIFY(menu->isVisible());
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        QQuickItem *cursorRow = nullptr;
+        QList<QQuickItem *> queue{window()->contentItem()};
+        while (!queue.isEmpty() && !cursorRow) {
+            QQuickItem *item = queue.takeFirst();
+            if (item->property("onCursor").toBool() && item->property("nameItem").isValid()
+                && item->property("name").toString() == name)
+                cursorRow = item;
+            queue.append(item->childItems());
+        }
+        QVERIFY2(cursorRow, qPrintable(name));
+        auto *nameItem = cursorRow->property("nameItem").value<QQuickItem *>();
+        auto *panel = menu->property("panel").value<QQuickItem *>();
+        const QRectF rowRect(cursorRow->mapToScene(QPointF()), cursorRow->size());
+        const QRectF menuRect(panel->mapToScene(QPointF()), panel->size());
+        QCOMPARE(menuRect.x(), nameItem->mapToScene(QPointF()).x());
+        if (name == QLatin1String("row-01.txt"))
+            QCOMPARE(menuRect.top(), rowRect.bottom());
+        else
+            QCOMPARE(menuRect.bottom(), rowRect.top());
+        key(Qt::Key_Escape);
+        settle();
+    }
+}
+
+void TestStudio::showsWholeRowsInOverlayLists_data()
+{
+    QTest::addColumn<QSize>("size");
+    QTest::addColumn<QString>("overlay");
+    for (const QSize size : {QSize(1180, 720), QSize(800, 600), QSize(420, 300)})
+        for (const QString overlay : {"commandPalette", "fileMenu"})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2x%3").arg(overlay)
+                                         .arg(size.width()).arg(size.height())))
+                << size << overlay;
+}
+
+// The palette and the menus show whole rows: a list as tall as its rows where
+// they fit, and otherwise as many whole rows as fit, never a row cut in half.
+void TestStudio::showsWholeRowsInOverlayLists()
+{
+    QFETCH(QSize, size);
+    QFETCH(QString, overlay);
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    window()->resize(size);
+    focusRow(QStringLiteral("one.txt"));
+    key(overlay == QLatin1String("commandPalette") ? ':' : 'm');
+    QQuickItem *sheet = itemsNamed(overlay).first();
+    QVERIFY(sheet->isVisible());
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    auto *list = sheet->findChild<QQuickItem *>("overlayList");
+    QVERIFY(list);
+    auto *first = qobject_cast<QQuickItem *>(list->property("currentItem").value<QObject *>());
+    QVERIFY(first);
+    const qreal row = first->height();
+    const int count = list->property("count").toInt();
+    QVERIFY(count > 0);
+    const qreal height = list->height();
+    QVERIFY2(height >= row, qPrintable(QString::number(height)));
+    QVERIFY2(std::fmod(height, row) < 0.01,
+             qPrintable(QStringLiteral("the list is %1 px, %2 rows").arg(height).arg(height / row)));
+    QVERIFY(height <= count * row);
+    QVERIFY(QRectF(QPointF(), window()->size())
+                .contains(QRectF(list->mapToScene(QPointF()), list->size())));
+    key(Qt::Key_Escape);
+    settle();
+}
+
 // Closing a pane must not leave a binding running against the pane it closed.
 //
 // `pragma ComponentBehavior: Bound` keeps the enclosing scope alive for one
@@ -3803,10 +4122,8 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         "↓ ↑", "Ctrl d", "Ctrl u", "PgDn PgUp", "Home End", "← →",
         "Enter", "→", "←", "Bksp", "Ctrl l", "F5", "Ctrl r",
         "Space", "Menu", "Shift F10",
-        // opensSidebarMenusByTouchAndKeyboard
-        "m Menu Shift F10",
         "Ctrl h",
-        "Esc", "← Esc",
+        "Esc",
         // worksTabsAndPanesFromTheKeyboard
         "Ctrl t", "Ctrl w", "Delete", "Ctrl Tab", "Ctrl Shift Tab", "Alt 1…9",
         "Ctrl \\", "Ctrl Shift w", "Alt h l", "Alt ← →",
@@ -3814,7 +4131,7 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         "Ctrl ,", "Ctrl .",
         "Ctrl p", "Tab",
         // navigatesArchiveControls
-        "Tab Shift+Tab", "Escape",
+        "Shift Tab",
         "F2", "Ctrl Shift n",
         // copiesCutsAndPastesThroughTheDesktopClipboard
         "Ctrl c", "Ctrl x", "Ctrl v",
@@ -3844,9 +4161,11 @@ void TestStudio::everyDocumentedKeyIsAnswered()
                 || section.value(QStringLiteral("title")) == "devices")
             continue;
 
-        for (const QVariant &entry : section.value(QStringLiteral("keys")).toList()) {
-            const QStringList parts = entry.toMap().value(QStringLiteral("key"))
-                                          .toString().split(QLatin1Char(' '));
+        for (const QVariant &entry : section.value(QStringLiteral("keys")).toList())
+        // A row lists alternatives, `r / F2`; each one is checked on its own.
+        for (const QString &spelling : entry.toMap().value(QStringLiteral("key")).toString()
+                                           .split(QStringLiteral(" / "))) {
+            const QStringList parts = spelling.split(QLatin1Char(' '));
             // One spelling, several keys: `j k` is two bare keys, `Ctrl d` is
             // one chord. A part longer than a character names a modifier or a
             // named key; those are driven by answersTheNamedAndChordedKeys.
@@ -3857,7 +4176,6 @@ void TestStudio::everyDocumentedKeyIsAnswered()
                     bare = false;
             }
             if (!bare) {
-                const QString spelling = entry.toMap().value(QStringLiteral("key")).toString();
                 QVERIFY2(driven.contains(spelling),
                          qPrintable(QStringLiteral("`%1` is on the key sheet and no test "
                                                    "says which case drives it")

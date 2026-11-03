@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Basic as C
+import omafiles
 
 ListView {
     id: list
@@ -14,6 +15,10 @@ ListView {
     highlightFollowsCurrentItem: false
 
     property bool refreshing: false
+    // The height of as many whole rows as fit in the extent, up to every row.
+    function wholeRows(extent) {
+        return Math.max(0, Math.min(count, Math.floor(extent / Theme.rowHeight))) * Theme.rowHeight
+    }
     property bool positioning: false
     function revealCurrent() {
         positioning = true
@@ -26,7 +31,7 @@ ListView {
             return
         const top = currentItem.y - contentY
         if (top < 0 || top + currentItem.height > height) {
-            const index = indexAt(1, contentY + Math.min(28, height / 2))
+            const index = indexAt(1, contentY + Math.min(Theme.rowHeight, height / 2))
             if (index >= 0)
                 currentIndex = index
         }
@@ -34,7 +39,7 @@ ListView {
     onContentYChanged: if (!moving) adoptVisible()
     onMovementEnded: adoptVisible()
     function handleKey(event) {
-        const page = Math.max(1, Math.floor(height / 28) - 1)
+        const page = Math.max(1, Math.floor(height / Theme.rowHeight) - 1)
         let next = currentIndex
         if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
             const reverse = event.key === Qt.Key_Backtab || (event.modifiers & Qt.ShiftModifier)
@@ -62,6 +67,6 @@ ListView {
     onHeightChanged: if (visible) Qt.callLater(revealCurrent)
     onCountChanged: if (visible) Qt.callLater(revealCurrent)
     onVisibleChanged: if (visible) Qt.callLater(revealCurrent)
-    ImmediateWheel { anchors.fill: parent; view: list; step: 28 }
+    ImmediateWheel { anchors.fill: parent; view: list; step: Theme.rowHeight }
     C.ScrollBar.vertical: C.ScrollBar {}
 }

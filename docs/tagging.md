@@ -3,10 +3,10 @@
 Select a file or folder, press `t` to enter the tag panel, then `a` to add a tag,
 `d` to remove one, or `r` to rename one. This works with an empty vocabulary,
 so a new installation can create its first tag. `Enter` and `Space` in the
-panel toggle the selected browsing filter; `h`, Left and Escape return to the
+panel toggle the selected browsing filter; `h`, Left and Esc return to the
 file list.
 
-The command palette (`:` or Ctrl+P) offers Add tag, Remove tag and Rename tag.
+The command palette (`:` or Ctrl p) offers Add tag, Remove tag and Rename tag.
 The row menu offers the same actions. The `+` beside the tag vocabulary opens
 Add tag. Clicking or tapping a tag chip in a row or the details panel opens the
 editor with that tag selected for removal; choose Rename to replace it instead.
@@ -19,8 +19,8 @@ tag at a time; existing tags are suggestions, and a new name is equally valid.
 Up and Down choose a suggestion, Tab completes a typed prefix or chosen
 suggestion, and Enter accepts a chosen suggestion before applying. In Rename,
 Enter in the source field moves to the
-replacement field. Tab and Shift+Tab stay inside the editor and reach its mode
-buttons, Apply and Close; Space or Enter activates a focused button. Escape
+replacement field. Tab and Shift Tab stay inside the editor and reach its mode
+buttons, Apply and Close; Space or Enter activates a focused button. Esc
 closes without starting an edit.
 
 Add preserves other tags. Remove takes away the named tag. Rename replaces the
@@ -36,7 +36,7 @@ reloads the index after a result, including an incomplete operation, and shows
 the CLI refusal in the editor and status bar. A refusal keeps the entered names
 for correction and retry. An empty field starts nothing.
 
-While a write runs, Apply and the edit fields are disabled. Close or Escape can
+While a write runs, Apply and the edit fields are disabled. Close or Esc can
 leave the editor; this does not cancel a write already started. Its receipt
 still appears on the status bar, and completion does not take focus away from
 what you are doing. The targets remain the ones named when you applied.
@@ -44,13 +44,13 @@ what you are doing. The targets remain the ones named when you applied.
 Menus and sheets stay inside the client area, including after resizing the
 window. Overflowing content scrolls with the mouse wheel or a touch drag.
 Menus support Home, End, Page Up and Page Down; the command palette uses
-Ctrl+Home and Ctrl+End so the query retains its text-editing keys. Sheets
+Ctrl Home and Ctrl End so the query retains its text-editing keys. Sheets
 support unmodified Page Up, Page Down, Home and End when their content overflows. In the
 tag editor these keys then move focus to the scrolling area, whose border marks
 the keyboard focus; Tab returns to its controls. When the editor fits, Home and
 End retain ordinary text-caret navigation. Keyboard navigation keeps the selected menu item, completion
 suggestion or focused editor control visible. In the key reference, arrows and
-page keys scroll, and Escape closes it.
+page keys scroll, and Esc closes it.
 These rules keep every action reachable when a window or a long receipt leaves
 less room for its contents. Long tooltips also accept wheel and touch scrolling;
 unmodified arrows, Home, End and page keys on their focused host scroll an overflowing tip
@@ -60,11 +60,11 @@ the current text and available height.
 
 Properties and default-manager receipts use the same bounded scrolling area.
 Page Up and Page Down scroll a page; holding Shift extends the receipt's text
-selection by a page, including with Ctrl. Ctrl+Home and Ctrl+End reach the text
+selection by a page, including with Ctrl. Ctrl Home and Ctrl End reach the text
 ends. Other modified navigation keeps the text control's native behavior;
 a declined gesture does not scroll an ancestor panel.
-Mouse selection and Ctrl+A/Ctrl+C keep the receipt available for copying, while
-touch drags scroll its text. Escape closes the dialog and returns to the files.
+Mouse selection and Ctrl a / Ctrl c keep the receipt available for copying, while
+touch drags scroll its text. Esc closes the dialog and returns to the files.
 
 The details sidebar scrolls as a whole, so its tag heading and `+` stay
 reachable in short windows. Entering tag or saved-view navigation reveals that

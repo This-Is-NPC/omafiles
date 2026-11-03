@@ -60,8 +60,8 @@ Rectangle {
 
             OverlayPanel {
                 preferredWidth: 520
-                preferredHeight: Math.min(380, 2 * Theme.inset + Theme.controlHeight + Theme.spacingS
-                                              + list.contentHeight)
+                readonly property real chrome: 2 * Theme.inset + Theme.controlHeight + Theme.spacingS
+                preferredHeight: chrome + list.wholeRows(Math.min(380, parent.height - 2 * margin) - chrome)
 
                 Accessible.role: Accessible.Dialog
                 Accessible.name: "Commands"
@@ -188,13 +188,12 @@ Rectangle {
                                 anchors.rightMargin: Theme.spacingS
                                 text: entryRow.modelData.label
                             }
-                            KeyCap {
+                            KeyCaps {
                                 id: shortcut
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.right: parent.right
                                 anchors.rightMargin: Theme.spacingS
-                                visible: (entryRow.modelData.key || "") !== ""
-                                key: entryRow.modelData.key || ""
+                                keys: entryRow.modelData.key || ""
                             }
                             MouseArea {
                                 anchors.fill: parent

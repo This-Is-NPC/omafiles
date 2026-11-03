@@ -241,7 +241,7 @@ Window {
                     textFormat: Text.PlainText
                     visible: chooser.helpVisible
                     width: parent.width
-                    text: "Tab / Shift+Tab: controls · ↑/↓ or j/k: rows · Enter: enter folder or choose file · Space: mark (multiple files) · Ctrl+Enter: choose folder · Ctrl+L: location · Ctrl+F: search · Ctrl+H: hidden files · Alt+↑: parent · Escape: cancel. Double-click a row to enter or choose; touch a row, then use the action button."
+                    text: "Tab / Shift Tab: controls · ↑ ↓ / j k: rows · Enter: enter folder or choose file · Space: mark (multiple files) · Ctrl Enter: choose folder · Ctrl l: location · Ctrl f: search · Ctrl h: hidden files · Alt ↑: parent · Esc: cancel. Double-click a row to enter or choose; touch a row, then use the action button."
                     wrapMode: Text.Wrap
                     color: Theme.dim
                     font.family: Theme.fontFamily

@@ -10,7 +10,7 @@ The main window shows files and folders in a list, details, or icon view. The pa
 
 Reach it: The main window opens when the application starts.
 
-Keys: **j k** (down, up), **↓ ↑** (down, up), **gg** (first row), **G** (last row), **Ctrl d** (half page down), **Ctrl u** (half page up), **PgDn PgUp** (page), **Home End** (first, last row), **← →** (prev, next in icons view), **l Enter** (open row), **h Bksp ←** (parent folder), **~** (home folder), **1** (list view), **2** (details view), **3** (icons view), **s** (sort), **S** (flip sort direction), **.** (hidden files), **Ctrl h** (hidden files), **Ctrl l** (type a path), **F5 Ctrl r** (reload).
+Keys: **j k / ↓ ↑** (down, up), **g g** (first row), **G** (last row), **Ctrl d** (half page down), **Ctrl u** (half page up), **PgDn PgUp** (page), **Home End** (first, last row), **← →** (prev, next in icons view), **l / Enter** (open row), **h / Bksp / ←** (parent folder), **~** (home folder), **1** (list view), **2** (details view), **3** (icons view), **s** (sort), **S** (flip sort direction), **.** (hidden files), **Ctrl h** (hidden files), **Ctrl l** (type a path), **F5 Ctrl r** (reload).
 
 Picture: **img/01-studio.png**
 
@@ -20,7 +20,7 @@ Press **2** to switch the file list to a table: name, then tags, type, size, and
 
 Reach it: Press **2** in the main window, or click **details** in the row above the file list.
 
-Keys (same as the main window): **j k** (down, up), **↓ ↑** (down, up), **l Enter →** (open), **h ← Bksp** (parent folder).
+Keys (same as the main window): **j k / ↓ ↑** (down, up), **l / Enter / →** (open), **h / ← / Bksp** (parent folder).
 
 Picture: **img/02-details.png**
 
@@ -30,7 +30,7 @@ Files and folders appear as icons. Same keys and navigation as list and details 
 
 Reach it: Press **3** in the main window.
 
-Keys: **j k ↓ ↑** (down, up), **← →** (prev, next file), **l Enter** (open), **h Bksp** (parent folder).
+Keys: **j k / ↓ ↑** (down, up), **← →** (prev, next file), **l / Enter** (open), **h / Bksp** (parent folder).
 
 Picture: No picture yet.
 
@@ -48,9 +48,9 @@ Picture: No picture yet.
 
 ### Filter by name
 
-Type **/** to search the current folder for files matching a pattern. The filter stays while you scroll and navigate. Press **Escape** to cancel it.
+Type **/** to search the current folder for files matching a pattern. The filter stays while you scroll and navigate. Press **Esc** to cancel it.
 
-Keys: **/** (start filter), **Escape** (cancel).
+Keys: **/** (start filter), **Esc** (cancel).
 
 Picture: No picture yet.
 
@@ -80,19 +80,21 @@ Picture: No picture yet.
 
 ## Row menu
 
-Right-click a row, press **m**, or hold and press on a touch/pen to open the menu for that row. The menu offers: Open, Quick preview, Mark/Unmark, Cut, Copy, Paste, Rename, New folder, Compress, Extract archive, and others.
+Right-click a row, press **m**, or hold and press on a touch/pen to open the menu for that row. From the keyboard the menu opens at the row's name, below the row, or above it when it does not fit below; from the pointer it opens at the pointer, or above it near the bottom of the window. It stays 12 px inside the window and shows whole rows; a menu longer than the window scrolls.
+
+The entries come in groups with a line between them, in this order: open (Open, Quick preview, Open with…, Go to containing folder, new tab, other pane, parent in new tab, graph tab, terminal, editor); send (LocalSend, scripts); copy (path, name, URI, tags, tag command, open command); tags (add, remove, rename, apply, clear, copy onto the marked, adopt); mark (mark, mark all, clear, invert, same tag, same type, by pattern); archive (Compress, Extract archive); files (copy, cut, paste, to the other pane, duplicate, links, rename, permissions, new folder, trash); browse (filter or browse by tag, save a view, find, recent); index (reindex, prune, verify, reload). A group with nothing to offer for the row is left out, and so is its line.
 
 Reach it: Press **m**, right-click, or touch/pen long-press a row.
 
-Keys: **m** (open menu), **Menu** (open menu), **Shift F10** (open menu).
+Keys: **m / Menu / Shift F10** (open menu).
 
-Menu keys: **l** (open), **i** (quick preview), **Space** (mark), **Ctrl c** (copy), **Ctrl x** (cut), **Ctrl v** (paste), **r** (rename), **n** (new folder), **Escape** (close). Compress and Extract are chosen from the list; they have no key of their own.
+Menu keys: **j k / ↓ ↑** (next, previous entry; the lines between groups are not entries), **Home End / PgUp PgDn** (first, last, page), **Enter / Space** (choose), **Esc** (close). An entry with a key of its own shows it on the right: **l** (open), **i** (quick preview), **Space** (mark), **Ctrl c** (copy), **Ctrl x** (cut), **Ctrl v** (paste), **r** (rename), **n** (new folder). Compress and Extract are chosen from the list; they have no key of their own.
 
 Picture: No picture yet.
 
 ## Command palette
 
-Press **:**, **Ctrl p**, or choose **Commands** to open the command palette. Type to search all commands: Quick preview, Mark all, Sort by name, Undo, Save this as a view, Open Trash, and many others. Use **Ctrl Home Ctrl End** to jump to the start or end of the list. **Enter** runs the selected command.
+Press **:**, **Ctrl p**, or choose **Commands** to open the command palette. Type to search all commands: Quick preview, Mark all, Sort by name, Undo, Save this as a view, Open Trash, and many others. The list shows whole rows: as many as fit, and the rest scroll. Use **Ctrl Home / Ctrl End** to jump to the start or end of the list. **Enter** runs the selected command.
 
 Reach it: Press **:**, **Ctrl p**, or click the **Cmd** button in the footer.
 
@@ -102,11 +104,11 @@ Picture: No picture yet.
 
 ## Quick preview
 
-Press **i** to preview the current file. **i** or **Escape** closes the preview. Use **j k ← →** to walk to the next or previous file. Use **P** to play or pause media. Use **[ ]** to seek five seconds. Use **PgDn PgUp Home End** to scroll preview text. Use **Tab** to focus preview controls.
+Press **i** to preview the current file. **i** or **Esc** closes the preview. Use **j k / ← →** to walk to the next or previous file. Use **P** to play or pause media. Use **[ ]** to seek five seconds. Use **PgDn PgUp / Home End** to scroll preview text. Use **Tab** to focus preview controls.
 
 Reach it: Press **i** on a file, or open the row menu and select Quick preview.
 
-Keys: **i Esc** (close), **j k** (next, previous), **← →** (previous, next), **P** (play, pause), **[ ]** (seek), **PgDn PgUp** (scroll), **Home End** (scroll to ends), **Tab** (preview controls).
+Keys: **i / Esc** (close), **j k** (next, previous), **← →** (previous, next), **P** (play, pause), **[ ]** (seek), **PgDn PgUp** (scroll), **Home End** (scroll to ends), **Tab** (preview controls).
 
 More: See [Quick preview](preview.md).
 
@@ -114,21 +116,21 @@ Picture: No picture yet.
 
 ## Key sheet
 
-Press **?** to show all keyboard shortcuts grouped by region: move, devices, archives, go, preview, mark, view, edit, find, tabs and panes, graph tab, trash, and window. Use **↑ ↓ PgUp PgDn Home End** to scroll. Press **Escape** to close.
+Press **?** to show all keyboard shortcuts grouped by region: move, devices, archives, go, preview, mark, view, edit, find, tabs and panes, graph tab, trash, and window. In each section the keys stand in one column, as wide as the section's widest keys, and what they do starts on one edge after it. Keys that do the same thing share a row, separated by a slash: **r / F2** rename. Use **↑ ↓ / PgUp PgDn / Home End** to scroll. Press **Esc** to close.
 
 Reach it: Press **?**.
 
-Keys: **?** (open key sheet), **Escape** (close).
+Keys: **?** (open key sheet), **Esc** (close).
 
 Picture: **img/03-keys.png**
 
 ## Tag panel
 
-Press **t** to focus the tags sidebar. Use **j k ↓ ↑** to move through tags. Press **Enter Space** to toggle a tag filter. Press **a** to add a tag, **d** to remove a tag, or **r** to rename a tag. Press **m** or **Menu** to open the tag menu. Press **h Escape ←** to return to the file list.
+Press **t** to focus the tags sidebar. Use **j k / ↓ ↑** to move through tags. Press **Enter / Space** to toggle a tag filter. Press **a** to add a tag, **d** to remove a tag, or **r** to rename a tag. Press **m** or **Menu** to open the tag menu. Press **h / Esc / ←** to return to the file list.
 
 Reach it: Press **t** to focus the sidebar, or click a tag in the sidebar.
 
-Keys: **t** (tag panel), **j k ↓ ↑ PgDn PgUp Home End** (move), **Enter Space** (toggle filter), **a** (add tag), **d** (remove tag), **r** (rename tag), **m Menu Shift F10** (tag menu), **h Escape ←** (return to files).
+Keys: **t** (tag panel), **j k / ↓ ↑ / PgDn PgUp / Home End** (move), **Enter / Space** (toggle filter), **a** (add tag), **d** (remove tag), **r** (rename tag), **m / Menu / Shift F10** (tag menu), **h / Esc / ←** (return to files).
 
 More: See [Editing tags in the window](tagging.md).
 
@@ -136,21 +138,21 @@ Picture: No picture yet.
 
 ## Saved views
 
-Press **v** to focus the views sidebar. Saved views show folders and tag combinations you use often. Use **j k ↓ ↑** to move through views. Press **Enter Space l** to open a view. Press **m** or **Menu** to open a view in the other pane, copy its command, or forget it. Press **h Escape ←** to return to the file list.
+Press **v** to focus the views sidebar. Saved views show folders and tag combinations you use often. Use **j k / ↓ ↑** to move through views. Press **Enter / Space / l** to open a view. Press **m** or **Menu** to open a view in the other pane, copy its command, or forget it. Press **h / Esc / ←** to return to the file list.
 
 Reach it: Press **v** to focus the sidebar, or click a view in the sidebar.
 
-Keys: **v** (views panel), **j k ↓ ↑ PgDn PgUp Home End** (move), **Enter Space l** (open), **m Menu Shift F10** (menu), **h Escape ←** (return to files).
+Keys: **v** (views panel), **j k / ↓ ↑ / PgDn PgUp / Home End** (move), **Enter / Space / l** (open), **m / Menu / Shift F10** (menu), **h / Esc / ←** (return to files).
 
 Picture: No picture yet.
 
 ## Graph view
 
-Open a graph view from the command palette. The graph shows files (rounded rectangles) and tags (circles) as nodes, with lines connecting files to their tags. Press **j k** or **← →** to move between nodes. Use **Shift h Shift j Shift k Shift l** (or Shift with the arrow keys) to pan the view. Use **+ - =** or scroll to zoom. Press **l** or **Enter** to open the selected file or list the selected tag. Press **Ctrl w** to close the graph tab.
+Open a graph view from the command palette. The graph shows files (rounded rectangles) and tags (circles) as nodes, with lines connecting files to their tags. Press **j k** or **← →** to move between nodes. Use **Shift h j k l** (or Shift with the arrow keys) to pan the view. Use **+ - =** or scroll to zoom. Press **l** or **Enter** to open the selected file or list the selected tag. Press **Ctrl w** to close the graph tab.
 
 Reach it: Press **:** or **Ctrl p** to open the command palette, type **graph**, then press **Enter**. The **+** tab button also offers a **Graph tab** entry.
 
-Keys: **j k ← →** (move between nodes), **Shift h Shift j Shift k Shift l** (pan), **+ - =, scroll** (zoom), **l Enter** (open), **0** (reset view), **Ctrl w** (close tab).
+Keys: **j k / ← →** (move between nodes), **Shift h j k l** (pan), **+ - =** or scroll (zoom), **l / Enter** (open), **0** (reset view), **Ctrl w** (close tab).
 
 More: Tags are shown as circles. Files are shown as rounded rectangles. Lines show tag relationships.
 
@@ -172,7 +174,7 @@ Open Trash from the **+** tab menu or press **:** and choose **Open Trash**. The
 
 Reach it: Click the **+** tab button and select Trash, or press **:**  and choose **Open Trash**.
 
-Keys (in Trash): **j k ↓ ↑ PgDn PgUp Home End** (move), **r** (restore), **Enter** (original path), **Space** (mark), **a** (mark all), **A** (clear marks), **e** (empty), **F5** (refresh), **m Menu Shift F10** (row menu).
+Keys (in Trash): **j k / ↓ ↑ / PgDn PgUp / Home End** (move), **r** (restore), **Enter** (original path), **Space** (mark), **a** (mark all), **A** (clear marks), **e** (empty), **F5** (refresh), **m / Menu / Shift F10** (row menu).
 
 More: See [Trash](trash.md).
 
@@ -180,11 +182,11 @@ Picture: No picture yet.
 
 ## Devices panel
 
-Press **d** to focus the devices sidebar. Removable storage and phones appear as rows. Use **j k ↓ ↑** to move. Press **Enter Space l** to open a device or mount it if needed. Press **m** or **Menu** to mount, unmount, eject, or cancel. Press **h Escape ←** to return to the file list.
+Press **d** to focus the devices sidebar. Removable storage and phones appear as rows. Use **j k / ↓ ↑** to move. Press **Enter / Space / l** to open a device or mount it if needed. Press **m** or **Menu** to mount, unmount, eject, or cancel. Press **h / Esc / ←** to return to the file list.
 
 Reach it: Press **d**.
 
-Keys: **d** (devices panel), **j k ↓ ↑ PgDn PgUp Home End** (move), **Enter Space l** (open/mount), **m Menu Shift F10** (menu), **h Escape ←** (return to files).
+Keys: **d** (devices panel), **j k / ↓ ↑ / PgDn PgUp / Home End** (move), **Enter / Space / l** (open/mount), **m / Menu / Shift F10** (menu), **h / Esc / ←** (return to files).
 
 More: See [Removable drives and phones](devices.md).
 
@@ -198,7 +200,7 @@ When pasting, moving, or dropping files with conflicting names, a dialog asks wh
 
 Reach it: Paste or move files with conflicting names.
 
-Keys: **Tab Shift+Tab** (next control), **Space Enter** (activate), **Escape** (cancel).
+Keys: **Tab / Shift Tab** (next control), **Space / Enter** (activate), **Esc** (cancel).
 
 More: See [File conflicts](conflicts.md).
 
@@ -206,31 +208,31 @@ Picture: No picture yet.
 
 ### Rename
 
-Press **r** on a file or folder to rename it, in a text field that opens in the footer. Type the new name and press **Enter** to confirm, or **Escape** to cancel. With more than one row marked, **r** renames the whole set by a template instead, such as `{stem}{ext}`.
+Press **r** on a file or folder to rename it, in a text field that opens in the footer. Type the new name and press **Enter** to confirm, or **Esc** to cancel. With more than one row marked, **r** renames the whole set by a template instead, such as `{stem}{ext}`.
 
 Reach it: Press **r** on a row, or use the row menu.
 
-Keys: **Enter** (confirm), **Escape** (cancel).
+Keys: **Enter** (confirm), **Esc** (cancel).
 
 Picture: No picture yet.
 
 ### New folder
 
-Press **n** or **Ctrl Shift n** to create a new folder, in a text field that opens in the footer. Type the folder name and press **Enter** to confirm, or **Escape** to cancel.
+Press **n** or **Ctrl Shift n** to create a new folder, in a text field that opens in the footer. Type the folder name and press **Enter** to confirm, or **Esc** to cancel.
 
 Reach it: Press **n**, or use the row menu.
 
-Keys: **Enter** (confirm), **Escape** (cancel).
+Keys: **Enter** (confirm), **Esc** (cancel).
 
 Picture: No picture yet.
 
 ### Compress archive
 
-Open the row menu and select **Compress**, or press **m** then **Compress**. Choose the destination folder and archive format: **zip**, **tar.gz**, or **tar.zst**. Press **Tab Shift Tab** to move between controls. Press **Enter** to start compression, or **Escape** to cancel.
+Open the row menu and select **Compress**, or press **m** then **Compress**. Choose the destination folder and archive format: **zip**, **tar.gz**, or **tar.zst**. Press **Tab / Shift Tab** to move between controls. Press **Enter** to start compression, or **Esc** to cancel.
 
 Reach it: Press **m** on a row and select **Compress**, or press **:** and choose **Compress**.
 
-Keys: **m** (row menu), **Tab Shift Tab** (next control), **Enter** (start), **Escape** (cancel).
+Keys: **m** (row menu), **Tab / Shift Tab** (next control), **Enter** (start), **Esc** (cancel).
 
 More: See [Compressing and extracting](archives.md).
 
@@ -238,11 +240,11 @@ Picture: No picture yet.
 
 ### Extract archive
 
-Open the row menu and select **Extract archive**, or press **m** then **Extract**. Choose the destination folder. Press **Tab Shift Tab** to move between controls. Press **Enter** to start extraction, or **Escape** to cancel.
+Open the row menu and select **Extract archive**, or press **m** then **Extract**. Choose the destination folder. Press **Tab / Shift Tab** to move between controls. Press **Enter** to start extraction, or **Esc** to cancel.
 
 Reach it: Press **m** on an archive and select **Extract**, or press **:** and choose **Extract**.
 
-Keys: **m** (row menu), **Tab Shift Tab** (next control), **Enter** (start), **Escape** (cancel).
+Keys: **m** (row menu), **Tab / Shift Tab** (next control), **Enter** (start), **Esc** (cancel).
 
 More: See [Compressing and extracting](archives.md).
 
@@ -254,7 +256,7 @@ A receipt dialog shows the full text behind a status message: the result of an o
 
 Reach it: Click the message in the footer after an operation finishes.
 
-Keys: **Tab Shift Tab** (move between the text and Close), **Enter Space** (close), **PgDn PgUp Home End** (scroll).
+Keys: **Tab / Shift Tab** (move between the text and Close), **Enter / Space** (close), **PgDn PgUp / Home End** (scroll).
 
 More: See [Browsing large folders](browsing.md).
 
@@ -264,11 +266,11 @@ Picture: No picture yet.
 
 ### Tag editor
 
-Open the row menu and select **Add tag…**, **Remove tag…**, or **Rename tag…**. Or press **t** to focus the tags sidebar, then press **a**, **d**, or **r**. Renaming takes an existing tag and a replacement; adding or removing takes one tag. Type the tag name. **Tab** completes a suggestion. **Enter** applies. **Escape** cancels without saving. **Up Down** move through suggestions.
+Open the row menu and select **Add tag…**, **Remove tag…**, or **Rename tag…**. Or press **t** to focus the tags sidebar, then press **a**, **d**, or **r**. Renaming takes an existing tag and a replacement; adding or removing takes one tag. Type the tag name. **Tab** completes a suggestion. **Enter** applies. **Esc** cancels without saving. **↑ ↓** move through suggestions.
 
-Reach it: Press **t** then **a d r**, or use the row menu.
+Reach it: Press **t** then **a**, **d** or **r**, or use the row menu.
 
-Keys: **Tab** (complete), **Enter** (apply), **Escape** (cancel), **Up Down** (suggestions), **Space** (activate button).
+Keys: **Tab** (complete), **Enter** (apply), **Esc** (cancel), **↑ ↓** (suggestions), **Space** (activate button).
 
 More: See [Editing tags in the window](tagging.md).
 
@@ -280,7 +282,7 @@ Picture: No picture yet.
 
 Press **Ctrl t** to open a new files tab directly. For a tags, graph, or trash tab, click the **+** tab button for a menu, or open the command palette (**:** or **Ctrl p**) and run **New tags tab**, **New graph tab**, or **Open Trash**.
 
-Keys: **Ctrl t** (new files tab), **Escape** (close the menu or palette without choosing).
+Keys: **Ctrl t** (new files tab), **Esc** (close the menu or palette without choosing).
 
 Picture: No picture yet.
 
@@ -288,7 +290,7 @@ Picture: No picture yet.
 
 Press **Ctrl Tab** (next) or **Ctrl Shift Tab** (previous). Press **\[** and **\]** to step tab. Press **Alt 1** through **Alt 9** to jump to a tab number.
 
-Keys: **Ctrl Tab Ctrl Shift Tab** (step), **\[ \]** (step), **Alt 1...9** (jump).
+Keys: **Ctrl Tab / Ctrl Shift Tab** (step), **\[ \]** (step), **Alt 1…9** (jump).
 
 Picture: No picture yet.
 
@@ -296,7 +298,7 @@ Picture: No picture yet.
 
 Press **Ctrl \\** to split the current pane into two side by side. Each pane has its own tabs. Press **Alt h** or **Alt l** to switch panes. Press **Ctrl ,** and **Ctrl .** to narrow or widen the focused pane. Each step moves the divider beside it by 40 pixels, and no pane goes below 280 pixels. In a window too narrow for every pane at 280 pixels, the panes share its width. Press **Ctrl Shift w** to close a pane.
 
-Keys: **Ctrl \\** (split), **Alt h Alt l** (switch panes), **Ctrl ,** (narrow focused pane), **Ctrl .** (widen focused pane), **Ctrl Shift w** (close pane).
+Keys: **Ctrl \\** (split), **Alt h l / Alt ← →** (switch panes), **Ctrl ,** (narrow focused pane), **Ctrl .** (widen focused pane), **Ctrl Shift w** (close pane).
 
 Picture: No picture yet.
 
@@ -368,7 +370,7 @@ omafiles provides the desktop file chooser portal for applications that request 
 
 Reach it: Applications using the freedesktop portal file chooser.
 
-Keys: **Tab Shift+Tab** (move between controls), **j k ↓ ↑ Home End PgDn PgUp** (move in the list), **Space** (mark, for a multiple-file or multiple-folder request), **Enter** (open a folder or choose a file), **Ctrl Enter** (choose the current folder, for a folder request), **Ctrl l** (path field), **Ctrl f** (search field), **Ctrl h** (hidden files), **Alt ↑** (parent folder), **Escape** (cancel).
+Keys: **Tab / Shift Tab** (move between controls), **j k / ↓ ↑ / Home End / PgDn PgUp** (move in the list), **Space** (mark, for a multiple-file or multiple-folder request), **Enter** (open a folder or choose a file), **Ctrl Enter** (choose the current folder, for a folder request), **Ctrl l** (path field), **Ctrl f** (search field), **Ctrl h** (hidden files), **Alt ↑** (parent folder), **Esc** (cancel).
 
 More: See [File chooser portal](file-chooser.md).
 

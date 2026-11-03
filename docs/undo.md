@@ -1,6 +1,6 @@
 # Undo in the window
 
-Press **Ctrl+Z**, choose **Undo** in the command palette (`:` or Ctrl+P), or use
+Press **Ctrl z**, choose **Undo** in the command palette (`:` or Ctrl p), or use
 the Undo button beside the navigation buttons. The palette and button name the
 last operation. The button has the same Tab, Enter, Space and pointer activation
 as the other toolbar controls. Text fields keep their own editing shortcuts;
@@ -46,7 +46,7 @@ refused with a wait message; navigation remains available.
 [KIO's FileUndoManager](https://api.kde.org/kio-fileundomanager.html) records
 completed jobs; its [UI interface](https://api.kde.org/kio-fileundomanager-uiinterface.html)
 asks about modified copied files. Omafiles refuses changed results instead of
-offering to delete them, making Ctrl+Z conservative.
+offering to delete them, making Ctrl z conservative.
 [Nautilus](https://github.com/GNOME/nautilus/blob/main/src/nautilus-file-undo-operations.c)
 implements inverse operations and locates Trash items by original path and
 trash metadata in a worker. Omafiles keeps its feature in memory for the window

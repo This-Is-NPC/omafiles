@@ -7,6 +7,7 @@ import omafiles
 // press; the same word in running text reads as something you are being told.
 Rectangle {
     id: cap
+    objectName: "keyCap"
     property string key: ""
 
     width: capText.implicitWidth + Theme.spacingS

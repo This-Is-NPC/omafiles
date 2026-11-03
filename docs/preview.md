@@ -1,6 +1,6 @@
 # Quick preview
 
-Select a file and press **i** to preview it inside the window. **i** or **Escape**
+Select a file and press **i** to preview it inside the window. **i** or **Esc**
 closes the preview and returns to the list. **j / Right** and **k / Left** move
 to the next and previous file row in the current sorted, filtered listing,
 without wrapping. Marks are unchanged. The row menu and command palette also
@@ -9,18 +9,18 @@ its menu, then tap **Quick preview**. This works in list, details and icon
 layouts, including tag and saved-view results. Tapping the footer **menu**
 action opens the same menu for the current row.
 
-**Tab / Shift+Tab** move through the visible controls. **Enter / Space** activate
+**Tab / Shift Tab** move through the visible controls. **Enter / Space** activate
 the focused button. Previous, Next and Close buttons work with pointer, touch
 and pen. The panel stays inside the client area; wheel, touch dragging,
 **Up / Down**, **Page Up / Down** and **Home / End** scroll overflowing contents. Scrolling
 does not change files. Text is plain, selectable, read-only text.
 File navigation and panel scrolling use unmodified keys. With the text focused,
-**Shift+Arrow**, **Shift+Home / End**, **Ctrl+Shift+Left / Right** and
-**Ctrl+Shift+Home / End** use native text selection; **Ctrl+Home / End** move
+**Shift ← → ↑ ↓**, **Shift Home / Shift End**, **Ctrl Shift ← / Ctrl Shift →** and
+**Ctrl Shift Home / Ctrl Shift End** use native text selection; **Ctrl Home / Ctrl End** move
 the text caret. A modified gesture that Qt's text control does not support,
-such as **Ctrl+Shift+Up / Down** or modified page keys, does nothing rather
+such as **Ctrl Shift ↑ / Ctrl Shift ↓** or modified page keys, does nothing rather
 than scrolling an ancestor panel. Text focus and the previewed file stay put.
-**Ctrl+A / Ctrl+C** select and copy text; plain **Right / Left** and **j / k**
+**Ctrl a / Ctrl c** select and copy text; plain **→ / ←** and **j / k**
 retain their next/previous-file actions.
 
 The key follows [ranger's `i` / `display_file` binding](https://github.com/ranger/ranger/blob/master/ranger/config/rc.conf),

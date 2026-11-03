@@ -40,7 +40,7 @@ versions, a dry run and updates.
 
 **[Trash](docs/trash.md)** — safe deletion to the desktop's trash; restore from there or erase permanently.
 
-**[Undo](docs/undo.md)** — Ctrl+Z undoes file operations with a history visible in the window.
+**[Undo](docs/undo.md)** — Ctrl z undoes file operations with a history visible in the window.
 
 **[Conflicts](docs/conflicts.md)** — when copying or moving would overwrite, choose Replace, Skip, Keep both or apply to the rest of the batch.
 
@@ -60,7 +60,7 @@ versions, a dry run and updates.
 
 ![Keys and shortcuts](docs/img/03-keys.png)
 
-Full keyboard controls are documented in the sections above. Pointer actions work the same way: right-click or press-and-hold opens the row menu; drag in the list marks rows; drag files onto a folder to move them on the same device or copy them across devices, or hold Ctrl to copy, Shift to move, or Ctrl+Shift to link (see [Drag and drop](docs/drag-and-drop.md)).
+Full keyboard controls are documented in the sections above. Pointer actions work the same way: right-click or press-and-hold opens the row menu; drag in the list marks rows; drag files onto a folder to move them on the same device or copy them across devices, or hold Ctrl to copy, Shift to move, or Ctrl Shift to link (see [Drag and drop](docs/drag-and-drop.md)).
 
 ## What it does not do
 

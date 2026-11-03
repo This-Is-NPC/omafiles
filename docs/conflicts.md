@@ -47,8 +47,8 @@ nonempty folders; choose Keep both or Skip instead. It does not merge folders.
 Late unapproved collisions are refused without overwriting them. Pattern rename
 keeps its all-or-nothing collision checks and does not accept conflict flags.
 
-Every button supports pointer/touch, Tab and Shift+Tab, visible focus, and
-Enter/Space. Escape cancels the operation. The sheet stays within the window;
+Every button supports pointer/touch, Tab and Shift Tab, visible focus, and
+Enter/Space. Esc cancels the operation. The sheet stays within the window;
 wheel, touch and Page Up/Down/Home/End scroll its content and focus stays visible.
 
 The choices and batch scope follow
