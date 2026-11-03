@@ -310,7 +310,7 @@ Sources &sources() { static Sources instance; return instance; }
 class Queue : public QObject
 {
 public:
-    struct Request { QPointer<Thumbnail> item; QString path; int extent; ThumbnailCancellation cancel; bool refresh; QSize renderSize; };
+    struct Request { QPointer<Thumbnail> item; QString path; int extent; ThumbnailCancellation cancel; ThumbnailFetch fetch; QSize renderSize; };
     Queue() : QObject(qApp), cpus(workerCpus()) {
         setObjectName("thumbnailQueue");
         pool.setMaxThreadCount(cpus.size());
@@ -366,7 +366,7 @@ private:
                 if (request.cancel->load()) return QImage();
                 helperCpu = workers > 1 ? cpu : -1;
                 helperBudget = helperMemoryLimit / workers;
-                const QImage image = thumbnailFor(request.path, request.extent, request.cancel, request.refresh);
+                const QImage image = thumbnailFor(request.path, request.extent, request.cancel, request.fetch);
                 if (!request.renderSize.isEmpty()
                     && (image.width() > request.renderSize.width() || image.height() > request.renderSize.height()))
                     return image.scaled(request.renderSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
@@ -396,7 +396,7 @@ ThumbnailRunner setThumbnailRunner(ThumbnailRunner next)
 }
 
 QImage thumbnailFor(const QString &path, int extent, const ThumbnailCancellation &cancel,
-                    bool refresh, ThumbnailWork *work)
+                    ThumbnailFetch fetch, ThumbnailWork *work)
 {
     if (work) *work = {};
     const QString clean = QDir::cleanPath(path);
@@ -419,12 +419,13 @@ QImage thumbnailFor(const QString &path, int extent, const ThumbnailCancellation
         const int fd = directory(folder, false);
         const QImage cached = readPng(fd, name, folder.endsWith("/normal") ? 128 : 256);
         if (fd >= 0) ::close(fd);
-        if (!refresh && matches(cached, uri, before)) return cached;
+        if (fetch != ThumbnailFetch::Regenerate && matches(cached, uri, before)) return cached;
     }
+    if (fetch == ThumbnailFetch::CacheOnly) return {};
     const int failed = directory(failure, false);
     const QImage marker = readPng(failed, name, 1);
     if (failed >= 0) ::close(failed);
-    if (!refresh && marker.text("Thumb::Error") == "invalid-data" && matches(marker, uri, before)) return {};
+    if (fetch != ThumbnailFetch::Regenerate && marker.text("Thumb::Error") == "invalid-data" && matches(marker, uri, before)) return {};
     if (cancel->load()) return {};
     bool invalid = false;
     QImage image;
@@ -470,12 +471,15 @@ QImage thumbnailFor(const QString &path, int extent, const ThumbnailCancellation
 Thumbnail::Thumbnail(QQuickItem *parent) : QQuickPaintedItem(parent)
 {
     setObjectName("thumbnail");
+    // A named child, so a test can see whether a request is scheduled.
+    m_delay.setParent(this);
+    m_delay.setObjectName("thumbnailRequest");
     m_delay.setSingleShot(true);
     m_delay.setInterval(0);
     const auto changed = [this] {
         m_refresh = true;
         restart();
-        if (m_requested) m_delay.start(60);
+        if (m_delay.isActive()) m_delay.start(60);
         emit sourceChanged();
     };
     connect(sources().watcher, &EntryWatcher::fileChanged, this, [this, changed](const QString &path) {
@@ -487,7 +491,9 @@ Thumbnail::Thumbnail(QQuickItem *parent) : QQuickPaintedItem(parent)
     connect(&m_delay, &QTimer::timeout, this, [this] {
         watch();
         m_renderSize = renderSize();
-        if (!queue().add({this, m_path, m_extent, m_cancel, m_refresh, m_renderSize}))
+        const ThumbnailFetch fetch = m_cacheOnly ? ThumbnailFetch::CacheOnly
+            : m_refresh ? ThumbnailFetch::Regenerate : ThumbnailFetch::CacheOrGenerate;
+        if (!queue().add({this, m_path, m_extent, m_cancel, fetch, m_renderSize}))
             m_delay.start(120);
     });
 }
@@ -514,6 +520,7 @@ void Thumbnail::setPath(const QString &path)
 }
 void Thumbnail::setExtent(int extent) { if (m_extent != extent) { m_extent = extent; emit extentChanged(); restart(); } }
 void Thumbnail::setRequested(bool requested) { if (m_requested != requested) { m_requested = requested; emit requestedChanged(); restart(true); } }
+void Thumbnail::setCacheOnly(bool cacheOnly) { if (m_cacheOnly != cacheOnly) { m_cacheOnly = cacheOnly; emit cacheOnlyChanged(); restart(true); } }
 QSize Thumbnail::renderSize() const
 {
     if (width() <= 0 || height() <= 0) return {};
@@ -545,7 +552,8 @@ void Thumbnail::restart(bool retainImage)
         emit readyChanged();
         update();
     }
-    if (m_requested && !m_path.isEmpty()) m_delay.start();
+    // A cache-only item keeps what it shows and leaves a changed source for later.
+    if (m_requested && !m_path.isEmpty() && !(m_cacheOnly && (ready() || m_refresh))) m_delay.start();
 }
 void Thumbnail::deliver(const ThumbnailCancellation &cancel, const QImage &image)
 {

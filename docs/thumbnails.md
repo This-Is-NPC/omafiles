@@ -65,9 +65,12 @@ work while keeping previews for rows that remain visible. A dedicated pool
 and a queue of at most 128 pending visible requests keep decoding, cache I/O
 and helper processes off the GUI thread. Obsolete requests are removed before
 current visible work starts; active work checks cancellation before publication.
-Opening quick preview cancels thumbnail requests in the underlying file panes,
+Opening quick preview cancels thumbnail generation in the underlying file panes,
 keeping foreground decoding ahead of background work. Existing display images
-remain available; closing preview resumes requests for visible rows.
+remain available. While preview is open, visible rows read only the shared
+cache, so a folder reload behind it (a file added, removed or tagged) shows the
+cached previews again; a row without a current cache entry keeps its icon.
+Closing preview resumes generation for visible rows.
 
 The pool follows the shared [CPU-budget policy](browsing.md) used by directory
 listing and filtering: usable affinity, ancestor quotas, a four-worker ceiling
