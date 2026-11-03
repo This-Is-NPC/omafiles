@@ -73,6 +73,14 @@ int root(const Location &location, QString *error)
     }
     if (storageState(location.path, error) != PathState::Present)
         return -1;
+    // A mount top directory the user cannot search holds no Trash of theirs.
+    if (location.path != home) {
+        struct stat entry{};
+        const QString first = QDir(location.top).filePath(shared ? QStringLiteral(".Trash")
+                                                                 : QStringLiteral(".Trash-") + uid);
+        if (::lstat(QFile::encodeName(first).constData(), &entry) != 0 && errno == EACCES)
+            return -1;
+    }
     if (shared) {
         const QString parent = QDir(location.top).filePath(QStringLiteral(".Trash"));
         Descriptor fd(openDirectoryNoFollow(parent));
