@@ -353,6 +353,7 @@ private slots:
     void navigatesArchiveControls_data();
     void navigatesArchiveControls();
     void browsesAndRestoresTrashByKeyboardAndPointer();
+    void showsTheWholeEmptyTrashConfirmation();
     void showsTrashReceiptBesideAnUnsearchableMount();
     void cancelsStaleTrashScans();
     void operatesOnTrashDuringRefresh_data();
@@ -422,6 +423,7 @@ private slots:
     void routesTooltipKeysOnlyWhenContentOverflows();
     void createsTheFirstTagFromTheEmptyPanel();
     void completesAndRenamesTagsOnTheMarkedSet();
+    void refusesTagEditsOnTheParentRow();
     void keepsTagRefusalsAndPendingTargetsInTheEditor();
     void keepsTagKeyboardFocusInsideTheEditor();
     void editsTagsFromThePaletteMenuAndPointer();
@@ -9733,6 +9735,30 @@ void TestStudio::completesAndRenamesTagsOnTheMarkedSet()
     QCOMPARE(verbRuns().size(), 2);
 }
 
+void TestStudio::refusesTagEditsOnTheParentRow()
+{
+    focusRow(QStringLiteral("one.txt"));
+    key(Qt::Key_Space);
+    focusRow(QStringLiteral("two.md"));
+    key(Qt::Key_Space);
+    QCOMPARE(tab()->markedCount(), 2);
+    auto *folder = qobject_cast<FolderModel *>(filesRoot()->property("folder").value<QObject *>());
+    QCOMPARE(folder->kindAt(0), QStringLiteral("parent"));
+    QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(0)));
+    QTRY_COMPARE(filesRoot()->property("entry").toMap().value(QStringLiteral("name")).toString(), QStringLiteral(".."));
+    verbRuns().clear();
+    m_index->setNotice({});
+    key('t');
+    QCOMPARE(window()->property("focusRegion").toString(), QStringLiteral("tags"));
+    key('a');
+    QVERIFY(!itemsNamed("tagSheet").first()->isVisible());
+    QCOMPARE(m_index->notice(),
+             QStringLiteral("Tags go on files and folders: move the cursor to one, or to a marked row for the marked set"));
+    QVERIFY(verbRuns().isEmpty());
+    QCOMPARE(tab()->markedCount(), 2);
+    folder->clearMarks();
+}
+
 void TestStudio::keepsTagRefusalsAndPendingTargetsInTheEditor()
 {
     VerbReceipt reply;
@@ -16532,6 +16558,58 @@ void TestStudio::browsesAndRestoresTrashByKeyboardAndPointer()
     QTRY_COMPARE(model->count(), 1);
 }
 
+void TestStudio::showsTheWholeEmptyTrashConfirmation()
+{
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const QByteArray oldData = qgetenv("XDG_DATA_HOME");
+    const QSize oldSize = window()->size();
+    qputenv("XDG_DATA_HOME", fixture.path().toUtf8());
+    auto cleanup = qScopeGuard([&] {
+        if (tab()->kind() == "trash") m_workspace->closeCurrentTab();
+        qputenv("XDG_DATA_HOME", oldData);
+        window()->resize(oldSize);
+    });
+    const QDir dir(fixture.path());
+    QVERIFY(QDir().mkpath(dir.filePath("Trash/files")));
+    QVERIFY(QDir().mkpath(dir.filePath("Trash/info")));
+    QVERIFY(writeLooknfeel(dir.filePath("Trash/files/gone.txt"), "payload"));
+    QVERIFY(writeLooknfeel(dir.filePath("Trash/info/gone.txt.trashinfo"),
+        "[Trash Info]\nPath=" + dir.filePath("gone.txt") + "\nDeletionDate=2026-10-11T13:14:15\n"));
+    key(':');
+    for (char ch : QByteArray("open trash")) key(ch);
+    key(Qt::Key_Return);
+    QTRY_COMPARE(tab()->kind(), QStringLiteral("trash"));
+    QTRY_VERIFY(!itemsNamed("trashView").isEmpty());
+    auto *model = itemsNamed("trashView").first()->property("model").value<TrashModel *>();
+    QVERIFY(model);
+    QTRY_VERIFY(!model->loading());
+    QCOMPARE(model->count(), 1);
+    auto *confirm = itemsNamed("trashEmptyMenu").first();
+    for (const QSize size : {QSize(1180, 720), QSize(420, 300)}) {
+        window()->resize(size);
+        itemsNamed("trashList").first()->forceActiveFocus();
+        key('e');
+        QTRY_VERIFY(confirm->isVisible());
+        auto *list = qvariant_cast<QQuickItem *>(confirm->property("focusTarget"));
+        QTRY_COMPARE(list->property("count").toInt(), 2);
+        window()->grabWindow();
+        int labels = 0;
+        for (QQuickItem *item : itemsNamed(QStringLiteral("menuLabel"))) {
+            if (!list->isAncestorOf(item)) continue;
+            const QString text = item->property("text").toString();
+            ++labels;
+            QVERIFY2(!item->property("truncated").toBool(),
+                     qPrintable(QStringLiteral("%1x%2 cuts off `%3`")
+                                    .arg(size.width()).arg(size.height()).arg(text)));
+        }
+        QCOMPARE(labels, 2);
+        key(Qt::Key_Escape);
+        QTRY_VERIFY(!confirm->isVisible());
+    }
+    QCOMPARE(model->count(), 1);
+}
+
 void TestStudio::cancelsStaleTrashScans()
 {
     QTemporaryDir fixture;
@@ -18027,11 +18105,14 @@ void TestStudio::navigatesPortalChooser()
         while (item && item->objectName().isEmpty()) item = item->parentItem();
         return item ? item->objectName() : QString();
     };
-    QStringList expected{initial, "chooserUp", "chooserHome", "chooserHidden", "chooserHelp", "chooserLocation", "chooserSearch"};
-    if (method == "SaveFile") expected << "chooserFiles";
+    QStringList expected{"chooserUp", "chooserHome", "chooserHidden", "chooserHelp", "chooserLocation", "chooserSearch", "chooserFiles"};
+    if (method == "SaveFile") expected << "chooserFilename";
     expected << "chooserFilter" << "chooserBooleanChoice" << "chooserChoice";
     if (portal->current()->multiple) expected << "chooserMark";
     expected << "chooserCancel" << "chooserAccept";
+    const auto start = expected.indexOf(initial);
+    QVERIFY(start >= 0);
+    expected = expected.mid(start) + expected.first(start);
     QStringList seen;
     for (int i = 0; i < expected.size(); ++i) {
         QVERIFY(chooser->activeFocusItem());
@@ -18045,7 +18126,7 @@ void TestStudio::navigatesPortalChooser()
         QCOMPARE(focusName(chooser->activeFocusItem()), expected.at(i));
     }
     QTest::keyClick(chooser, Qt::Key_Tab, Qt::ShiftModifier);
-    QCOMPARE(focusName(chooser->activeFocusItem()), QStringLiteral("chooserAccept"));
+    QCOMPARE(focusName(chooser->activeFocusItem()), expected.last());
     QTest::keyClick(chooser, Qt::Key_Tab);
     QCOMPARE(focusName(chooser->activeFocusItem()), initial);
     auto *hidden = control("chooserHidden");

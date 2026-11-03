@@ -219,8 +219,10 @@ Item {
                         }
 
                         Text {
+                            objectName: "menuLabel"
                             anchors.right: shortcut.left
-                            anchors.rightMargin: Theme.spacingS
+                            // The gap panelWidth() reserves before a row's keys.
+                            anchors.rightMargin: shortcut.keys === "" ? 0 : Theme.spacingL
                             elide: Text.ElideRight
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.left: parent.left
