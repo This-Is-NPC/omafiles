@@ -1,9 +1,7 @@
 #include "TrashModel.h"
+#include "BlockingJob.h"
 #include <QFileInfo>
 #include <QFutureWatcher>
-#include <QScopeGuard>
-#include <QThreadPool>
-#include <QtConcurrentRun>
 #include <algorithm>
 #include <tuple>
 
@@ -110,14 +108,7 @@ void TrashModel::reload()
         if (!result.watches.isEmpty()) m_watcher.addPaths(result.watches);
         emit changed();
     });
-    watcher->setFuture(QtConcurrent::run([cancel] {
-        // A scan blocked on an unresponsive mount cannot read its cancel flag, so it
-        // gives back its pool slot until it returns and a fresh scan never waits on it.
-        auto *pool = QThreadPool::globalInstance();
-        pool->releaseThread();
-        const auto reserve = qScopeGuard([pool] { pool->reserveThread(); });
-        return Trash::list(Trash::mounts(), cancel);
-    }));
+    watcher->setFuture(runBlocking([cancel] { return Trash::list(Trash::mounts(), cancel); }));
 }
 
 void TrashModel::toggleMark(int row)
@@ -190,7 +181,7 @@ void TrashModel::operate(const QVector<Trash::Item> &items, bool erase)
         emit operationFinished();
         reload();
     });
-    watcher->setFuture(QtConcurrent::run([items, erase, cancel] {
+    watcher->setFuture(runBlocking([items, erase, cancel] {
         int completed = 0;
         QStringList errors;
         for (const auto &item : items) {

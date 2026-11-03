@@ -354,6 +354,7 @@ private slots:
     void browsesAndRestoresTrashByKeyboardAndPointer();
     void cancelsStaleTrashScans();
     void restoresTrashEntryDuringRefresh();
+    void listsFolderWhileUndoCaptureBlocks();
     void keepsTrashCursorOnReloadAndRestore();
     void reversesFreshControlGroups_data();
     void reversesFreshControlGroups();
@@ -15197,6 +15198,47 @@ void TestStudio::restoresTrashEntryDuringRefresh()
     QThreadPool::globalInstance()->waitForDone();
     QCoreApplication::processEvents();
     QCOMPARE(model->count(), 0);
+}
+
+void TestStudio::listsFolderWhileUndoCaptureBlocks()
+{
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const QDir dir(fixture.path());
+    const QString doomed = dir.filePath("doomed.txt");
+    QVERIFY(writeLooknfeel(doomed, "payload"));
+    QVERIFY(writeLooknfeel(dir.filePath("kept.txt"), "payload"));
+    auto *pool = QThreadPool::globalInstance();
+    const int oldThreads = pool->maxThreadCount();
+    pool->setMaxThreadCount(1);
+    auto restoreThreads = qScopeGuard([&] { pool->setMaxThreadCount(oldThreads); });
+    QSemaphore entered, release;
+    auto releaseWorker = qScopeGuard([&] { release.release(); pool->waitForDone(); });
+    Trash::setMountProvider([&] {
+        entered.release();
+        release.acquire();
+        return QStringList{};
+    });
+    auto restoreMounts = qScopeGuard([] { Trash::setMountProvider([] { return QStringList{}; }); });
+    JournalDriver driver;
+    const auto previous = setVerbRunner([](const QStringList &, VerbReceipt done) {
+        done(false, {}, QStringLiteral("not run"));
+    });
+    auto restoreRunner = qScopeGuard([&] { setVerbRunner(previous); });
+    driver.run({{QStringLiteral("trash"), QStringLiteral("--"), doomed}});
+    QTRY_VERIFY(entered.available() > 0);
+    entered.acquire();
+    TabState state("files");
+    state.setCwd(dir.path());
+    FolderModel model;
+    model.setTab(&state);
+    QTRY_VERIFY(!model.loading());
+    QCOMPARE(model.rowCount(), 3);
+    QCOMPARE(model.pathAt(2), dir.filePath("kept.txt"));
+    QVERIFY(!driver.finished);
+    Trash::setMountProvider([] { return QStringList{}; });
+    release.release();
+    QTRY_VERIFY(driver.finished);
 }
 
 void TestStudio::keepsTrashCursorOnReloadAndRestore()

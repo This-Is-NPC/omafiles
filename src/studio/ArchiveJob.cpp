@@ -1,4 +1,5 @@
 #include "ArchiveJob.h"
+#include "BlockingJob.h"
 #include "../core/Paths.h"
 #include "../core/Open.h"
 #include <QCoreApplication>
@@ -9,7 +10,6 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QTemporaryDir>
-#include <QtConcurrent>
 #include <unistd.h>
 
 namespace omafiles {
@@ -19,7 +19,7 @@ struct Stage {
     ~Stage() {
         const QString directory = path;
         if (!directory.isEmpty()) {
-            auto cleanup = QtConcurrent::run([directory] {
+            auto cleanup = runBlocking([directory] {
                 QString leaf;
                 const int parent = openDirectoryNoFollow(typedDirectory(directory, &leaf));
                 if (parent >= 0) {

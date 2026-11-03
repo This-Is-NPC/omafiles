@@ -1,4 +1,5 @@
 #include "FileTransfer.h"
+#include "BlockingJob.h"
 
 #include "Clipboard.h"
 #include "Paths.h"
@@ -13,7 +14,6 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QPointer>
-#include <QtConcurrentRun>
 #include <sys/stat.h>
 #include <cerrno>
 #include <utility>
@@ -108,9 +108,10 @@ bool FileTransfer::receive(const QList<QUrl> &urls, const QString &directory,
         else
             emit requested(paths, directory, plan.action);
     });
-    watcher->setFuture(QtConcurrent::run(planDrop, paths, directory,
-                                         Qt::KeyboardModifiers(modifiers),
-                                         Qt::DropActions(possibleActions)));
+    watcher->setFuture(runBlocking([paths, directory, modifiers, possibleActions] {
+        return planDrop(paths, directory, Qt::KeyboardModifiers(modifiers),
+                        Qt::DropActions(possibleActions));
+    }));
     return true;
 }
 

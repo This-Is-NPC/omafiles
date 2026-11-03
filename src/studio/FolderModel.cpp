@@ -1,4 +1,5 @@
 #include "FileMetadata.h"
+#include "BlockingJob.h"
 #include "FolderModel.h"
 
 #include "Glob.h"
@@ -11,7 +12,6 @@
 
 #include <QDateTime>
 #include <QFutureWatcher>
-#include <QtConcurrentRun>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -1413,7 +1413,7 @@ void FolderModel::startDirectoryQuery()
         setLoading(false);
         emit changed();
     });
-    watcher->setFuture(QtConcurrent::run([=] {
+    watcher->setFuture(runBlocking([=] {
         DirectoryResult result;
         result.listing = existing ? existing
             : std::make_shared<DirectoryListing>(DirectoryListing::read(path, cancellation, work));

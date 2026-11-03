@@ -1,4 +1,5 @@
 #include "Portal.h"
+#include "BlockingJob.h"
 #include <QDebug>
 #include "../core/Paths.h"
 #include <KWindowSystem>
@@ -451,7 +452,7 @@ void PortalRequest::finish(const QStringList& paths)
         if (error.isEmpty() && overwritePaths.isEmpty())
             confirmOverwrite(true);
     });
-    watcher->setFuture(QtConcurrent::run([paths, requestKind, names, folders, cancelled] {
+    watcher->setFuture(runBlocking([paths, requestKind, names, folders, cancelled] {
         Validation result;
         auto inspect = [&](const QString& p, struct stat* s, bool follow = true) {
             QString why;
