@@ -83,9 +83,9 @@ Item {
                     id: contents
                     anchors.centerIn: parent
                     spacing: Theme.spacingXs
-                    KeyCap {
+                    KeyCaps {
                         anchors.verticalCenter: parent.verticalCenter
-                        key: pair.modelData.key
+                        keys: pair.modelData.key
                     }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter

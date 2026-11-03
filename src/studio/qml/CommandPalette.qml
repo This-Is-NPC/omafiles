@@ -188,13 +188,12 @@ Rectangle {
                                 anchors.rightMargin: Theme.spacingS
                                 text: entryRow.modelData.label
                             }
-                            KeyCap {
+                            KeyCaps {
                                 id: shortcut
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.right: parent.right
                                 anchors.rightMargin: Theme.spacingS
-                                visible: (entryRow.modelData.key || "") !== ""
-                                key: entryRow.modelData.key || ""
+                                keys: entryRow.modelData.key || ""
                             }
                             MouseArea {
                                 anchors.fill: parent

@@ -10,7 +10,7 @@ Item {
     property ListView list: null
     property Rectangle panel: null
     property TextMetrics labelRuler: null
-    property TextMetrics capRuler: null
+    property Column keyRuler: null
     readonly property Item focusTarget: menu.list
     signal chosen(string id)
 
@@ -42,16 +42,17 @@ Item {
         panel.y = Math.max(margin, Math.min(panel.y, menu.height - panel.height - margin))
     }
 
-    // Measure labels without instantiating offscreen delegates.
+    // Measure labels without instantiating offscreen delegates; the keys are
+    // measured by the key ruler, which holds only their caps.
     function panelWidth() {
         let widest = 0
         for (let i = 0; i < menu.shown.length; i++) {
             labelRuler.text = menu.shown[i].label
-            capRuler.text = menu.shown[i].key || ""
-            widest = Math.max(widest, labelRuler.advanceWidth
-                              + (capRuler.text === "" ? 0 : capRuler.advanceWidth + Theme.spacingL))
+            widest = Math.max(widest, labelRuler.advanceWidth)
         }
-        return Math.max(200, Math.ceil(widest) + 2 * (Theme.spacingXs + Theme.spacingS))
+        const keys = keyRuler.implicitWidth
+        return Math.max(200, Math.ceil(widest + (keys > 0 ? keys + Theme.spacingL : 0))
+                             + 2 * (Theme.spacingXs + Theme.spacingS))
     }
 
     function openAt(x, y) {
@@ -86,7 +87,7 @@ Item {
             id: focusScope
             Component.onCompleted: {
                 menu.labelRuler = labelRuler
-                menu.capRuler = capRuler
+                menu.keyRuler = keyRuler
                 menu.panel = panel
                 menu.list = list
             }
@@ -97,10 +98,18 @@ Item {
                 font.pixelSize: Theme.fontBody
             }
 
-            TextMetrics {
-                id: capRuler
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
+            // Laid out, so it has a width, and never seen.
+            Column {
+                id: keyRuler
+                opacity: 0
+                onImplicitWidthChanged: menu.clampPanel()
+                Repeater {
+                    model: menu.visible ? menu.shown : []
+                    KeyCaps {
+                        required property var modelData
+                        keys: modelData.key || ""
+                    }
+                }
             }
 
             MouseArea {
@@ -199,15 +208,12 @@ Item {
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontBody
                         }
-                        Text {
+                        KeyCaps {
                             id: shortcut
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.right: parent.right
                             anchors.rightMargin: Theme.spacingS
-                            text: itemRow.modelData.key || ""
-                            color: Theme.dim
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSmall
+                            keys: itemRow.modelData.key || ""
                         }
                         // Hover selection follows actual movement, leaving touch drags to the list.
                         MouseArea {

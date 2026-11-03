@@ -20,7 +20,7 @@ This is every page in the documentation, arranged in the order you're likely to 
 - [Quick preview](preview.md) — the `i` key to preview text, images, PDFs and archive contents.
 - [File thumbnails](thumbnails.md) — desktop cache thumbnailers, installed thumbnailers, resource limits.
 - [Trash](trash.md) — safe deletion to the desktop trash, restore and permanent erase.
-- [Undo in the window](undo.md) — Ctrl+Z, operation history, what can be undone.
+- [Undo in the window](undo.md) — Ctrl z, operation history, what can be undone.
 - [File conflicts](conflicts.md) — Replace, Skip, Keep both, and batch choices when copying or moving.
 - [Compressing and extracting](archives.md) — formats, progress, conflicts, portable tags, safe extraction.
 - [Removable drives and phones](devices.md) — GIO/GVfs, mount points, declared roots, status.
@@ -39,7 +39,7 @@ This is every page in the documentation, arranged in the order you're likely to 
 - [How to mount a device](how-to-mount-a-device.md) — connecting and using removable drives and phones.
 - [How to compress and extract](how-to-compress-and-extract.md) — creating archives and unpacking them.
 - [How to restore from the trash](how-to-restore-from-the-trash.md) — finding and undeleting files.
-- [How to undo a change](how-to-undo-a-change.md) — using Ctrl+Z and the history.
+- [How to undo a change](how-to-undo-a-change.md) — using Ctrl z and the history.
 - [How to run the benchmark](how-to-run-the-benchmark.md) — performance testing and results.
 
 **Development and testing:**
@@ -81,6 +81,7 @@ Every page in this documentation follows these rules:
 - **Shortest explanation.** A concept is explained once, in the page where it first matters; other pages link to it.
 - **One question per page.** Each page answers one clear question.
 - **Keyboard first.** Pointer actions are mentioned only to show they exist; keyboard is the primary interface.
+- **Keys as the window draws them.** A chord is its keys with spaces between them (**Ctrl t**, **Shift F10**), letters in a chord are lowercase, and keys that do the same thing are joined by a slash (**r / F2**). See [design.md §3](design.md#3-architecture).
 - **Links within the project.** Links point to other docs pages, the command-line reference, or code.
 - **No marketing.** Pages say what the tool does, not why it is better than something else.
 - **Plain English.** Short sentences, active voice, no jargon without explanation.

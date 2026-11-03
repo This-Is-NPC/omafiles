@@ -18,7 +18,7 @@ For drops into this window:
 
 - Ctrl copies.
 - Shift moves.
-- Ctrl+Shift creates symbolic links.
+- Ctrl Shift creates symbolic links.
 - Without a modifier, files on the destination's device move; files from another
   device copy. A set spanning devices copies.
 - An action the source does not offer copies instead. A source that offers
@@ -42,20 +42,20 @@ whole. Such a clipboard set is unavailable for paste or linking. The source
 must offer copying, which lets this window own the complete operation without
 asking the source to delete files before a move succeeds.
 Native link negotiation with other applications depends on the desktop's Qt
-backend; Ctrl+Shift links into this window work through its own link action.
+backend; Ctrl Shift links into this window work through its own link action.
 
 # The same operations by keyboard
 
-Copy the row or marked set with Ctrl+C, or cut it with Ctrl+X. Reach the
-destination folder, then Ctrl+V copies or moves the clipboard files. Ctrl+Shift+V
+Copy the row or marked set with Ctrl c, or cut it with Ctrl x. Reach the
+destination folder, then Ctrl v copies or moves the clipboard files. Ctrl Shift v
 creates links there and keeps the clipboard available.
 
 To reach a folder row, select it and press Enter. To reach another tab, use
-Ctrl+Tab or Ctrl+Shift+Tab. To reach another pane, use Alt+Left or Alt+Right.
+Ctrl Tab or Ctrl Shift Tab. To reach another pane, use Alt ← or Alt →.
 Then paste or create links with the same keys. The palette and row menu also
 offer copy, cut, paste and link actions. These keyboard and drop paths share
 the same transfer implementation and refusals.
 
-For another application, use Ctrl+C, focus that application and paste. It
+For another application, use Ctrl c, focus that application and paste. It
 chooses how to handle the clipboard's file URLs, just as it chooses how to
 handle an incoming drag.

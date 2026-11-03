@@ -17,6 +17,38 @@ Rectangle {
 
     property OverlayScroll scroll: null
 
+    // One row of the sheet: the keys in a column of the section's width, then
+    // the description, its first line centred on the caps.
+    component HelpLine: Row {
+        id: line
+        property alias keys: caps.keys
+        property alias label: entry.text
+        property real keyColumn: 0
+        readonly property real keysWidth: caps.implicitWidth
+        spacing: Theme.spacingS
+
+        Item {
+            width: line.keyColumn
+            height: caps.implicitHeight
+            KeyCaps {
+                id: caps
+            }
+        }
+        Label {
+            id: entry
+            objectName: "helpEntry"
+            width: line.width - line.keyColumn - line.spacing
+            topPadding: (Theme.chipHeight - entryMetrics.height) / 2
+            // Reference entries wrap so every binding remains readable.
+            elide: Text.ElideNone
+            wrapMode: Text.WordWrap
+            FontMetrics {
+                id: entryMetrics
+                font: entry.font
+            }
+        }
+    }
+
     visible: false
     color: Theme.fill(Theme.background, 0.72)
     z: 95
@@ -106,7 +138,7 @@ Rectangle {
 
                         Flow {
                             id: columns
-                            readonly property int across: width >= 1000 ? 5 : width >= 700 ? 4 : width >= 500 ? 3 : width >= 300 ? 2 : 1
+                            readonly property int across: width >= 1000 ? 3 : width >= 600 ? 2 : 1
                             width: parent.width
                             spacing: Theme.spacingXl
 
@@ -120,6 +152,17 @@ Rectangle {
                                     width: (columns.width - (columns.across - 1) * columns.spacing)
                                            / columns.across
                                     spacing: Theme.spacingXs
+                                    // The key column is as wide as the widest keys in the
+                                    // section, so every description starts on one edge.
+                                    readonly property real keyColumn: {
+                                        let widest = 0
+                                        for (let i = 0; i < lines.count; ++i) {
+                                            const line = lines.itemAt(i) as HelpLine
+                                            if (line)
+                                                widest = Math.max(widest, line.keysWidth)
+                                        }
+                                        return widest
+                                    }
 
                                     Label {
                                         quiet: true
@@ -128,36 +171,15 @@ Rectangle {
                                     }
 
                                     Repeater {
+                                        id: lines
                                         model: group.spec.keys
 
-                                        Row {
-                                            id: line
+                                        HelpLine {
                                             required property var modelData
-                                            readonly property var binding: line.modelData
                                             width: group.width
-                                            spacing: Theme.spacingS
-
-                                            Row {
-                                                id: caps
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                spacing: Theme.spacingXs
-                                                Repeater {
-                                                    model: line.binding.key.split(" ")
-                                                    KeyCap {
-                                                        required property string modelData
-                                                        key: modelData
-                                                    }
-                                                }
-                                            }
-                                            Label {
-                                                objectName: "helpEntry"
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                width: line.width - caps.width - line.spacing
-                                                text: line.binding.label
-                                                // Reference entries wrap so every binding remains readable.
-                                                elide: Text.ElideNone
-                                                wrapMode: Text.WordWrap
-                                            }
+                                            keyColumn: group.keyColumn
+                                            keys: modelData.key
+                                            label: modelData.label
                                         }
                                     }
 

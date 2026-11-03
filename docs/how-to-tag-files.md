@@ -16,9 +16,9 @@ Tags identify files with words, not by moving them. A tag is lower case letters,
    - Existing tag names appear as suggestions; press Up/Down to choose one, Tab to complete it
 4. To remove a tag, press `d` and choose the tag from the list, then Enter
 5. To rename a tag across all selected files, press `r`, type the old name, press Enter, then type the new name and Enter
-6. Press `h`, Escape or Left to return to the file list
+6. Press `h`, Esc or Left to return to the file list
 
-Adding tags to many files at once: Select them first (Space marks a row, `J`/`K` mark and step, `*` marks by pattern, Shift+click marks a range), then press `t` and add the tag to the marked set.
+Adding tags to many files at once: Select them first (Space marks a row, `J`/`K` mark and step, `*` marks by pattern, Shift-click marks a range), then press `t` and add the tag to the marked set.
 
 ## On the command line
 

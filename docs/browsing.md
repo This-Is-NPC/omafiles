@@ -72,15 +72,15 @@ stack. Each opens on the first control of its Tab cycle, including the first
 opening of content loaded on demand. Closing the frontmost overlay returns the keyboard to the last focused
 control in the visible overlay underneath, preserving its text and selection.
 This applies whether a keyboard action, pointer action or desktop D-Bus request opened the
-overlay. **Escape** closes one layer at a time; the underlying sheet remains
+overlay. **Esc** closes one layer at a time; the underlying sheet remains
 usable without clicking it. When the stack is empty, focus returns to the
 available control that opened it, or to the file list if that control is gone.
 Successful sheet actions return focus by the same rule as cancellation.
 When a list rebuilds its rows, focus returns to the list that owns the row.
 A footer action remains the focus origin of an overlay it opens.
 A command that opens a new text prompt keeps focus in that prompt. **Tab** and
-**Shift+Tab** cycle through its text field, Cancel and the visible confirmation
-action; **Escape** cancels it and returns to the
+**Shift Tab** cycle through its text field, Cancel and the visible confirmation
+action; **Esc** cancels it and returns to the
 file list. This includes rename, batch rename, new folder, marking by pattern,
 find, naming a saved view, the live filter and the path entry. Text and selection
 survive dialogs opened above these fields. Clicking a pane finishes the live
@@ -91,7 +91,7 @@ help sheet. Each Properties or default-manager result opens its own dialog, so
 closing a later result keeps earlier receipts and Undo
 instructions available.
 
-**Tab** and **Shift+Tab** visit the visible, enabled controls within a dialog or
+**Tab** and **Shift Tab** visit the visible, enabled controls within a dialog or
 sheet. Read-only receipt and preview text remain selectable, with a visible
 focus outline, and let Tab leave the text without discarding its selection.
 Preview text participates in the same Tab cycle as its scrolling viewport and
@@ -111,7 +111,7 @@ activation component.
 Keyboard navigation and key hints follow the focused control. **t** and **v**
 focus the tag or saved-view list, revealing the sidebar at narrow widths; an
 empty list focuses its heading. Clicking or tapping a sidebar heading focuses
-its list. **j/k**, Home/End, Page Up/Down and Ctrl+D/U then
+its list. **j k**, **Home End**, **PgUp PgDn** and **Ctrl d / Ctrl u** then
 navigate that list. Returning focus to the file-list control restores file
 navigation, including after a forward and reverse Tab round trip. Toolbar,
 details and footer controls use file-view shortcuts; Enter/Space activate the
@@ -129,7 +129,7 @@ marks or run a write. Moving past the platform drag threshold cancels the
 hold so dragging and scrolling can continue. List, details and icon layouts
 share this gesture; the same file rows serve directory, search, tag and saved
 view results. Right-click opens the same menu with a mouse. **m**, **Menu** and
-**Shift+F10** open it from the keyboard, including the tag vocabulary panel. Its menu toggles the tag filter; tag editing
+**Shift F10** open it from the keyboard, including the tag vocabulary panel. Its menu toggles the tag filter; tag editing
 actions appear when a file or directory is selected for editing.
 
 The footer's visible key-and-label hints are buttons: tap either part, or use
@@ -138,7 +138,7 @@ a grouped hint such as **j k move**, tapping invokes its first key (**j**, move
 down); both directions remain available on the keyboard. Hints wrap within
 the window so every action remains reachable. Prompt
 **cancel** and **rename / make / mark / find / save** actions use the same
-cancellation and submission paths as **Escape / Enter**.
+cancellation and submission paths as **Esc / Enter**.
 
 The gesture follows the conventional touch-and-hold context menu described by
 [Android](https://developer.android.com/develop/ui/views/components/menus)
@@ -149,7 +149,7 @@ with scrolling and drag handlers instead of introducing another gesture timer.
 
 ### Keyboard controls inside panels
 
-Every editable permission bit is a separate **Tab / Shift+Tab** stop, in
+Every editable permission bit is a separate **Tab / Shift Tab** stop, in
 owner, group, others order, with read, write, execute within each group.
 **Enter / Space** flips the focused bit. In the Permissions sheet these are
 draft changes: focus **Apply** to save or **Cancel** to discard. **h / l** and
@@ -167,22 +167,22 @@ supported gestures move the caret or extend selection, and unsupported gestures
 do not become ancestor scrolling or move focus to the panel. This follows
 [Qt Quick's key propagation and acceptance rules](https://doc.qt.io/qt-6/qml-qtquick-keys.html).
 Tag suggestions and command results also preserve this ownership: Shift and
-Ctrl+Shift arrows/pages/documents stay with the text editor, even when Qt declines
+Ctrl Shift arrows/pages/documents stay with the text editor, even when Qt declines
 the gesture. They do not select a result or reveal a different panel position.
-The command palette's explicit Ctrl+Home/End commands select its first/last result;
-Ctrl+N/P also choose the next/previous result. Unmodified arrows/pages keep their
+The command palette's explicit Ctrl Home / Ctrl End commands select its first/last result;
+Ctrl n / Ctrl p also choose the next/previous result. Unmodified arrows/pages keep their
 documented result or panel navigation.
 
 Sidebar tag chips, the add-tag button, and the saved-view and tag lists join
 the Tab order. A list has one focus stop; arrows choose its rows and
 **Enter / Space** opens the saved view or toggles the tag. Its focus outline
 and current row remain visible while scrolling or resizing. Menu selection
-uses **Tab / Shift+Tab** or arrows, and both **Enter** and **Space** activate
+uses **Tab / Shift Tab** or arrows, and both **Enter** and **Space** activate
 the highlighted item. Help has a visibly focused reading viewport with page
 navigation.
 
 An inline prompt's Tab cycle contains its text field and any visible footer
-submit/cancel buttons. **Escape** cancels from every stop. Text fields retain
+submit/cancel buttons. **Esc** cancels from every stop. Text fields retain
 ordinary typing: **Space** inserts a space, while **Enter** submits. The
 command palette and tag suggestions keep their editor as the keyboard proxy:
 arrows choose a result, Enter chooses it, and Tab completes a tag suggestion.
@@ -212,9 +212,9 @@ read, and uses Qt Quick Flow for the conventional wrapping layout.
 
 ### Reversing focus navigation
 
-Shift+Tab retraces Tab's order through the sidebar and footer as well as sheets,
+Shift Tab retraces Tab's order through the sidebar and footer as well as sheets,
 dialogs and inline prompts. In menus and the command palette, Tab wraps from the
-last action to the first and Shift+Tab wraps from the first to the last, keeping
+last action to the first and Shift Tab wraps from the first to the last, keeping
 the highlighted action visible. Arrow-key navigation retains its endpoint limits.
 
 Both native Backtab events and Shift-modified Tab events follow the reverse
@@ -222,7 +222,7 @@ order. Explicit links normalize the direction before moving focus, rather than
 letting a forward-only KeyNavigation handler disagree with Qt's default traversal
 at a group's open end. The order follows [Qt keyboard focus conventions](https://doc.qt.io/qt-6/qtquick-input-focus.html).
 
-Open **Trash** in the `+` tab menu or from commands (`:` / `Ctrl+P`) to browse
+Open **Trash** in the `+` tab menu or from commands (`:` / `Ctrl p`) to browse
 and restore deleted entries, or explicitly empty the Trash. See
 [Trash](trash.md) for keyboard controls, tag recovery and refusal rules.
 

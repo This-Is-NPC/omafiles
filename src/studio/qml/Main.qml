@@ -347,8 +347,7 @@ Window {
     // nobody writes here is a key nobody will find.
     readonly property var keymap: [
         { title: "move", keys: [
-            { key: "j k", label: "down, up" },
-            { key: "↓ ↑", label: "down, up" },
+            { key: "j k / ↓ ↑", label: "down, up" },
             { key: "g g", label: "first row" },
             { key: "G", label: "last row" },
             { key: "Ctrl d", label: "half page down" },
@@ -359,28 +358,25 @@ Window {
         { title: "devices", keys: [
             { key: "d", label: "devices panel" },
             { key: "j k / ↑ ↓", label: "move; Home/End/Page Up/Page Down also work" },
-            { key: "Enter Space l", label: "open device; mount if needed" },
-            { key: "m Menu Shift F10", label: "mount, unmount, eject or cancel" },
-            { key: "h ← Esc", label: "return to files" } ] },
+            { key: "Enter / Space / l", label: "open device; mount if needed" },
+            { key: "m / Menu / Shift F10", label: "mount, unmount, eject or cancel" },
+            { key: "h / ← / Esc", label: "return to files" } ] },
         { title: "archives", keys: [
             { key: "m", label: "row menu: Compress or Extract" },
             { key: ":", label: "commands: compress or extract" },
-            { key: "Tab Shift+Tab", label: "destination, format and action controls" },
-            { key: "Escape", label: "cancel preparation; stop publication after current entry" } ] },
+            { key: "Tab / Shift Tab", label: "destination, format and action controls" },
+            { key: "Esc", label: "cancel preparation; stop publication after current entry" } ] },
         { title: "go", keys: [
             { key: "i", label: "quick preview" },
-            { key: "l", label: "open or enter" },
-            { key: "Enter", label: "open or enter" },
+            { key: "l / Enter", label: "open or enter" },
             { key: "→", label: "open or enter (list, details)" },
-            { key: "h", label: "parent folder" },
-            { key: "Bksp", label: "parent folder" },
+            { key: "h / Bksp", label: "parent folder" },
             { key: "←", label: "parent folder (list, details)" },
             { key: "~", label: "home folder" },
             { key: "Ctrl l", label: "type a path" },
-            { key: "F5", label: "reload index" },
-            { key: "Ctrl r", label: "reload index" } ] },
+            { key: "F5 / Ctrl r", label: "reload index" } ] },
         { title: "preview", keys: [
-            { key: "i Esc", label: "close preview" },
+            { key: "i / Esc", label: "close preview" },
             { key: "j k", label: "next, previous file" },
             { key: "← →", label: "previous, next file" },
             { key: "P", label: "play, pause media" },
@@ -395,22 +391,18 @@ Window {
             { key: "A", label: "clear marks" },
             { key: "*", label: "mark by pattern" },
             { key: "m", label: "menu for a row, a tab or a view" },
-            { key: "Menu", label: "menu for row or tab" },
-            { key: "Shift F10", label: "menu for row or tab" } ] },
+            { key: "Menu / Shift F10", label: "menu for row or tab" } ] },
         { title: "view", keys: [
             { key: "1", label: "list" },
             { key: "2", label: "details" },
             { key: "3", label: "icons" },
-            { key: ".", label: "hidden files" },
-            { key: "Ctrl h", label: "hidden files" },
+            { key: ". / Ctrl h", label: "hidden files" },
             { key: "s", label: "name, tags, type, size, modified, each the way it reads" },
             { key: "S", label: "flip the direction" } ] },
         { title: "edit", keys: [
             { key: "Ctrl z", label: "undo the last operation" },
-            { key: "r", label: "rename" },
-            { key: "F2", label: "rename" },
-            { key: "n", label: "new folder" },
-            { key: "Ctrl Shift n", label: "new folder" },
+            { key: "r / F2", label: "rename" },
+            { key: "n / Ctrl Shift n", label: "new folder" },
             { key: "Ctrl c", label: "copy the row or the marked" },
             { key: "Ctrl x", label: "cut the row or the marked" },
             { key: "Ctrl v", label: "paste into this folder" },
@@ -423,14 +415,12 @@ Window {
             { key: "Esc", label: "clear filter" },
             { key: "t", label: "tag panel; a adds, d removes, r renames" },
             { key: "v", label: "saved views" },
-            { key: "Enter", label: "toggle tag" },
-            { key: "Space", label: "toggle tag" },
-            { key: "m Menu Shift F10", label: "tag menu" },
-            { key: "h", label: "leave the tag panel" },
-            { key: "← Esc", label: "leave the tag panel" } ] },
+            { key: "Enter / Space", label: "toggle tag" },
+            { key: "m / Menu / Shift F10", label: "tag menu" },
+            { key: "h / ← / Esc", label: "leave the tag panel" } ] },
         { title: "tabs and panes", keys: [
             { key: "Ctrl t", label: "new tab" },
-            { key: "Ctrl w", label: "close tab" },
+            { key: "Ctrl w / Delete", label: "close tab" },
             { key: "] [", label: "next, previous tab" },
             { key: "Ctrl Tab", label: "next tab" },
             { key: "Ctrl Shift Tab", label: "previous tab" },
@@ -439,35 +429,29 @@ Window {
             { key: "Ctrl ,", label: "narrow the pane" },
             { key: "Ctrl .", label: "widen the pane" },
             { key: "Ctrl Shift w", label: "close pane" },
-            { key: "Alt h l", label: "focus pane" },
-            { key: "Alt ← →", label: "focus pane" },
-            { key: "Menu", label: "menu for tab" },
-            { key: "Shift F10", label: "menu for tab" },
-            { key: "Delete", label: "close tab" } ] },
+            { key: "Alt h l / Alt ← →", label: "focus pane" },
+            { key: "Menu / Shift F10", label: "menu for tab" } ] },
         { title: "graph tab", keys: [
-            { key: "j k", label: "next, previous node" },
-            { key: "g G", label: "first, last node" },
-            { key: "l", label: "open a file, list a tag" },
-            { key: "m", label: "menu for a file node" },
-            { key: "← →", label: "next, previous node" },
-            { key: "Home End", label: "first, last node" },
-            { key: "Enter", label: "open a file, list a tag" },
-            { key: "Menu", label: "menu for a file node" },
+            { key: "j k / ← →", label: "next, previous node" },
+            { key: "g G / Home End", label: "first, last node" },
+            { key: "l / Enter", label: "open a file, list a tag" },
+            { key: "m / Menu", label: "menu for a file node" },
             { key: "+ - =", label: "zoom" },
             { key: "Shift h j k l", label: "pan" },
             { key: "0", label: "reset the view" } ] },
         { title: "trash", keys: [
             { key: ":", label: "Open Trash from commands" },
             { key: "j k / ↑ ↓", label: "move; Home/End/Page Up/Page Down also work" },
-            { key: "Space / a / A", label: "mark / mark all / clear marks" },
+            { key: "Space", label: "mark" },
+            { key: "a", label: "mark all" },
+            { key: "A", label: "clear marks" },
             { key: "Enter", label: "read the complete original path and deletion details" },
             { key: "r", label: "restore row or marked entries" },
             { key: "m / Menu", label: "row menu" },
             { key: "e", label: "confirm empty Trash (permanent)" },
             { key: "F5", label: "refresh Trash" } ] },
         { title: "window", keys: [
-            { key: ":", label: "commands" },
-            { key: "Ctrl p", label: "commands" },
+            { key: ": / Ctrl p", label: "commands" },
             { key: "?", label: "this list" },
             { key: "Tab", label: "next control or receipt" },
             { key: "Esc", label: "back to the list" } ] }
@@ -1848,7 +1832,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         iconKind: "undo"
                         caption: IndexModel.undoLabel
-                        key: "Ctrl+Z"
+                        key: "Ctrl z"
                         usable: IndexModel.canUndo
                         onClicked: IndexModel.undo()
                     }
@@ -2143,7 +2127,7 @@ Window {
             objectName: "commandPalette"
             anchors.fill: parent
             commands: [
-                { id: "add-files", label: "New files tab", key: "Ctrl+T" },
+                { id: "add-files", label: "New files tab", key: "Ctrl t" },
                 { id: "add-tags", label: "New tags tab", key: "" },
                 { id: "devices", label: "Devices", key: "d" },
                 { id: "open-trash", label: "Open Trash", key: "" },
@@ -2152,13 +2136,13 @@ Window {
                 { id: "save-view", label: "Save this as a view", key: "" },
                 { id: "views", label: "Saved views", key: "v" },
                 { id: "add-graph", label: "New graph tab", key: "" },
-                { id: "close-tab", label: "Close tab", key: "Ctrl+W" },
-                { id: "split", label: "Split right", key: "Ctrl+\\" },
-                { id: "close-pane", label: "Close pane", key: "Ctrl+Shift+W" },
+                { id: "close-tab", label: "Close tab", key: "Ctrl w" },
+                { id: "split", label: "Split right", key: "Ctrl \\" },
+                { id: "close-pane", label: "Close pane", key: "Ctrl Shift w" },
                 { id: "reload", label: "Reload index", key: "F5" },
                 { id: "home", label: "Go to home folder", key: "~" },
                 { id: "up", label: "Go to parent folder", key: "h" },
-                { id: "path", label: "Type a path", key: "Ctrl+L" },
+                { id: "path", label: "Type a path", key: "Ctrl l" },
                 { id: "filter", label: "Filter this folder", key: "/" },
                 { id: "find", label: "Find by name across the roots", key: "f" },
                 { id: "filter-menu", label: "Filter by type, tag or date", key: "F" },
@@ -2173,9 +2157,9 @@ Window {
                 { id: "edit-tag-remove", label: "Remove tag from the row or marked files", key: "t d" },
                 { id: "edit-tag-rename", label: "Rename tag on the row or marked files", key: "t r" },
                 { id: "new-folder", label: "New folder", key: "n" },
-                { id: "copy-files", label: "Copy", key: "Ctrl+C" },
-                { id: "cut-files", label: "Cut", key: "Ctrl+X" },
-                { id: "paste", label: "Paste", key: "Ctrl+V" },
+                { id: "copy-files", label: "Copy", key: "Ctrl c" },
+                { id: "cut-files", label: "Cut", key: "Ctrl x" },
+                { id: "paste", label: "Paste", key: "Ctrl v" },
                 { id: "mark-all", label: "Mark all", key: "a" },
                 { id: "clear-marks", label: "Clear marks", key: "A" },
                 { id: "mark-pattern", label: "Mark by pattern", key: "*" },
@@ -2191,7 +2175,7 @@ Window {
                 { id: "sort-mtime", label: "Sort by modified", key: "s" },
                 { id: "sort-flip", label: "Flip sort direction", key: "S" },
                 { id: "make-default", label: "Make omafiles the default file manager", key: "" },
-                { id: "undo", label: IndexModel.undoLabel, key: "Ctrl+Z" },
+                { id: "undo", label: IndexModel.undoLabel, key: "Ctrl z" },
                 { id: "keys", label: "Show keys", key: "?" }
             ].concat(win.columnActions(Workspace.columns), win.filterActionsFor({}))
             onChosen: function (id) {
@@ -2454,15 +2438,15 @@ Window {
                 { id: "adopt", label: "Adopt tags from disk here", when: fileMenu.hasHere },
 
                 { id: "copy-files", label: fileMenu.counted("Copy", "Copy %1 files"),
-                  key: "Ctrl+C", when: fileMenu.isRow },
+                  key: "Ctrl c", when: fileMenu.isRow },
                 { id: "cut-files", label: fileMenu.counted("Cut", "Cut %1 files"),
-                  key: "Ctrl+X", when: fileMenu.isRow },
+                  key: "Ctrl x", when: fileMenu.isRow },
                 { id: "paste",
                   label: Clipboard.holdsFiles && Clipboard.files().length > 1
                          ? (Clipboard.cutting() ? "Move %1 files here" : "Paste %1 files")
                                .replace("%1", Clipboard.files().length)
                          : (Clipboard.cutting() ? "Move here" : "Paste"),
-                  key: "Ctrl+V", when: win.canPaste },
+                  key: "Ctrl v", when: win.canPaste },
                 { id: "copy-other",
                   label: fileMenu.counted("Copy to other pane", "Copy %1 files to other pane"),
                   when: fileMenu.isRow && fileMenu.otherDir !== "" },
@@ -2608,15 +2592,15 @@ Window {
             property int targetTabIndex: 0
             property int targetTabCount: 1
             actions: [
-                { id: "close", label: "Close tab", key: "Ctrl+W" },
+                { id: "close", label: "Close tab", key: "Ctrl w" },
                 { id: "close-others", label: "Close others", when: tabMenu.targetTabCount > 1 },
                 { id: "close-right", label: "Close tabs to the right",
                   when: tabMenu.targetTabIndex < tabMenu.targetTabCount - 1 },
                 { id: "duplicate", label: "Duplicate tab" },
                 { id: "move-pane", label: "Move tab to other pane",
                   when: Workspace.paneCount > 1 && tabMenu.targetTabCount > 1 },
-                { id: "split", label: "Split with this tab", key: "Ctrl+\\" },
-                { id: "close-pane", label: "Close pane", key: "Ctrl+Shift+W",
+                { id: "split", label: "Split with this tab", key: "Ctrl \\" },
+                { id: "close-pane", label: "Close pane", key: "Ctrl Shift w",
                   when: Workspace.paneCount > 1 }
             ]
             onChosen: function (id) {
@@ -2965,7 +2949,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         label: "+"
                         caption: "New tab"
-                        key: "Ctrl+T"
+                        key: "Ctrl t"
                         onClicked: {
                             Workspace.focusedPane = paneRoot.paneIndex
                             newTabMenu.targetPaneIndex = paneRoot.paneIndex

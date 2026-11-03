@@ -1,6 +1,6 @@
 # Desktop integration
 
-Open the command palette with **Ctrl+P** or **:**, type **Make omafiles**, and
+Open the command palette with **Ctrl p** or **:**, type **Make omafiles**, and
 press **Enter** to choose **Make omafiles the default file manager**. The same
 entry can be selected with a pointer. This action installs a user desktop entry
 and a user FileManager1 activation service in `XDG_DATA_HOME`, both pointing at
@@ -9,7 +9,7 @@ the studio executable you are running, then calls
 The work runs in a background task so the window keeps answering input.
 
 The result sheet lists the installed files and undo commands. Close it with
-**Escape** or its **Close** button. Existing registrations are preserved in
+**Esc** or its **Close** button. Existing registrations are preserved in
 `.omafiles-backup` files; repeated use retains those originals. Use the shown
 `mv` commands to restore them, or the shown `rm` commands for new registrations.
 To choose a different directory handler, run

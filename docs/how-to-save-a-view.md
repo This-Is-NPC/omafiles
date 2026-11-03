@@ -15,7 +15,7 @@ Save the current folder as a view:
 4. Press Enter
 
 Or use the command palette:
-1. Press `:` or `Ctrl+P`
+1. Press `:` or `Ctrl p`
 2. Type `Save` and press Enter on **Save as a view**
 3. Type a name and press Enter
 

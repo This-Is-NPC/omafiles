@@ -8,7 +8,7 @@ Undo reverses the last file operation you performed in this window: rename, move
 
 ## Undo an operation
 
-Press `Ctrl+Z`:
+Press `Ctrl z`:
 - The last operation is reversed
 - A status message describes what was undone
 - Tags are restored with the file
@@ -21,7 +21,7 @@ Or use the Undo button:
 - Press Enter or Space to activate it
 
 Or use the command palette:
-- Press `:` or `Ctrl+P`
+- Press `:` or `Ctrl p`
 - Choose **Undo** and press Enter
 - The palette shows the name of the last operation
 
@@ -33,7 +33,7 @@ Or use the command palette:
 - **New folder** — the empty folder is deleted
 - **Trash/Delete** — file returns to its original location, tags and metadata restored
 - **Tag edit** — tags return to their previous values (add, remove or rename reversed)
-- **Clipboard operations** — drops and pastes using Ctrl+C, Ctrl+X, Ctrl+V are undone
+- **Clipboard operations** — drops and pastes using Ctrl c, Ctrl x, Ctrl v are undone
 
 Multiple operations are reversed one at a time in reverse order. The history holds at most 50 operations, and is cleared when you close the window.
 

@@ -53,18 +53,18 @@ edit that preference: select another backend before uninstalling.
 
 ## Using the chooser
 
-The same actions work with keyboard, mouse and touch. Tab and Shift+Tab move
+The same actions work with keyboard, mouse and touch. Tab and Shift Tab move
 between visible controls; focused controls remain visible when the window is
-small. Enter or Space activates a focused button. Escape cancels the request.
+small. Enter or Space activates a focused button. Esc cancels the request.
 Click or tap a row to select it; double-click a folder to enter it. Enter on a
-folder navigates into it. For a directory request, Ctrl+Enter or the accept
+folder navigates into it. For a directory request, Ctrl Enter or the accept
 button chooses the highlighted folder, or the current folder when no child
 folder is highlighted.
 
-For multiple-file or multiple-folder requests, Space, Ctrl+click and the
+For multiple-file or multiple-folder requests, Space, Ctrl-click and the
 **Mark row** button toggle selection. The button is also available by touch. Use the path
-field (Ctrl+L) to change folders, the search field (Ctrl+F) to narrow the list,
-and Ctrl+H to show hidden entries. The up button navigates to the parent folder.
+field (Ctrl l) to change folders, the search field (Ctrl f) to narrow the list,
+and Ctrl h to show hidden entries. The up button navigates to the parent folder.
 SaveFile provides a filename field; an existing destination requires explicit
 overwrite consent. Canceling that question returns to the chooser.
 

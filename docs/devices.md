@@ -7,13 +7,13 @@ through status updates and reordering. Names come from the desktop service.
 
 Press **d**, or choose **Devices** in the **:** command palette, to focus the
 list. The mnemonic follows **t** for tags and **v** for saved views. This reveals
-the sidebar even in a narrow window. **Tab / Shift+Tab** also
+the sidebar even in a narrow window. **Tab / Shift Tab** also
 reach it; an empty list focuses its heading. **j/k**, arrows, **Home/End**,
-**Page Up/Down** and **Ctrl+D/U** move within the list and keep the selection
-visible. **Escape**, **h** or Left returns to files.
+**Page Up/Down** and **Ctrl d / Ctrl u** move within the list and keep the selection
+visible. **Esc**, **h** or Left returns to files.
 
 **Enter**, **Space**, **l**, a click or a tap opens the selected device in a
-files tab, mounting it first when necessary. **m**, **Menu**, **Shift+F10**,
+files tab, mounting it first when necessary. **m**, **Menu**, **Shift F10**,
 right-click, press-and-hold, or the row's **⋮** button opens its actions:
 
 - **Mount** mounts without opening a tab.

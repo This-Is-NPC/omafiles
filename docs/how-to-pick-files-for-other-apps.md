@@ -26,24 +26,24 @@ When an application asks you to open or save a file:
 Navigate:
 - Click a folder to enter it, or press Enter on a folder
 - Click `..` or press the up button to go to the parent folder
-- Use `Ctrl+L` to edit the path directly
-- Press `Ctrl+H` to show hidden files
+- Use `Ctrl l` to edit the path directly
+- Press `Ctrl h` to show hidden files
 
 Choose files:
 - Click a file to select it
-- For multiple files, click the file, then Ctrl+click other files, or press Space to toggle each one
+- For multiple files, click the file, then Ctrl-click other files, or press Space to toggle each one
 - For a "Save" dialog, a text field lets you enter or edit the filename
 - For a "Save as existing file" dialog, choose the file and press Enter to confirm overwriting it
 
 Filter:
-- Use `Ctrl+F` to search by name within the folder
+- Use `Ctrl f` to search by name within the folder
 - The filter dropdown (if the application offers filters) shows file types the application accepts
 
 Confirm:
 - Press Enter or click the button to accept your choice
 
 Cancel:
-- Press Escape or click Cancel
+- Press Esc or click Cancel
 
 ## What can go wrong
 

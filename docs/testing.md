@@ -305,9 +305,9 @@ hiding accidental navigation.
 
 Each editor is compared with an installed-Qt `TextInput` reference inside the
 same overlay focus scope, with both a caret and an existing selection. Shift,
-Ctrl+Shift, Ctrl, Alt and Meta arrows, pages and document keys must retain native
+Ctrl Shift, Ctrl, Alt and Meta arrows, pages and document keys must retain native
 caret/selection behavior, result selection, viewport positions and text focus.
-Plain arrows/pages, palette Ctrl+Home/End and Ctrl+N/P are positive controls.
+Plain arrows/pages, palette Ctrl Home / Ctrl End and Ctrl n / Ctrl p are positive controls.
 Independent mutations remove the modified-navigation guard from each editor.
 The tests must reject the corresponding result movement while the other editor
 continues to pass. No real launcher or desktop state is used.

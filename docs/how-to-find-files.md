@@ -12,14 +12,14 @@ Press `/` to filter the current folder by name:
 1. Type part of the name you are looking for, like `invoice`
 2. The list updates as you type, showing only matching names
 3. Matching text is highlighted
-4. Press Escape to clear the filter and see everything again
+4. Press Esc to clear the filter and see everything again
 
 Press `f` to find by name across your entire storage:
 1. A find panel opens instead of a folder
 2. Type a pattern like `*.pdf` or `invoice-??.*`
 3. The search matches names in all folders in your declared roots
 4. Patterns are case-insensitive
-5. Press Escape or `h` to return to the file list
+5. Press Esc or `h` to return to the file list
 
 Filter by properties with `F`:
 1. A filter panel opens above the list

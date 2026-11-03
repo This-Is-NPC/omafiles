@@ -1,7 +1,7 @@
 # Compressing and extracting
 
 Open the row menu with **m**, right-click or a touch/pen long press, then choose
-**Compress…** or **Extract archive…**. The **:** / **Ctrl+P** command palette offers
+**Compress…** or **Extract archive…**. The **:** / **Ctrl p** command palette offers
 both actions. Compress acts on the row or its marked set; extract takes one archive.
 The same actions are available in list, details, icons and file query results.
 
@@ -13,16 +13,16 @@ encrypted or damaged contents report the reader's reason. Extraction defaults to
 the archive's containing folder. Choose an existing empty folder to keep its
 contents together. Destination folders must be accessible without symbolic links.
 
-**Tab** and **Shift+Tab** traverse the destination, format buttons, Cancel and the
+**Tab** and **Shift Tab** traverse the destination, format buttons, Cancel and the
 confirmation button. **Enter** accepts the field or activates a focused button;
 **Space** activates a focused button. Every control can also be clicked or tapped.
 The sheet scrolls at small sizes and keeps the focused control visible.
 
 Preparation runs in the `omafiles-archive` helper process with streamed data and
-entry/byte progress. It stages privately on the destination filesystem. **Escape**
+entry/byte progress. It stages privately on the destination filesystem. **Esc**
 or **Cancel operation** cancels preparation without publishing any output. During
 publication, cancellation stops after the current entry; completed entries remain
-available to **Ctrl+Z**. Cancellation does not delete the input archive or sources.
+available to **Ctrl z**. Cancellation does not delete the input archive or sources.
 
 Existing top-level names use the same **Replace**, **Skip**, **Keep both** and
 **Apply to all** conflict sheet as file transfers. Folders are separate entries;
