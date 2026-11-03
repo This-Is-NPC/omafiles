@@ -652,6 +652,7 @@ private slots:
     void traversesSidebarActions_data();
     void traversesSidebarActions();
     void walksTheTagsHeadingOnlyWithoutTags();
+    void walksTheViewsHeadingOnlyWithoutViews();
     void auditsPreviewButtons_data();
     void auditsPreviewButtons();
     void auditsInlinePromptButtons_data();
@@ -717,6 +718,10 @@ private:
     void settle();
     bool cancelPendingFileDrop();
     void writeIndex();
+    /// Walks one whole Tab cycle from the file list: "visited" or "skipped"
+    /// says whether `item` took the keyboard on the way, "open" that the
+    /// cycle never came back.
+    QString tabCycleThrough(QQuickItem *item);
     /// Which set a picture belongs to. Only `Documentation` may write a name
     /// that `docs/img` uses.
     enum class Shot { Diagnostic, Documentation };
@@ -1148,6 +1153,21 @@ void TestStudio::shot(const QString &name, Shot kind)
 // Appends a row to the index the way the command line would, without telling
 // the window. `reload` says whether to hand it the news; the keys that exist to
 // fetch it need a row it has not been handed.
+QString TestStudio::tabCycleThrough(QQuickItem *item)
+{
+    QMetaObject::invokeMethod(window(), "takeFocus");
+    focusRow("one.txt");
+    auto *first = window()->activeFocusItem();
+    bool visited = false;
+    for (int step = 0; step < 150 && !QTest::currentTestFailed(); ++step) {
+        key(Qt::Key_Tab);
+        visited = visited || item->hasActiveFocus();
+        if (window()->activeFocusItem() == first) break;
+    }
+    if (window()->activeFocusItem() != first) return QStringLiteral("open");
+    return visited ? QStringLiteral("visited") : QStringLiteral("skipped");
+}
+
 void TestStudio::putIndexRow(const QString &path, const QStringList &tags)
 {
     QFile index(QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl")));
@@ -15116,32 +15136,48 @@ void TestStudio::walksTheTagsHeadingOnlyWithoutTags()
     auto *heading = sidebar->findChild<QQuickItem *>(QStringLiteral("tagsHeading"));
     auto *list = sidebar->findChild<QQuickItem *>(QStringLiteral("sidebarTags"));
     QVERIFY(heading && list);
-    // Walks one whole Tab cycle from the file list.
-    const auto walk = [&] {
-        QMetaObject::invokeMethod(window(), "takeFocus");
-        focusRow("one.txt");
-        auto *first = window()->activeFocusItem();
-        bool visited = false;
-        for (int step = 0; step < 150 && !QTest::currentTestFailed(); ++step) {
-            key(Qt::Key_Tab);
-            visited = visited || heading->hasActiveFocus();
-            if (window()->activeFocusItem() == first) break;
-        }
-        if (window()->activeFocusItem() != first) return QStringLiteral("open");
-        return visited ? QStringLiteral("visited") : QStringLiteral("skipped");
-    };
     QFile index(QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl")));
     QVERIFY(index.open(QIODevice::WriteOnly | QIODevice::Truncate));
     index.close();
     m_index->reload();
     QTRY_COMPARE(list->property("count").toInt(), 0);
-    QCOMPARE(walk(), QStringLiteral("visited"));
+    QCOMPARE(tabCycleThrough(heading), QStringLiteral("visited"));
     QMetaObject::invokeMethod(window(), "focusTags"); settle();
     QVERIFY(heading->hasActiveFocus());
     writeIndex();
     m_index->reload();
     QTRY_VERIFY(list->property("count").toInt() > 0);
-    QCOMPARE(walk(), QStringLiteral("skipped"));
+    QCOMPARE(tabCycleThrough(heading), QStringLiteral("skipped"));
+}
+
+// The views heading is a Tab stop only while there is no saved view, including
+// when the first view arrives while the heading holds the keyboard.
+void TestStudio::walksTheViewsHeadingOnlyWithoutViews()
+{
+    QFile saved(m_desktop.filePath("config/omafiles/views.jsonl"));
+    QVERIFY(saved.open(QIODevice::ReadOnly));
+    const QByteArray original = saved.readAll();
+    saved.close();
+    const auto write = [&](const QByteArray &views) {
+        if (!saved.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+        const bool written = saved.write(views) == views.size();
+        saved.close();
+        m_views->reload();
+        return written;
+    };
+    const auto restore = qScopeGuard([&] { write(original); settle(); });
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    QVERIFY(sidebar);
+    auto *heading = sidebar->findChild<QQuickItem *>(QStringLiteral("viewsHeading"));
+    QVERIFY(heading);
+    QVERIFY(write({}));
+    QTRY_COMPARE(m_views->rowCount(), 0);
+    QCOMPARE(tabCycleThrough(heading), QStringLiteral("visited"));
+    QMetaObject::invokeMethod(window(), "focusViews"); settle();
+    QVERIFY(heading->hasActiveFocus());
+    QVERIFY(write(original));
+    QTRY_VERIFY(m_views->rowCount() > 0);
+    QCOMPARE(tabCycleThrough(heading), QStringLiteral("skipped"));
 }
 
 void TestStudio::auditsTagEditorControls_data()
