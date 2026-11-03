@@ -11,7 +11,7 @@ TextEdit {
     persistentSelection: true
     selectByMouse: mouse.active
     font.family: Theme.fontFamily
-    font.pixelSize: 12
+    font.pixelSize: Theme.fontBody
     color: Theme.foreground
 
     PointHandler {
@@ -22,7 +22,7 @@ TextEdit {
         objectName: "readOnlyFocusRing"
         parent: edit.focusFrame
         anchors.fill: parent
-        anchors.margins: 2
+        anchors.margins: Theme.focusInset
         color: "transparent"
         border.width: 1
         border.color: Theme.accent

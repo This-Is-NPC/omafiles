@@ -27,11 +27,11 @@ Item {
     Column {
         id: body
         width: parent.width
-        spacing: 8
+        spacing: Theme.spacingS
 
         Row {
             width: parent.width
-            spacing: 7
+            spacing: Theme.iconGap
 
             Icon {
                 anchors.verticalCenter: parent.verticalCenter
@@ -43,7 +43,7 @@ Item {
                 opacity: details.has ? 1 : 0.4
             }
             Label {
-                width: parent.width - 24
+                width: parent.width - Theme.iconSize - Theme.iconGap
                 anchors.verticalCenter: parent.verticalCenter
                 text: details.has ? details.entry.name : "no row"
                 color: details.has ? Theme.foreground : Theme.dim
@@ -59,7 +59,7 @@ Item {
             text: details.has ? details.entry.path : ""
             color: Theme.dim
             font.family: Theme.fontFamily
-            font.pixelSize: 10
+            font.pixelSize: Theme.fontSmall
             wrapMode: Text.WrapAnywhere
             maximumLineCount: 3
             elide: Text.ElideRight
@@ -70,8 +70,8 @@ Item {
             width: parent.width
             visible: details.has
             columns: 2
-            columnSpacing: 10
-            rowSpacing: 4
+            columnSpacing: Theme.spacingS
+            rowSpacing: Theme.spacingXs
 
             // `mime` and not `type`: the table's type column carries the
             // suffix, and one word for two different values is how you end up
@@ -81,7 +81,6 @@ Item {
             Label {
                 width: body.width - 58
                 text: details.has ? details.entry.mime : ""
-                font.pixelSize: 11
             }
 
             Label { quiet: true; text: "size"; visible: sizeValue.visible }
@@ -90,7 +89,6 @@ Item {
                 width: body.width - 58
                 visible: details.has && !details.entry.directory
                 text: details.has && details.entry.sizeText ? details.entry.sizeText : ""
-                font.pixelSize: 11
             }
 
             // A folder has no size, and the number worth having in its place is
@@ -108,7 +106,6 @@ Item {
                       ? (details.entry.items === 1 ? "1 item"
                                                     : details.entry.items + " items")
                       : ""
-                font.pixelSize: 11
             }
 
             Label { quiet: true; text: "changed"; visible: timeValue.visible }
@@ -117,7 +114,6 @@ Item {
                 width: body.width - 58
                 visible: details.has && details.entry.mtimeText !== ""
                 text: details.has ? details.entry.mtimeText : ""
-                font.pixelSize: 11
             }
 
             // The two facts a permissions dialog exists for, read and set here
@@ -134,7 +130,6 @@ Item {
                 text: !details.has ? ""
                     : details.entry.mine ? "you"
                     : details.entry.owner + " · " + details.entry.group
-                font.pixelSize: 11
             }
 
             // A click on a bit runs `chmod` on the row. Greyed where the row is
@@ -160,7 +155,6 @@ Item {
                 visible: details.has && details.entry.marked === true
                 text: "yes"
                 color: Theme.accent
-                font.pixelSize: 11
             }
         }
 
@@ -172,13 +166,13 @@ Item {
             Flow {
                 id: tagWrap
                 width: parent.width
-                spacing: 4
+                spacing: Theme.spacingXs
 
                 Label {
                     quiet: true
                     visible: details.has && details.entry.tags.length === 0
                     text: "no tags"
-                    height: 18
+                    height: Theme.chipHeight
                     verticalAlignment: Text.AlignVCenter
                 }
 
@@ -191,8 +185,8 @@ Item {
                         Accessible.name: "Edit tag " + tagChip.modelData
                         onActivated: details.tagActivated(tagChip.modelData)
                         required property string modelData
-                        height: 18
-                        width: mark.implicitWidth + 10
+                        height: Theme.chipHeight
+                        width: mark.implicitWidth + 2 * Theme.spacingXs
                         radius: Theme.rounding
                         color: Theme.fill(Theme.accent, 0.16)
                         border.width: 1
@@ -203,7 +197,7 @@ Item {
                             text: tagChip.modelData
                             color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.fontSmall
                             renderType: Text.NativeRendering
                         }
                     }

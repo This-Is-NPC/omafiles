@@ -22,10 +22,11 @@ FocusScope {
     signal closed
     signal menuRequested(real x, real y)
 
-    readonly property int closeColumn: 22
+    readonly property int closeColumn: Theme.controlHeight
 
-    implicitWidth: Math.max(96, Math.min(220, label.implicitWidth + 30 + closeColumn))
-    implicitHeight: 24
+    implicitWidth: Math.max(96, Math.min(220, label.implicitWidth + Theme.spacingS + Theme.iconSize
+                                              + Theme.iconGap + closeColumn))
+    implicitHeight: Theme.controlHeight
     width: implicitWidth
     height: implicitHeight
 
@@ -69,7 +70,7 @@ FocusScope {
         Icon {
             id: mark
             anchors.left: parent.left
-            anchors.leftMargin: 8
+            anchors.leftMargin: Theme.spacingS
             anchors.verticalCenter: parent.verticalCenter
             kind: handle.kind === "graph" || handle.kind === "tag" ? handle.kind : "folder"
             ink: handle.current ? Theme.foreground : Theme.dim
@@ -78,7 +79,7 @@ FocusScope {
         Text {
             id: label
             anchors.left: mark.right
-            anchors.leftMargin: 6
+            anchors.leftMargin: Theme.iconGap
             anchors.right: parent.right
             anchors.rightMargin: handle.closeColumn
             anchors.verticalCenter: parent.verticalCenter
@@ -87,7 +88,7 @@ FocusScope {
             opacity: handle.current ? 1 : 0.75
             elide: Text.ElideRight
             font.family: Theme.fontFamily
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontBody
             renderType: Text.NativeRendering
         }
 
@@ -109,7 +110,7 @@ FocusScope {
                 color: closeHover.hovered ? Theme.urgent : Theme.foreground
                 opacity: closeHover.hovered ? 1 : (handle.current ? 0.7 : 0.45)
                 font.family: Theme.fontFamily
-                font.pixelSize: 13
+                font.pixelSize: Theme.fontBody
                 renderType: Text.NativeRendering
             }
 

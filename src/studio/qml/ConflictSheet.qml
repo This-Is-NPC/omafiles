@@ -71,14 +71,14 @@ Loader {
             }
             OverlayPanel {
                 preferredWidth: 540
-                preferredHeight: column.implicitHeight + 28
+                preferredHeight: column.implicitHeight + 2 * Theme.inset
                 Accessible.role: Accessible.Dialog
                 Accessible.name: "Destination already exists"
                 MouseArea { anchors.fill: parent; onClicked: function (mouse) { mouse.accepted = true } }
                 OverlayScroll {
                     id: scroll
                     anchors.fill: parent
-                    anchors.margins: 14
+                    anchors.margins: Theme.inset
                     focusOnScroll: true
                     contentHeight: column.implicitHeight
                     Keys.onTabPressed: function (event) { Focus.move(event, skipButton, cancelButton) }
@@ -86,8 +86,8 @@ Loader {
                     Column {
                         id: column
                         width: parent.width
-                        spacing: 12
-                        Label { width: parent.width; wrapMode: Text.Wrap; font.bold: true; text: "Destination already exists" }
+                        spacing: Theme.spacingM
+                        Label { width: parent.width; wrapMode: Text.Wrap; font.bold: true; font.pixelSize: Theme.fontTitle; text: "Destination already exists" }
                         Label { width: parent.width; wrapMode: Text.WrapAnywhere; text: "Incoming: " + panel.sourcePath }
                         Label { width: parent.width; wrapMode: Text.WrapAnywhere; text: "Existing: " + panel.destinationPath }
                         Label {
@@ -109,7 +109,7 @@ Loader {
                         }
                         Flow {
                             width: parent.width
-                            spacing: 8
+                            spacing: Theme.spacingS
                             Chip {
                                 id: replaceButton
                                 objectName: "conflictReplace"

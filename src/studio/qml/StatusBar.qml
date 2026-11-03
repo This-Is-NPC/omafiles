@@ -62,7 +62,8 @@ Rectangle {
         return parts.join(", ")
     }
 
-    height: bar.alarm ? 26 : Math.max(26, hintStrip.implicitHeight + 4)
+    height: bar.alarm ? Theme.stripHeight
+                      : Math.max(Theme.stripHeight, hintStrip.implicitHeight + Theme.spacingXs)
     color: Theme.panel
 
     Accessible.role: Accessible.StaticText
@@ -71,16 +72,16 @@ Rectangle {
     Row {
         id: facts
         anchors.left: parent.left
-        anchors.leftMargin: 12
+        anchors.leftMargin: Theme.inset
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 14
+        spacing: Theme.spacingM
         visible: !bar.editing
-        width: bar.editing ? 0 : Math.min(implicitWidth, Math.max(0, bar.width * (bar.alarm ? 0.45 : 0.35) - 24))
+        width: bar.editing ? 0 : Math.min(implicitWidth, Math.max(0, bar.width * (bar.alarm ? 0.45 : 0.35) - Theme.spacingXl))
         clip: true
 
         Label {
             quiet: true
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontSmall
             text: bar.total === 0 || bar.cursor < 0
                   ? "0/" + bar.total
                   : (bar.cursor + 1) + "/" + bar.total
@@ -91,30 +92,30 @@ Rectangle {
         Label {
             objectName: "statusNote"
             quiet: true
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontSmall
             text: bar.note !== "" ? bar.note : bar.tagged + " tagged here"
         }
         Label {
             visible: bar.marked > 0
             color: Theme.accent
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontSmall
             text: bar.marked + " marked"
         }
         Label {
             visible: bar.pastable > 0
             color: Theme.accent
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontSmall
             text: bar.pastable + (bar.cutting ? " to move" : " to paste")
         }
         Label {
             visible: bar.tag !== ""
             color: Theme.accent
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontSmall
             text: "tag " + bar.tag
         }
         Label {
             visible: bar.filter !== ""
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontSmall
             text: "/" + bar.filter
         }
     }
@@ -124,11 +125,11 @@ Rectangle {
         objectName: "statusReceipt"
         visible: bar.alarm
         anchors.left: facts.right
-        anchors.leftMargin: 16
+        anchors.leftMargin: Theme.spacingL
         anchors.right: parent.right
-        anchors.rightMargin: 12
+        anchors.rightMargin: Theme.inset
         anchors.verticalCenter: parent.verticalCenter
-        height: 22
+        height: Theme.controlHeight
         tooltipCaption: bar.message
         Accessible.name: "Read receipt: " + bar.message
         onActivated: bar.receiptRequested()
@@ -137,7 +138,7 @@ Rectangle {
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: Text.AlignRight
             color: Theme.urgent
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontSmall
             text: bar.message
         }
     }
@@ -146,9 +147,9 @@ Rectangle {
         id: hintStrip
         visible: !bar.alarm
         anchors.left: facts.right
-        anchors.leftMargin: 16
+        anchors.leftMargin: Theme.spacingL
         anchors.right: parent.right
-        anchors.rightMargin: 12
+        anchors.rightMargin: Theme.inset
         anchors.verticalCenter: parent.verticalCenter
         model: bar.hints
         onRequested: function (key) { bar.hintRequested(key) }

@@ -18,7 +18,7 @@ Column {
     signal accepted()
     signal cancelled()
     signal reveal(Item item)
-    spacing: 4
+    spacing: Theme.spacingXs
 
     readonly property var suggestions: {
         const prefix = field.text.trim().toLowerCase()
@@ -54,7 +54,7 @@ Column {
     Label { id: heading; text: field.label }
     Rectangle {
         width: parent.width
-        height: 28
+        height: Theme.controlHeight
         radius: Theme.rounding
         color: Theme.sunken
         border.width: 1
@@ -64,12 +64,14 @@ Column {
             persistentSelection: true
             objectName: "tagInput"
             anchors.fill: parent
-            anchors.margins: 6
+            anchors.leftMargin: Theme.spacingS
+            anchors.rightMargin: Theme.spacingS
+            verticalAlignment: TextInput.AlignVCenter
             color: Theme.foreground
             selectionColor: Theme.fill(Theme.accent, 0.35)
             selectedTextColor: Theme.foreground
             font.family: Theme.fontFamily
-            font.pixelSize: 12
+            font.pixelSize: Theme.fontBody
             clip: true
             activeFocusOnTab: true
             Accessible.name: field.label
@@ -112,8 +114,9 @@ Column {
         id: choices
         objectName: "tagSuggestions"
         width: parent.width
-        height: input.activeFocus ? Math.min(count * 24,
-            Math.max(24, field.viewportHeight - heading.height - 28 - 2 * field.spacing)) : 0
+        height: input.activeFocus ? Math.min(count * Theme.rowHeight,
+            Math.max(Theme.rowHeight, field.viewportHeight - heading.height - Theme.controlHeight
+                                      - 2 * field.spacing)) : 0
         clip: true
         model: field.suggestions
         currentIndex: -1
@@ -126,7 +129,7 @@ Column {
             required property string modelData
             required property int index
             width: ListView.view.width
-            height: 24
+            height: Theme.rowHeight
             tabFocusable: false
             color: choices.currentIndex === index ? Theme.fill(Theme.accent, 0.18) : "transparent"
             Accessible.role: Accessible.Button
@@ -135,7 +138,7 @@ Column {
                 field.text = suggestion.modelData
                 input.forceActiveFocus()
             }
-            Label { anchors.fill: parent; anchors.leftMargin: 6; text: suggestion.modelData }
+            Label { anchors.fill: parent; anchors.leftMargin: Theme.spacingS; text: suggestion.modelData }
         }
     }
 }

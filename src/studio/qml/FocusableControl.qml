@@ -109,7 +109,7 @@ Item {
     // where a ring drawn outside loses two of its sides.
     Rectangle {
         anchors.fill: parent
-        anchors.margins: 2
+        anchors.margins: Theme.focusInset
         radius: Math.max(0, Theme.rounding - 1)
         color: "transparent"
         border.width: 1

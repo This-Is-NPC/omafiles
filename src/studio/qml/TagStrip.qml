@@ -37,10 +37,12 @@ Item {
 
     property int firstVisible: 0
     property int lastVisible: -1
+    /// A chip's text and its two side gaps.
+    readonly property int chipPadding: 2 * Theme.spacingXs
 
     implicitWidth: Math.min(row.width, limit)
     width: implicitWidth
-    implicitHeight: 17
+    implicitHeight: Theme.chipHeight
     height: implicitHeight
     clip: true
 
@@ -54,26 +56,26 @@ Item {
         id: chipMetrics
         visible: false
         font.family: Theme.fontFamily
-        font.pixelSize: 10
+        font.pixelSize: Theme.fontSmall
     }
 
     Text {
         id: overflowMetrics
         visible: false
         font.family: Theme.fontFamily
-        font.pixelSize: 10
+        font.pixelSize: Theme.fontSmall
     }
 
     function chipWidth(text) {
         chipMetrics.text = text
-        return chipMetrics.implicitWidth + 10
+        return chipMetrics.implicitWidth + strip.chipPadding
     }
 
     function overflowWidth(count) {
         if (count <= 0)
             return 0
         overflowMetrics.text = "+" + count
-        return overflowMetrics.implicitWidth + 10
+        return overflowMetrics.implicitWidth + strip.chipPadding
     }
 
     function recomputeLayout() {
@@ -159,14 +161,14 @@ Item {
         anchors.right: strip.alignRight ? parent.right : undefined
         anchors.left: strip.alignRight ? undefined : parent.left
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 4
+        spacing: Theme.spacingXs
 
         Rectangle {
             id: overflowLeading
             objectName: "tagStripOverflowLeading"
             visible: strip.alignRight && strip.hiddenCount > 0
-            height: 17
-            width: overflowLeadingMark.implicitWidth + 10
+            height: Theme.chipHeight
+            width: overflowLeadingMark.implicitWidth + strip.chipPadding
             radius: Theme.rounding
             color: Theme.fill(Theme.accent, 0.14)
             border.width: 1
@@ -183,7 +185,7 @@ Item {
                 color: Theme.foreground
                 opacity: 0.85
                 font.family: Theme.fontFamily
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSmall
                 renderType: Text.NativeRendering
             }
         }
@@ -199,8 +201,8 @@ Item {
                 readonly property bool shown: strip.hiddenCount === 0
                     || (strip.alignRight ? chip.index >= strip.firstVisible
                                          : chip.index <= strip.lastVisible)
-                height: 17
-                width: shown ? mark.implicitWidth + 10 : 0
+                height: Theme.chipHeight
+                width: shown ? mark.implicitWidth + strip.chipPadding : 0
                 radius: Theme.rounding
                 color: Theme.fill(Theme.accent, 0.14)
                 border.width: 1
@@ -217,7 +219,7 @@ Item {
                     color: Theme.foreground
                     opacity: 0.85
                     font.family: Theme.fontFamily
-                    font.pixelSize: 10
+                    font.pixelSize: Theme.fontSmall
                     renderType: Text.NativeRendering
                 }
             }
@@ -227,8 +229,8 @@ Item {
             id: overflowTrailing
             objectName: "tagStripOverflowTrailing"
             visible: !strip.alignRight && strip.hiddenCount > 0
-            height: 17
-            width: overflowTrailingMark.implicitWidth + 10
+            height: Theme.chipHeight
+            width: overflowTrailingMark.implicitWidth + strip.chipPadding
             radius: Theme.rounding
             color: Theme.fill(Theme.accent, 0.14)
             border.width: 1
@@ -245,7 +247,7 @@ Item {
                 color: Theme.foreground
                 opacity: 0.85
                 font.family: Theme.fontFamily
-                font.pixelSize: 10
+                font.pixelSize: Theme.fontSmall
                 renderType: Text.NativeRendering
             }
         }

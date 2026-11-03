@@ -39,14 +39,14 @@ Rectangle {
         return value === "dir" ? "folders" : "files"
     }
 
-    height: 30
+    height: Theme.stripHeight
     color: Theme.panel
 
     Row {
         anchors.left: parent.left
-        anchors.leftMargin: 10
+        anchors.leftMargin: Theme.inset
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 6
+        spacing: Theme.spacingS
 
         Label {
             anchors.verticalCenter: parent.verticalCenter

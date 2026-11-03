@@ -38,7 +38,7 @@ Row {
             cell.forceActiveFocus()
     }
 
-    spacing: 6
+    spacing: Theme.spacingXs
 
     Repeater {
         model: ["owner", "group", "others"]
@@ -66,7 +66,7 @@ Row {
 
                     objectName: "modeBit" + cell.at
                     width: 15
-                    height: 18
+                    height: Theme.chipHeight
                     usable: bits.editable
                     handCursor: bits.editable
                     Keys.onTabPressed: function (event) { Focus.move(event, cell.at < 8 ? bits.controls[cell.at + 1] || null : bits.nextFocus, cell.at > 0 ? bits.controls[cell.at - 1] || null : bits.previousFocus) }
@@ -100,7 +100,7 @@ Row {
                         text: cell.on ? "rwx".charAt(cell.index) : "-"
                         color: bits.editable ? Theme.foreground : Theme.dim
                         font.family: Theme.fontFamily
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.fontBody
                         renderType: Text.NativeRendering
                     }
 
@@ -113,6 +113,6 @@ Row {
         anchors.verticalCenter: parent.verticalCenter
         text: bits.octal
         color: bits.editable ? Theme.foreground : Theme.dim
-        font.pixelSize: 11
+        font.pixelSize: Theme.fontBody
     }
 }

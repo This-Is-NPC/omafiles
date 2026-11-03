@@ -35,8 +35,9 @@ FocusableControl {
     Accessible.checkable: on
     Accessible.checked: on
 
-    implicitWidth: Math.max(22, captionText.implicitWidth + (quiet ? 14 : 16))
-    implicitHeight: 22
+    implicitWidth: Math.max(Theme.controlHeight,
+                            captionText.implicitWidth + (quiet ? Theme.spacingM : Theme.spacingL))
+    implicitHeight: Theme.controlHeight
     width: implicitWidth
     height: implicitHeight
     radius: Theme.rounding
@@ -63,7 +64,7 @@ FocusableControl {
         // lit, rather than as six equal buttons.
         opacity: chip.on ? 1 : (chip.hovered || chip.activeFocus ? 0.9 : 0.62)
         font.family: Theme.fontFamily
-        font.pixelSize: 11
+        font.pixelSize: Theme.fontBody
         renderType: Text.NativeRendering
         Behavior on opacity { NumberAnimation { duration: 90 } }
     }

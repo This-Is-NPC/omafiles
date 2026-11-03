@@ -67,7 +67,7 @@ Rectangle {
         objectName: "dockScroll"
         focusOnScroll: true
         anchors.fill: parent
-        anchors.margins: 12
+        anchors.margins: Theme.inset
         contentHeight: column.implicitHeight
         onHeightChanged: Qt.callLater(dock.revealSelection)
         onWidthChanged: Qt.callLater(dock.revealSelection)
@@ -76,7 +76,7 @@ Rectangle {
     Column {
         id: column
         width: scroll.width
-        spacing: 9
+        spacing: Theme.spacingS
 
         Label { quiet: true; text: "details" }
 
@@ -86,11 +86,11 @@ Rectangle {
             onTagActivated: function (tag) { dock.tagChipActivated(dock.entry.path, tag) }
         }
 
-        Item { width: 1; height: 2 }
+        Item { width: 1; height: Theme.spacingXs }
 
         Rule {}
 
-        Item { width: 1; height: 2 }
+        Item { width: 1; height: Theme.spacingXs }
 
         DeviceSection {
             id: devices
@@ -121,9 +121,9 @@ Rectangle {
             onActiveFocusChanged: if (activeFocus) dock.focusEntered()
             id: viewsHeading
             width: parent.width
-            height: 14
+            height: viewsCaption.implicitHeight
 
-            Label { quiet: true; text: "views" }
+            Label { id: viewsCaption; quiet: true; text: "views" }
             Label {
                 anchors.right: parent.right
                 quiet: true
@@ -145,7 +145,7 @@ Rectangle {
             // Its own contents, and never more than a third of the panel: the
             // vocabulary underneath has to stay reachable however many views
             // somebody saves.
-            height: Math.min(contentHeight, Math.max(25, scroll.height * 0.34))
+            height: Math.min(contentHeight, Math.max(Theme.rowHeight, scroll.height * 0.34))
             onCurrentIndexChanged: Qt.callLater(dock.revealSelection)
             visible: Views.count > 0
             clip: true
@@ -177,7 +177,7 @@ Rectangle {
                                                  && viewsListView.currentIndex === index
 
                 width: ListView.view.width
-                height: 25
+                height: Theme.rowHeight
                 Accessible.role: Accessible.ListItem
                 Accessible.name: viewRow.name
                 Accessible.description: viewRow.asks
@@ -191,7 +191,7 @@ Rectangle {
                 Icon {
                     id: viewMark
                     anchors.left: parent.left
-                    anchors.leftMargin: 8
+                    anchors.leftMargin: Theme.spacingS
                     anchors.verticalCenter: parent.verticalCenter
                     // The icon says which of the two it is, so a name that does
                     // not is still readable at a glance.
@@ -200,9 +200,9 @@ Rectangle {
                 }
                 Label {
                     anchors.left: viewMark.right
-                    anchors.leftMargin: 8
+                    anchors.leftMargin: Theme.iconGap
                     anchors.right: parent.right
-                    anchors.rightMargin: 8
+                    anchors.rightMargin: Theme.spacingS
                     anchors.verticalCenter: parent.verticalCenter
                     text: viewRow.name
                     opacity: 0.85
@@ -228,7 +228,7 @@ Rectangle {
             text: "nothing saved yet · m to save one"
         }
 
-        Item { width: 1; height: 2 }
+        Item { width: 1; height: Theme.spacingXs }
 
         FocusableControl {
             handCursor: false
@@ -240,7 +240,7 @@ Rectangle {
             id: tagsHeading
             objectName: "tagsHeading"
             width: parent.width
-            height: 24
+            height: Theme.controlHeight
             visible: dock.showTags
 
             Label { quiet: true; text: "tags"; anchors.verticalCenter: parent.verticalCenter }
@@ -306,7 +306,7 @@ Rectangle {
                 readonly property bool onCursor: dock.walking && tagsListView.currentIndex === index
 
                 width: ListView.view.width
-                height: 25
+                height: Theme.rowHeight
                 Accessible.role: Accessible.ListItem
                 Accessible.name: tagRow.tag
                 radius: Theme.rounding
@@ -322,16 +322,16 @@ Rectangle {
                 Icon {
                     id: tagMark
                     anchors.left: parent.left
-                    anchors.leftMargin: 8
+                    anchors.leftMargin: Theme.spacingS
                     anchors.verticalCenter: parent.verticalCenter
                     kind: "tag"
                     ink: tagRow.chosen ? Theme.accent : Theme.dim
                 }
                 Label {
                     anchors.left: tagMark.right
-                    anchors.leftMargin: 8
+                    anchors.leftMargin: Theme.iconGap
                     anchors.right: tagCount.left
-                    anchors.rightMargin: 8
+                    anchors.rightMargin: Theme.spacingS
                     anchors.verticalCenter: parent.verticalCenter
                     text: tagRow.tag
                     opacity: tagRow.chosen ? 1 : 0.85
@@ -339,7 +339,7 @@ Rectangle {
                 Label {
                     id: tagCount
                     anchors.right: parent.right
-                    anchors.rightMargin: 8
+                    anchors.rightMargin: Theme.spacingS
                     anchors.verticalCenter: parent.verticalCenter
                     quiet: true
                     text: tagRow.count

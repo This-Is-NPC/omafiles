@@ -193,12 +193,12 @@ Window {
             id: form
             objectName: "chooserForm"
             anchors.fill: parent
-            anchors.margins: 10
+            anchors.margins: Theme.inset
             contentHeight: contents.height
             Column {
                 id: contents
                 width: form.width
-                spacing: 8
+                spacing: Theme.spacingS
                 Text {
                     textFormat: Text.PlainText
                     width: parent.width
@@ -206,11 +206,11 @@ Window {
                     wrapMode: Text.Wrap
                     color: Theme.foreground
                     font.family: Theme.fontFamily
-                    font.pixelSize: 15
+                    font.pixelSize: Theme.fontTitle
                 }
                 Flow {
                     width: parent.width
-                    spacing: 8
+                    spacing: Theme.spacingS
                     Chip {
                         id: up
                         objectName: "chooserUp"
@@ -245,7 +245,7 @@ Window {
                     wrapMode: Text.Wrap
                     color: Theme.dim
                     font.family: Theme.fontFamily
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontBody
                 }
                 Entry {
                     id: location
@@ -273,7 +273,7 @@ Window {
                     id: files
                     objectName: "chooserFiles"
                     width: parent.width
-                    height: Math.max(100, chooser.height * 0.38)
+                    height: Math.max(4 * Theme.rowHeight, chooser.height * 0.38)
                     model: folder
                     clip: true
                     activeFocusOnTab: true
@@ -290,9 +290,9 @@ Window {
                         else if (event.key === Qt.Key_End)
                             row = count - 1;
                         else if (event.key === Qt.Key_PageDown)
-                            row += Math.max(1, Math.floor(height / 32));
+                            row += Math.max(1, Math.floor(height / Theme.rowHeight));
                         else if (event.key === Qt.Key_PageUp)
-                            row -= Math.max(1, Math.floor(height / 32));
+                            row -= Math.max(1, Math.floor(height / Theme.rowHeight));
                         else if (event.key === Qt.Key_Space) {
                             chooser.chooseRow(row, true);
                             event.accepted = true;
@@ -317,17 +317,19 @@ Window {
                         required property bool marked
                         readonly property bool matches: !chooser.request || kind !== "file" || (chooser.request.selectedFilter < 0 || chooser.request.matches(name))
                         width: files.width
-                        height: 32
+                        height: Theme.rowHeight
                         color: files.currentIndex === index ? Theme.fill(Theme.accent, 0.18) : "transparent"
                         Text {
                             textFormat: Text.PlainText
                             anchors.fill: parent
-                            anchors.margins: 6
+                            anchors.leftMargin: Theme.spacingS
+                            anchors.rightMargin: Theme.spacingS
+                            verticalAlignment: Text.AlignVCenter
                             text: (fileRow.marked ? "✓ " : "") + (fileRow.kind !== "file" ? "▸ " : "") + fileRow.name
                             elide: Text.ElideMiddle
                             color: fileRow.matches ? Theme.foreground : Theme.dim
                             font.family: Theme.fontFamily
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fontBody
                         }
                         RowTapHandler {
                             onClicked: function (position, modifiers) {
@@ -339,7 +341,7 @@ Window {
                     ImmediateWheel {
                         anchors.fill: parent
                         view: files
-                        step: 32
+                        step: Theme.rowHeight
                     }
                     C.ScrollBar.vertical: C.ScrollBar {}
                     Rectangle {
@@ -357,7 +359,7 @@ Window {
                     color: Theme.urgent
                     wrapMode: Text.Wrap
                     font.family: Theme.fontFamily
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontBody
                 }
                 Entry {
                     id: filename
@@ -394,11 +396,11 @@ Window {
                     color: Theme.dim
                     wrapMode: Text.Wrap
                     font.family: Theme.fontFamily
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontBody
                 }
                 Flow {
                     width: parent.width
-                    spacing: 8
+                    spacing: Theme.spacingS
                     Chip {
                         id: mark
                         objectName: "chooserMark"
@@ -431,12 +433,12 @@ Window {
             color: Theme.background
             OverlayScroll {
                 anchors.fill: parent
-                anchors.margins: 12
+                anchors.margins: Theme.inset
                 contentHeight: confirmation.height
                 Column {
                     id: confirmation
                     width: parent.width
-                    spacing: 12
+                    spacing: Theme.spacingM
                     Text {
                         textFormat: Text.PlainText
                         width: parent.width
@@ -444,11 +446,11 @@ Window {
                         color: Theme.foreground
                         wrapMode: Text.Wrap
                         font.family: Theme.fontFamily
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.fontBody
                     }
                     Flow {
                         width: parent.width
-                        spacing: 8
+                        spacing: Theme.spacingS
                         Chip {
                             id: keepEditing
                             objectName: "chooserKeepEditing"
@@ -478,10 +480,10 @@ Window {
         palette.window: Theme.panel
         palette.button: Theme.panel
         font.family: Theme.fontFamily
-        font.pixelSize: 12
+        font.pixelSize: Theme.fontBody
         background: Rectangle {
             color: Theme.panel
-            implicitHeight: 32
+            implicitHeight: Theme.controlHeight
             border.color: combo.activeFocus ? Theme.accent : Theme.line
             border.width: 1
         }
@@ -498,14 +500,14 @@ Window {
                 color: Theme.foreground
                 elide: Text.ElideRight
                 font.family: Theme.fontFamily
-                font.pixelSize: 12
+                font.pixelSize: Theme.fontBody
             }
         }
-        popup.height: Math.min(200, Math.max(40, chooser.height - 40))
+        popup.height: Math.min(7 * Theme.rowHeight, Math.max(Theme.rowHeight, chooser.height - 2 * popup.x))
         popup.parent: surface
-        popup.x: 10
-        popup.y: Math.max(10, (chooser.height - popup.height) / 2)
-        popup.width: chooser.width - 20
+        popup.x: Theme.inset
+        popup.y: Math.max(popup.x, (chooser.height - popup.height) / 2)
+        popup.width: chooser.width - 2 * popup.x
     }
     component ChoiceRow: Column {
         id: choiceRow
@@ -519,7 +521,7 @@ Window {
             return true;
         }
         width: contents.width
-        spacing: 4
+        spacing: Theme.spacingXs
         Text {
             textFormat: Text.PlainText
             width: parent.width
@@ -527,7 +529,7 @@ Window {
             color: Theme.foreground
             wrapMode: Text.Wrap
             font.family: Theme.fontFamily
-            font.pixelSize: 12
+            font.pixelSize: Theme.fontBody
         }
         ChoiceCombo {
             id: choice

@@ -65,13 +65,19 @@ FocusScope {
     }
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 10
-        spacing: 8
+        anchors.margins: Theme.inset
+        spacing: Theme.spacingS
         Flow {
             Layout.fillWidth: true
             Layout.preferredHeight: implicitHeight
-            spacing: 8
-            Label { text: "Trash"; font.bold: true; height: 22 }
+            spacing: Theme.spacingS
+            Label {
+                text: "Trash"
+                font.bold: true
+                font.pixelSize: Theme.fontTitle
+                height: Theme.controlHeight
+                verticalAlignment: Text.AlignVCenter
+            }
             Chip {
                 id: restoreButton
                 objectName: "trashRestore"
@@ -147,7 +153,7 @@ FocusScope {
                 required property string problem
                 required property bool marked
                 width: list.width
-                height: rowLabels.implicitHeight + 16
+                height: rowLabels.implicitHeight + 2 * Theme.spacingS
                 color: row.marked ? Theme.fill(Theme.accent, 0.08) : "transparent"
                 Accessible.role: Accessible.ListItem
                 Accessible.name: name + "; Original: " + original + "; Deleted: " + deleted + "; " + problem
@@ -155,9 +161,9 @@ FocusScope {
                     id: rowLabels
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.margins: 8
-                    y: 8
-                    spacing: 2
+                    anchors.margins: Theme.spacingS
+                    y: Theme.spacingS
+                    spacing: Theme.spacingXs
                     Label { width: parent.width; text: (row.marked ? "✓ " : "") + row.name; elide: Text.ElideMiddle }
                     Label { width: parent.width; text: "Original: " + (row.original || "unavailable"); quiet: true; elide: Text.ElideMiddle }
                     Label { width: parent.width; text: "Deleted: " + (row.deleted || "unavailable"); quiet: true; elide: Text.ElideMiddle }

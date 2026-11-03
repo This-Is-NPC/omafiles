@@ -44,7 +44,7 @@ Item {
     Flow {
         id: strip
         width: parent.width
-        spacing: 8
+        spacing: Theme.spacingS
 
         Repeater {
             model: actions
@@ -70,7 +70,7 @@ Item {
                 Keys.onTabPressed: function (event) { Focus.move(event, hints.adjacent(index, 1), hints.adjacent(index, -1)) }
                 Keys.onBacktabPressed: function (event) { Focus.move(event, hints.adjacent(index, -1)) }
                 implicitWidth: contents.implicitWidth
-                height: 22
+                height: Theme.controlHeight
                 color: hovered ? hoverChromeFill : "transparent"
                 radius: Theme.rounding
                 tooltipCaption: pair.modelData.label
@@ -82,7 +82,7 @@ Item {
                 Row {
                     id: contents
                     anchors.centerIn: parent
-                    spacing: 5
+                    spacing: Theme.spacingXs
                     KeyCap {
                         anchors.verticalCenter: parent.verticalCenter
                         key: pair.modelData.key
@@ -92,7 +92,7 @@ Item {
                         text: pair.modelData.label
                         color: Theme.dim
                         font.family: Theme.fontFamily
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.fontSmall
                         renderType: Text.NativeRendering
                     }
                 }

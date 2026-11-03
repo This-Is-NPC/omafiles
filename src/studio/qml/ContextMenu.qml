@@ -36,8 +36,8 @@ Item {
     function clampPanel() {
         if (!menu.panel)
             return
-        panel.width = Math.min(panelWidth(), Math.max(0, menu.width - 16))
-        const margin = 8
+        const margin = Theme.spacingS
+        panel.width = Math.min(panelWidth(), Math.max(0, menu.width - 2 * margin))
         panel.x = Math.max(margin, Math.min(panel.x, menu.width - panel.width - margin))
         panel.y = Math.max(margin, Math.min(panel.y, menu.height - panel.height - margin))
     }
@@ -49,9 +49,9 @@ Item {
             labelRuler.text = menu.shown[i].label
             capRuler.text = menu.shown[i].key || ""
             widest = Math.max(widest, labelRuler.advanceWidth
-                              + (capRuler.text === "" ? 0 : capRuler.advanceWidth + 18))
+                              + (capRuler.text === "" ? 0 : capRuler.advanceWidth + Theme.spacingL))
         }
-        return Math.max(200, Math.ceil(widest) + 24)
+        return Math.max(200, Math.ceil(widest) + 2 * (Theme.spacingXs + Theme.spacingS))
     }
 
     function openAt(x, y) {
@@ -94,13 +94,13 @@ Item {
             TextMetrics {
                 id: labelRuler
                 font.family: Theme.fontFamily
-                font.pixelSize: 12
+                font.pixelSize: Theme.fontBody
             }
 
             TextMetrics {
                 id: capRuler
                 font.family: Theme.fontFamily
-                font.pixelSize: 11
+                font.pixelSize: Theme.fontSmall
             }
 
             MouseArea {
@@ -144,7 +144,8 @@ Item {
                 id: panel
                 z: 1
                 width: 200
-                height: Math.max(0, Math.min(menu.height - 16, menu.shown.length * 28 + 8))
+                height: Math.max(0, Math.min(menu.height - 2 * Theme.spacingS,
+                                                 menu.shown.length * Theme.rowHeight + 2 * Theme.spacingXs))
                 onHeightChanged: menu.clampPanel()
                 radius: Theme.rounding
                 color: Theme.panel
@@ -165,7 +166,7 @@ Item {
                     reuseItems: true
                     id: list
                     anchors.fill: parent
-                    anchors.margins: 4
+                    anchors.margins: Theme.spacingXs
                     clip: true
                     model: menu.visible ? menu.shown : []
                     currentIndex: 0
@@ -178,7 +179,7 @@ Item {
                         required property var modelData
                         required property int index
                         width: ListView.view.width
-                        height: 28
+                        height: Theme.rowHeight
                         radius: Theme.rounding
                         color: list.currentIndex === itemRow.index
                                ? Theme.fill(Theme.accent, 0.18) : "transparent"
@@ -188,25 +189,25 @@ Item {
 
                         Text {
                             anchors.right: shortcut.left
-                            anchors.rightMargin: 8
+                            anchors.rightMargin: Theme.spacingS
                             elide: Text.ElideRight
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.left: parent.left
-                            anchors.leftMargin: 8
+                            anchors.leftMargin: Theme.spacingS
                             text: itemRow.modelData.label
                             color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fontBody
                         }
                         Text {
                             id: shortcut
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.right: parent.right
-                            anchors.rightMargin: 8
+                            anchors.rightMargin: Theme.spacingS
                             text: itemRow.modelData.key || ""
                             color: Theme.dim
                             font.family: Theme.fontFamily
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.fontSmall
                         }
                         // Hover selection follows actual movement, leaving touch drags to the list.
                         MouseArea {

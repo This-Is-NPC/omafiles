@@ -34,13 +34,13 @@ Column {
         target: Devices
         function onChanged() { deviceSection.updateRows() }
     }
-    spacing: 5
+    spacing: Theme.spacingXs
 
     FocusableControl {
         id: heading
         objectName: "devicesHeading"
         width: parent.width
-        height: 24
+        height: Theme.controlHeight
         handCursor: true
         tabFocusable: devices.count === 0 || activeFocus
         pointerFocus: deviceSection.focusTarget
@@ -108,7 +108,7 @@ Column {
             required property var modelData
             required property int index
             width: ListView.view.width
-            height: 32
+            height: Theme.rowHeight
             radius: Theme.rounding
             color: devices.activeFocus && devices.currentIndex === index ? Theme.fill(Theme.accent, 0.18)
                  : hover.hovered ? Theme.fill(Theme.foreground, 0.06) : "transparent"
@@ -118,16 +118,16 @@ Column {
             Icon {
                 id: icon
                 anchors.left: parent.left
-                anchors.leftMargin: 8
+                anchors.leftMargin: Theme.spacingS
                 anchors.verticalCenter: parent.verticalCenter
                 kind: "folder"
                 ink: row.modelData.mounted ? Theme.accent : Theme.dim
             }
             Label {
                 anchors.left: icon.right
-                anchors.leftMargin: 8
+                anchors.leftMargin: Theme.iconGap
                 anchors.right: menuButton.left
-                anchors.rightMargin: 4
+                anchors.rightMargin: Theme.spacingXs
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.modelData.name
             }
@@ -155,8 +155,8 @@ Column {
                 objectName: "deviceMenuButton"
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: 32
-                height: 32
+                width: Theme.rowHeight
+                height: Theme.rowHeight
                 label: "⋮"
                 caption: "Device actions"
                 tabFocusable: false

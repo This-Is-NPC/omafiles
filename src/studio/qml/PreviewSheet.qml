@@ -61,7 +61,7 @@ Rectangle {
                     id: scroll
                     Component.onCompleted: sheet.scroller = scroll
                     anchors.fill: parent
-                    anchors.margins: 12
+                    anchors.margins: Theme.inset
                     Keys.onTabPressed: function (event) { Focus.move(event, scroll.nextItemInFocusChain(true), previewText) }
                     Keys.onBacktabPressed: function (event) { Focus.move(event, previewText) }
                     activeFocusOnTab: true
@@ -69,7 +69,7 @@ Rectangle {
                     Column {
                         id: contents
                         width: scroll.width
-                        spacing: 10
+                        spacing: Theme.spacingM
                         Label {
                             width: parent.width
                             text: sheet.path
@@ -79,7 +79,7 @@ Rectangle {
                         }
                         Flow {
                             width: parent.width
-                            spacing: 8
+                            spacing: Theme.spacingS
                             Chip { objectName: "previewPrevious"; label: "Previous"; key: "k / ←"; usable: sheet.previousAvailable; onClicked: sheet.stepRequested(-1) }
                             Chip { objectName: "previewNext"; label: "Next"; key: "j / →"; usable: sheet.nextAvailable; onClicked: sheet.stepRequested(1) }
                             Chip {
@@ -115,7 +115,7 @@ Rectangle {
                             Keys.onTabPressed: function (event) { Focus.move(event, scroll, previewText.nextItemInFocusChain(false)) }
                             Keys.forwardTo: [scope]
                             wrapMode: TextEdit.WrapAnywhere
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.fontBody
                         }
                         Label {
                             width: parent.width

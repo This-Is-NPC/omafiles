@@ -32,7 +32,7 @@ Rectangle {
             entry.select(0, upTo)
     }
 
-    implicitHeight: 26
+    implicitHeight: Theme.controlHeight
     radius: Theme.rounding
     color: Theme.sunken
     border.width: 1
@@ -44,12 +44,12 @@ Rectangle {
         id: leadMark
         visible: box.lead !== ""
         anchors.left: parent.left
-        anchors.leftMargin: 9
+        anchors.leftMargin: Theme.spacingS
         anchors.verticalCenter: parent.verticalCenter
         text: box.lead
         color: Theme.accent
         font.family: Theme.fontFamily
-        font.pixelSize: 12
+        font.pixelSize: Theme.fontBody
         renderType: Text.NativeRendering
     }
 
@@ -60,15 +60,15 @@ Rectangle {
         Keys.onBacktabPressed: function (event) { Focus.move(event, box.previousFocus) }
         persistentSelection: true
         anchors.fill: parent
-        anchors.leftMargin: box.lead === "" ? 9 : leadMark.width + 15
-        anchors.rightMargin: 9
+        anchors.leftMargin: box.lead === "" ? Theme.spacingS : leadMark.width + 2 * Theme.spacingS
+        anchors.rightMargin: Theme.spacingS
         verticalAlignment: TextInput.AlignVCenter
         clip: true
         color: Theme.foreground
         selectionColor: Theme.fill(Theme.accent, 0.35)
         selectedTextColor: Theme.foreground
         font.family: Theme.fontFamily
-        font.pixelSize: 12
+        font.pixelSize: Theme.fontBody
         renderType: Text.NativeRendering
 
         Accessible.role: Accessible.EditableText
@@ -80,7 +80,7 @@ Rectangle {
             text: box.placeholder
             color: Theme.dim
             font.family: Theme.fontFamily
-            font.pixelSize: 12
+            font.pixelSize: Theme.fontBody
             renderType: Text.NativeRendering
         }
 

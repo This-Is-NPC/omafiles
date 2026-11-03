@@ -27,8 +27,8 @@ FocusableControl {
     Accessible.role: Accessible.Button
     Accessible.name: caption
 
-    width: 26
-    height: 26
+    width: Theme.controlHeight
+    height: Theme.controlHeight
     radius: Theme.rounding
     color: !button.usable ? "transparent"
          : button.on ? Theme.fill(Theme.accent, 0.18)
