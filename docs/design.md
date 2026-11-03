@@ -88,7 +88,7 @@ Every key the window names is written one way, and `KeyCaps` (`src/studio/qml/Ke
 
 Three helper processes run separately when needed. Each is a small, focused CLI tool that communicates with the window over stdin/stdout.
 
-**Preview** (`src/preview`) decodes images, PDFs, archives (as text listings), text, audio and video. The window sends a file path, receives decoded packets over a framed binary protocol, and paints them. Preview work is CPU-intensive and memory-bounded; the helper can be killed and restarted without affecting the index. See [preview.md](preview.md) for the preview feature.
+**Preview** (`src/preview`, `src/preview-codecs`) decodes images, PDFs, archives (as text listings), text, audio and video. `omafiles-preview` detects the type and handles images and text with Qt Core and Qt Gui only; for a PDF, audio, video or archive it executes `omafiles-preview-codecs` in the same process, handing it the open file as descriptor 3, so an image preview never loads Qt PDF, Qt Multimedia or libarchive. The window sends a file path, receives decoded packets over a framed binary protocol, and paints them. Preview work is CPU-intensive and memory-bounded; the helper can be killed and restarted without affecting the index. See [preview.md](preview.md) for the preview feature.
 
 **Archive** (`src/archive`) lists, extracts and compresses archive files. The window sends paths and a destination, receives progress and entry names over newline-delimited JSON, and shows progress. The helper owns the libarchive integration. See [archives.md](archives.md) for the archive feature.
 
@@ -134,7 +134,7 @@ The index, roots and views are the only files omafiles maintains, alongside the 
 
 **Devices helper**: Receives enumeration requests as JSON on stdin. Sends newline-delimited JSON responses: a `devices` array of rows with an id, name, path, whether it is a phone, whether it is mounted, and which of mount, unmount and eject apply; and, for a requested action, `action`, `finished`, `ok` and `reason`.
 
-**Preview helper**: Receives a file path as a command-line argument. Its environment is the window's with `QT_QPA_PLATFORM=offscreen`, and without `DBUS_SESSION_BUS_ADDRESS` or `QT_IMAGEIO_MAXALLOC`, so it reaches no session service and keeps its own 32 MiB decoder allocation limit. Sends length-prefixed binary packets over stdout using Qt's QDataStream format. Each packet contains a kind (text, image, error, etc.), text content, playback state (for audio/video), loading state, and image pixels (ARGB32 format). Packets are framed with a 4-byte big-endian length prefix.
+**Preview helper**: Receives a file path as a command-line argument. `omafiles-preview-codecs` receives the kind (`pdf`, `audio`, `video` or `archive`) and the path, with the file open on descriptor 3; it replaces `omafiles-preview` through `execv`, so the window sees one process with the same pipes, limits and process group. Its environment is the window's with `QT_QPA_PLATFORM=offscreen`, and without `DBUS_SESSION_BUS_ADDRESS` or `QT_IMAGEIO_MAXALLOC`, so it reaches no session service and keeps its own 32 MiB decoder allocation limit. Sends length-prefixed binary packets over stdout using Qt's QDataStream format. Each packet contains a kind (text, image, error, etc.), text content, playback state (for audio/video), loading state, and image pixels (ARGB32 format). Packets are framed with a 4-byte big-endian length prefix.
 
 ### D-Bus FileManager1
 

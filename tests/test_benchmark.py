@@ -80,7 +80,7 @@ def report_document():
     return dict(schema=1, app="omafiles", status="complete", error=None, cleanup_errors=[], identity=identity(),
                 runs=[split_observation(run) for run in measurements()],
                 fixtures={"fixtures": {"1000": dict(file_count=1000, expected_count=1000)}},
-                product_sha256={p: "c"*64 for p in ("omafiles", "omafiles-studio", "omafiles-preview", "omafiles-archive", "omafiles-devices")})
+                product_sha256={p: "c"*64 for p in ("omafiles", "omafiles-studio", "omafiles-preview", "omafiles-preview-codecs", "omafiles-archive", "omafiles-devices")})
 
 
 def idle_observation(app, end_ticks=36, fixture="1000", config="A", repeat=1,
@@ -465,7 +465,7 @@ class BenchmarkTest(unittest.TestCase):
             document.update(app="omafiles", runs=[split_observation(idle_observation("omafiles", repeat % 2 + 36, fixture, config, repeat))
                 for fixture, repeat, config in runner.schedule(runner.FIXTURES)])
             document["product_sha256"] = {name: "c" * 64 for name in (
-                "omafiles", "omafiles-studio", "omafiles-preview", "omafiles-archive", "omafiles-devices")}
+                "omafiles", "omafiles-studio", "omafiles-preview", "omafiles-preview-codecs", "omafiles-archive", "omafiles-devices")}
             for fixture in runner.FIXTURES:
                 count = 2000 if fixture == "images-2000" else int(fixture)
                 document["fixtures"]["fixtures"][fixture] = dict(file_count=count, expected_count=count)

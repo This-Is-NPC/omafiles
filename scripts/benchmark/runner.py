@@ -559,7 +559,7 @@ def prepare(staging, build):
         build = ROOT / "build/bin"
     product = staging / "product"
     product.mkdir()
-    for name in ("omafiles", "omafiles-studio", "omafiles-preview", "omafiles-archive", "omafiles-devices"):
+    for name in ("omafiles", "omafiles-studio", "omafiles-preview", "omafiles-preview-codecs", "omafiles-archive", "omafiles-devices"):
         shutil.copy2(build / name, product / name)
     return product
 
