@@ -77,7 +77,8 @@ The preview helper's aggregate resident memory is sampled every 25 ms and stoppe
 overshoot between samples. Initial reads and media loading time out after five
 seconds. Playback itself has no five-second duration limit. Text/output caps
 and backpressure bound the transfer to the GUI. Images are limited to 64 MiB
-source files, 64 megapixels and a 32 MiB decoder allocation budget. PDFs accept
+source files, 64 megapixels and a 32 MiB decoder allocation budget; the helper
+is started without `QT_IMAGEIO_MAXALLOC`, which Qt would obey over that budget. PDFs accept
 up to 16 MiB; archives up to 64 MiB. Raster images are downscaled only when
 needed to fit 1280 × 1280; smaller sources keep their native pixels through
 decoding and IPC, with display fitting performed by the GUI. EXIF orientation

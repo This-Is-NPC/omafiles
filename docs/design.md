@@ -100,7 +100,7 @@ The index, roots and views are the only files omafiles maintains, alongside the 
 
 **Devices helper**: Receives enumeration requests as JSON on stdin. Sends newline-delimited JSON responses: a `devices` array of rows with an id, name, path, whether it is a phone, whether it is mounted, and which of mount, unmount and eject apply; and, for a requested action, `action`, `finished`, `ok` and `reason`.
 
-**Preview helper**: Receives a file path as a command-line argument. Sends length-prefixed binary packets over stdout using Qt's QDataStream format. Each packet contains a kind (text, image, error, etc.), text content, playback state (for audio/video), loading state, and image pixels (ARGB32 format). Packets are framed with a 4-byte big-endian length prefix.
+**Preview helper**: Receives a file path as a command-line argument. Its environment is the window's with `QT_QPA_PLATFORM=offscreen`, and without `DBUS_SESSION_BUS_ADDRESS` or `QT_IMAGEIO_MAXALLOC`, so it reaches no session service and keeps its own 32 MiB decoder allocation limit. Sends length-prefixed binary packets over stdout using Qt's QDataStream format. Each packet contains a kind (text, image, error, etc.), text content, playback state (for audio/video), loading state, and image pixels (ARGB32 format). Packets are framed with a 4-byte big-endian length prefix.
 
 ### D-Bus FileManager1
 

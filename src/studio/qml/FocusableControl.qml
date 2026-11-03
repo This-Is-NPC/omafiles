@@ -37,11 +37,19 @@ Item {
     Accessible.focusable: control.tabFocusable
     activeFocusOnTab: control.tabFocusable
 
-    onUsableChanged: if (!control.usable && control.activeFocus)
-        nextItemInFocusChain(true).forceActiveFocus()
+    // A control that can no longer take a key hands the keyboard to the next
+    // one, so the focus ring stays on something drawn.
+    function handOnFocus() {
+        if (control.activeFocus)
+            nextItemInFocusChain(true).forceActiveFocus()
+    }
+    onUsableChanged: if (!control.usable) handOnFocus()
 
     onEnabledChanged: if (!enabled && control.tooltip) control.tooltip.cancel()
-    onVisibleChanged: if (!visible && control.tooltip) control.tooltip.cancel()
+    onVisibleChanged: if (!visible) {
+        handOnFocus()
+        if (control.tooltip) control.tooltip.cancel()
+    }
 
     Keys.onPressed: function (event) { if (control.tooltip) control.tooltip.handleKey(event) }
 

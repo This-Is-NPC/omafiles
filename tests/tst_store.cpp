@@ -856,6 +856,8 @@ private slots:
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         const QByteArray bad = QFile::encodeName(dir.path()) + "/bad\xff";
+        // QDir cannot spell this name, so QTemporaryDir cannot remove it.
+        const auto sweep = qScopeGuard([&bad] { ::unlink(bad.constData()); });
         QVERIFY(::close(::open(bad.constData(), O_CREAT | O_WRONLY, 0644)) == 0);
         const QString link = dir.filePath(QStringLiteral("good"));
         QVERIFY(::symlink("bad\xff", QFile::encodeName(link).constData()) == 0);
@@ -867,6 +869,8 @@ private slots:
         QCOMPARE(state, omafiles::PathState::Unknown);
         QVERIFY2(error.contains(QStringLiteral("bad\\xff")), qPrintable(error));
         QVERIFY(omafiles::canonicalPath(link, nullptr).isEmpty());
+        QCOMPARE(::unlink(bad.constData()), 0);
+        QVERIFY(dir.remove());
     }
 
     // A row whose own path is now a symlink is Missing, live or dangling.
