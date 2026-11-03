@@ -422,6 +422,7 @@ private slots:
     void routesTooltipKeysOnlyWhenContentOverflows();
     void createsTheFirstTagFromTheEmptyPanel();
     void completesAndRenamesTagsOnTheMarkedSet();
+    void refusesTagEditsOnTheParentRow();
     void keepsTagRefusalsAndPendingTargetsInTheEditor();
     void keepsTagKeyboardFocusInsideTheEditor();
     void editsTagsFromThePaletteMenuAndPointer();
@@ -9731,6 +9732,30 @@ void TestStudio::completesAndRenamesTagsOnTheMarkedSet()
     QCOMPARE(verbRuns().last(), (QStringList{"tag", "add", "--tag", "project", "--", m_tree.filePath("plain.txt")}));
     m_index->tagRename({}, "notes", "work");
     QCOMPARE(verbRuns().size(), 2);
+}
+
+void TestStudio::refusesTagEditsOnTheParentRow()
+{
+    focusRow(QStringLiteral("one.txt"));
+    key(Qt::Key_Space);
+    focusRow(QStringLiteral("two.md"));
+    key(Qt::Key_Space);
+    QCOMPARE(tab()->markedCount(), 2);
+    auto *folder = qobject_cast<FolderModel *>(filesRoot()->property("folder").value<QObject *>());
+    QCOMPARE(folder->kindAt(0), QStringLiteral("parent"));
+    QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(0)));
+    QTRY_COMPARE(filesRoot()->property("entry").toMap().value(QStringLiteral("name")).toString(), QStringLiteral(".."));
+    verbRuns().clear();
+    m_index->setNotice({});
+    key('t');
+    QCOMPARE(window()->property("focusRegion").toString(), QStringLiteral("tags"));
+    key('a');
+    QVERIFY(!itemsNamed("tagSheet").first()->isVisible());
+    QCOMPARE(m_index->notice(),
+             QStringLiteral("Tags go on files and folders: move the cursor to one, or to a marked row for the marked set"));
+    QVERIFY(verbRuns().isEmpty());
+    QCOMPARE(tab()->markedCount(), 2);
+    folder->clearMarks();
 }
 
 void TestStudio::keepsTagRefusalsAndPendingTargetsInTheEditor()
