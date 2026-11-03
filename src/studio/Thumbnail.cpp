@@ -47,7 +47,16 @@ ThumbnailRunner runner;
 thread_local qint64 helperBudget = helperMemoryLimit;
 thread_local int helperCpu = -1;
 
-void initializeImageLimit() { QImageReader::setAllocationLimit(32); }
+// Qt caches QT_IMAGEIO_MAXALLOC on the first allocationLimit() call and prefers
+// it to setAllocationLimit, so that call runs with the variable hidden.
+void initializeImageLimit()
+{
+    const QByteArray inherited = qgetenv("QT_IMAGEIO_MAXALLOC");
+    qunsetenv("QT_IMAGEIO_MAXALLOC");
+    QImageReader::allocationLimit();
+    if (!inherited.isNull()) qputenv("QT_IMAGEIO_MAXALLOC", inherited);
+    QImageReader::setAllocationLimit(32);
+}
 Q_COREAPP_STARTUP_FUNCTION(initializeImageLimit)
 
 QString cacheRoot()

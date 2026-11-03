@@ -266,6 +266,9 @@ Rectangle {
             highlightResizeDuration: 0
             reuseItems: true
             id: tagsListView
+            // No off-screen delegates built ahead: one still being built when
+            // a reload shrinks the vocabulary is cancelled by a stale index.
+            cacheBuffer: 0
             objectName: "sidebarTags"
             activeFocusOnTab: count > 0
             Keys.onPressed: function (event) { dock.keyRequested(event) }

@@ -1460,11 +1460,18 @@ Window {
         return false
     }
 
+    // The last pane fills what the others leave, so it is resized by moving
+    // the divider on its left: its neighbour takes the opposite step.
     function resizeFocusedPane(delta) {
-        const pane = paneItems[Workspace.focusedPane]
-        if (!pane)
+        const focused = Workspace.focusedPane
+        const last = Workspace.paneCount - 1
+        const pane = paneItems[focused === last ? focused - 1 : focused]
+        const fill = paneItems[last]
+        if (!pane || !fill || pane === fill)
             return false
-        pane.panePreferredWidth = Math.max(280, pane.panePreferredWidth + delta)
+        const step = focused === last ? -delta : delta
+        pane.resize(Math.max(pane.narrowest,
+                             Math.min(pane.width + step, pane.width + fill.width - fill.narrowest)))
         return true
     }
 
@@ -1985,8 +1992,14 @@ Window {
                         - criteriaBar.height - filterBar.height - dividers
                 orientation: Qt.Horizontal
 
+                readonly property int handleWidth: 3
+                // A pane's least width, unless the split cannot hold every
+                // pane at it: then they share the width and none passes the edge.
+                readonly property real narrowest: Math.min(280,
+                    (width - handleWidth * (Workspace.paneCount - 1)) / Math.max(1, Workspace.paneCount))
+
                 handle: Rectangle {
-                    implicitWidth: 3
+                    implicitWidth: split.handleWidth
                     color: C.SplitHandle.pressed || C.SplitHandle.hovered
                            ? Theme.fill(Theme.accent, 0.5) : Theme.line
                 }
@@ -1998,7 +2011,7 @@ Window {
                         required property int index
                         pane: modelData
                         paneIndex: index
-                        C.SplitView.preferredWidth: panePreferredWidth
+                        narrowest: split.narrowest
                     }
                 }
             }
@@ -2839,8 +2852,11 @@ Window {
         color: Theme.background
         property var pane
         property int paneIndex
-        property real panePreferredWidth: win.width / Math.max(1, Workspace.paneCount)
-        C.SplitView.minimumWidth: 280
+        required property real narrowest
+        C.SplitView.minimumWidth: narrowest
+        C.SplitView.preferredWidth: win.width / Math.max(1, Workspace.paneCount)
+
+        function resize(width) { C.SplitView.preferredWidth = width }
 
         Component.onCompleted: win.paneItems[paneIndex] = paneRoot
 

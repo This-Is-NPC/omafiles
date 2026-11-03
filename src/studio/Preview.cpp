@@ -17,6 +17,8 @@ Preview::Preview(QQuickItem *parent) : QQuickPaintedItem(parent), m_process(new 
     auto environment = QProcessEnvironment::systemEnvironment();
     environment.insert("QT_QPA_PLATFORM", "offscreen");
     environment.remove("DBUS_SESSION_BUS_ADDRESS");
+    // Qt prefers this variable to the helper's own decoder allocation limit.
+    environment.remove("QT_IMAGEIO_MAXALLOC");
     m_process->setProcessEnvironment(environment);
     connect(m_process, &QProcess::readyReadStandardOutput, this, &Preview::receive);
     connect(m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {

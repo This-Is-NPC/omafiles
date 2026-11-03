@@ -398,6 +398,7 @@ private slots:
     void scrollsBoundedSheetsAndTooltips();
     void routesSidebarKeysByScrollRange_data();
     void routesSidebarKeysByScrollRange();
+    void movesFocusOffAHiddenDetailsControl();
     void declinesNavigationWithoutScrollRange_data();
     void declinesNavigationWithoutScrollRange();
     void preservesTextSelectionInResultEditors_data();
@@ -570,6 +571,7 @@ private slots:
     void reachesThePathBarWithTab();
     void pansTheGraphWithShiftHjk();
     void resizesTheSplitWithCtrlComma();
+    void fitsTheSplitInANarrowWindow();
     void runsTheCommandLineForWhatTheRowMenuChanges();
     void actsOnTheMarkedSetOnlyFromInsideIt();
     void copiesWhatTheRowIsToTheClipboard();
@@ -748,6 +750,11 @@ void TestStudio::writeIndex()
                         .toUtf8());
     }
 }
+
+// Set before the application exists: the suite runs as if the user raised Qt's
+// decoder allocation limit, which neither the window nor the preview may obey.
+void raiseImageAllocationLimit() { qputenv("QT_IMAGEIO_MAXALLOC", "1024"); }
+Q_CONSTRUCTOR_FUNCTION(raiseImageAllocationLimit)
 
 void TestStudio::initTestCase()
 {
@@ -4628,43 +4635,88 @@ void TestStudio::pansTheGraphWithShiftHjk()
     settle();
 }
 
+// Ctrl+. widens and Ctrl+, narrows the focused pane on screen, whichever side
+// of the divider it is on: the pane beside it gives up or takes the width.
 void TestStudio::resizesTheSplitWithCtrlComma()
 {
     const int panesBefore = m_workspace->paneCount();
     if (panesBefore == 1)
         key(Qt::Key_Backslash, Qt::ControlModifier);
     QCOMPARE(m_workspace->paneCount(), 2);
+    const auto restore = qScopeGuard([&] {
+        if (panesBefore == 1)
+            key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+    });
 
-    const int focused = m_workspace->focusedPane();
-    QQuickItem *pane = nullptr;
+    QQuickItem *panes[2] = {nullptr, nullptr};
     for (QQuickItem *item : itemsNamed(QStringLiteral("pane"))) {
-        if (item->property("paneIndex").toInt() == focused) {
-            pane = item;
-            break;
-        }
+        const int index = item->property("paneIndex").toInt();
+        if (index == 0 || index == 1)
+            panes[index] = item;
     }
-    QVERIFY2(pane, "no QML pane item for the focused pane");
+    QVERIFY2(panes[0] && panes[1], "no QML pane items for the split");
 
-    const qreal before = pane->property("panePreferredWidth").toReal();
-    key(Qt::Key_Period, Qt::ControlModifier);
-    const qreal wider = pane->property("panePreferredWidth").toReal();
-    QVERIFY2(qAbs(wider - before - 40.0) < 0.5,
-             qPrintable(QStringLiteral("Ctrl+. width was %1, expected %2")
-                                .arg(wider)
-                                .arg(before + 40.0)));
+    for (const int focused : {0, 1}) {
+        m_workspace->setFocusedPane(focused);
+        QQuickItem *pane = panes[focused];
+        QQuickItem *other = panes[1 - focused];
+        QTRY_VERIFY(pane->width() >= 320.0 && other->width() >= 320.0);
 
-    key(Qt::Key_Comma, Qt::ControlModifier);
-    const qreal narrower = pane->property("panePreferredWidth").toReal();
-    QVERIFY2(qAbs(narrower - wider + 40.0) < 0.5,
-             qPrintable(QStringLiteral("Ctrl+, width was %1, expected %2")
-                                .arg(narrower)
-                                .arg(wider - 40.0)));
-    QVERIFY2(narrower >= 280.0,
-             qPrintable(QStringLiteral("Ctrl+, shrank the pane below 280: %1").arg(narrower)));
+        const qreal before = pane->width();
+        const qreal otherBefore = other->width();
+        key(Qt::Key_Period, Qt::ControlModifier);
+        QTRY_VERIFY2(qAbs(pane->width() - before - 40.0) < 0.5,
+                     qPrintable(QStringLiteral("Ctrl+. on pane %1: width %2, expected %3")
+                                        .arg(focused).arg(pane->width()).arg(before + 40.0)));
+        QTRY_VERIFY2(qAbs(other->width() - otherBefore + 40.0) < 0.5,
+                     qPrintable(QStringLiteral("Ctrl+. on pane %1: other width %2, expected %3")
+                                        .arg(focused).arg(other->width()).arg(otherBefore - 40.0)));
 
-    if (panesBefore == 1) {
-        key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
-        QCOMPARE(m_workspace->paneCount(), 1);
+        key(Qt::Key_Comma, Qt::ControlModifier);
+        QTRY_VERIFY2(qAbs(pane->width() - before) < 0.5,
+                     qPrintable(QStringLiteral("Ctrl+, on pane %1: width %2, expected %3")
+                                        .arg(focused).arg(pane->width()).arg(before)));
+        QTRY_VERIFY(qAbs(other->width() - otherBefore) < 0.5);
+    }
+
+    // Holding either key stops where a pane reaches its minimum width.
+    m_workspace->setFocusedPane(1);
+    for (int i = 0; i < 40; ++i)
+        key(Qt::Key_Comma, Qt::ControlModifier);
+    QTRY_COMPARE(panes[1]->width(), 280.0);
+    for (int i = 0; i < 80; ++i)
+        key(Qt::Key_Period, Qt::ControlModifier);
+    QTRY_COMPARE(panes[0]->width(), 280.0);
+    QVERIFY(panes[1]->x() + panes[1]->width() <= window()->width() + 0.5);
+}
+
+// A window too narrow for every pane's minimum shares its width between the
+// panes instead of pushing the last one past its edge.
+void TestStudio::fitsTheSplitInANarrowWindow()
+{
+    const QSize original = window()->size();
+    const int panesBefore = m_workspace->paneCount();
+    const auto restore = qScopeGuard([&] {
+        window()->resize(original);
+        if (panesBefore == 1)
+            key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+    });
+    window()->resize(420, 300);
+    if (panesBefore == 1)
+        key(Qt::Key_Backslash, Qt::ControlModifier);
+    QCOMPARE(m_workspace->paneCount(), 2);
+    for (const int focused : {1, 0}) {
+        m_workspace->setFocusedPane(focused);
+        key(Qt::Key_Period, Qt::ControlModifier);
+        for (QQuickItem *pane : itemsNamed(QStringLiteral("pane"))) {
+            const auto area = [pane] { return pane->mapRectToScene(pane->boundingRect()); };
+            QTRY_VERIFY2(area().width() > 0 && area().left() >= -0.5
+                             && area().right() <= window()->width() + 0.5,
+                         qPrintable(QStringLiteral("pane %1 spans x%2 to x%3 in a %4 px window")
+                                            .arg(pane->property("paneIndex").toInt())
+                                            .arg(area().left()).arg(area().right())
+                                            .arg(window()->width())));
+        }
     }
 }
 
@@ -10026,11 +10078,46 @@ void TestStudio::routesSidebarKeysByScrollRange()
         if (navigationKey == Qt::Key_Home) QCOMPARE(cursor(), 0);
         if (navigationKey == Qt::Key_End) QCOMPARE(cursor(), 120);
         QCOMPARE(scroll->property("contentY").toReal(), 0.0);
-        if (navigationKey != Qt::Key_Home) QVERIFY(control->hasActiveFocus());
+        // The parent row has no mode, so Home hides the focused bit; the
+        // keyboard moves on to a control that is still drawn.
+        if (navigationKey == Qt::Key_Home) QTRY_VERIFY(!bits->isVisible());
+        else QVERIFY(control->hasActiveFocus());
     }
     QCOMPARE(QFileInfo(path).permissions(), permissions);
-    if (overflowing || navigationKey != Qt::Key_Home)
-        QTRY_VERIFY(hasFocusOutline(window(), overflowing ? scroll : control, m_theme->accent()));
+    auto *focus = window()->activeFocusItem();
+    QVERIFY(focus && focus->isVisible());
+    QTRY_VERIFY(hasFocusOutline(window(), overflowing ? scroll : focus, m_theme->accent()));
+}
+
+// A details control hidden under the keyboard hands it to the next control
+// that is drawn: the parent row has no mode, so its permission bits hide.
+void TestStudio::movesFocusOffAHiddenDetailsControl()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QFile file(directory.filePath(QStringLiteral("one.txt")));
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.close();
+    tab()->setCwd(directory.path());
+    auto *folder = filesRoot()->property("folder").value<QObject *>();
+    QTRY_COMPARE_WITH_TIMEOUT(folder->property("count").toInt(), 2, asyncTimeout);
+    QVERIFY(QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(1))));
+    auto *dock = window()->property("activeDock").value<QQuickItem *>();
+    QVERIFY(dock);
+    auto *bits = dock->findChild<QQuickItem *>("detailsMode");
+    QVERIFY(bits);
+    auto *control = bits->property("firstControl").value<QQuickItem *>();
+    QVERIFY(control);
+    QTRY_VERIFY_WITH_TIMEOUT(control->isVisible() && control->isEnabled(), asyncTimeout);
+    control->forceActiveFocus();
+    QTRY_VERIFY(control->hasActiveFocus());
+
+    key(Qt::Key_Home);
+    QCOMPARE(cursor(), 0);
+    QTRY_VERIFY(!bits->isVisible());
+    auto *focus = window()->activeFocusItem();
+    QVERIFY2(focus && focus->isVisible(), "the keyboard stayed on a hidden control");
+    QTRY_VERIFY(hasFocusOutline(window(), focus, m_theme->accent()));
 }
 
 void TestStudio::declinesNavigationWithoutScrollRange_data()
@@ -10136,6 +10223,9 @@ void TestStudio::preservesTextSelectionInResultEditors()
     QFETCH(bool, palette);
     QFETCH(int, width);
     QFETCH(bool, selected);
+    // Restoring the fixture after adding 32 tags shrinks the dock's tag list
+    // to seven rows; no row it built ahead may be cancelled by a stale index.
+    QTest::failOnWarning(QRegularExpression(QStringLiteral("DelegateModel")));
     const QSize original = window()->size();
     const auto restore = qScopeGuard([&] {
         for (const QString &name : {QStringLiteral("tagSheet"), QStringLiteral("commandPalette")})
@@ -13525,6 +13615,15 @@ void TestStudio::reportsPreviewFailureReasons_data()
     image.fill(Qt::red);
     QVERIFY(image.save(&buffer, "PNG"));
     QTest::newRow("truncated-image-body") << png.left(png.size() / 2) << QString("Cannot read this image:");
+    // 3000 × 3000 at 32 bits needs 34.3 MB, above the 32 MiB decoder limit and
+    // below the 1024 MiB this suite puts in QT_IMAGEIO_MAXALLOC.
+    QByteArray large;
+    QBuffer largeBuffer(&large);
+    QVERIFY(largeBuffer.open(QIODevice::WriteOnly));
+    QImage largeImage(3000, 3000, QImage::Format_RGB32);
+    largeImage.fill(Qt::red);
+    QVERIFY(largeImage.save(&largeBuffer, "PNG"));
+    QTest::newRow("over-allocation-limit") << large << QString("Cannot read this image:");
     const QByteArray palettePng = QByteArray::fromBase64(
         "iVBORw0KGgoAAAANSUhEUgAAAKAAAABkAQMAAAA7eKnMAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAADUExURf8AABniCTcAAAAHdElNRQfqCgsVKAZIaWfgAAAAJXRFWHRkYXRlOmNyZWF0ZQAyMDI2LTEwLTExVDIxOjQwOjA2KzAwOjAw3TUGdgAAACV0RVh0ZGF0ZTptb2RpZnkAMjAyNi0xMC0xMVQyMTo0MDowNiswMDowMKxovsoAAAAodEVYdGRhdGU6dGltZXN0YW1wADIwMjYtMTAtMTFUMjE6NDA6MDYrMDA6MDD7fZ8VAAAAGElEQVRIx2NgGAWjYBSMglEwCkbBKCAMAAg0AAHiHsIcAAAAAElFTkSuQmCC");
     QTest::newRow("truncated-palette-image") << palettePng.left(palettePng.size() / 2)
@@ -13748,6 +13847,9 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
                     && item->property("tooltipCaption").toString() == label) return item;
         return nullptr;
     };
+    // Footer actions change the region, the region rebuilds the footer, and
+    // the rebuild must not feed back into the region while it is written.
+    QTest::failOnWarning(QRegularExpression(QStringLiteral("Binding loop detected")));
     const QSize original = window()->size();
     const auto resize = qScopeGuard([&] { window()->resize(original); });
     window()->resize(420, 300); settle();
@@ -13755,6 +13857,15 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     auto *folder = qobject_cast<FolderModel *>(filesRoot()->property("folder").value<QObject *>());
     QVERIFY(folder); folder->clearMarks();
     auto *menu = itemsNamed("fileMenu").first();
+    // Submitting a path through its footer action first leaves the region's
+    // bindings in the order that fed the footer back into the region.
+    openInlinePrompt("path");
+    auto *status = itemsNamed("statusBar").first();
+    QTRY_VERIFY(status->property("lastHint").value<QQuickItem *>());
+    status->property("lastHint").value<QQuickItem *>()->forceActiveFocus();
+    key(Qt::Key_Return);
+    QVERIFY(!window()->property("editingPath").toBool());
+    focusRow("one.txt");
     for (int activation = 0; activation < 3; ++activation) {
         auto *button = hint("menu"); QVERIFY(button);
         window()->update(); QTest::qWait(30);
@@ -13779,8 +13890,14 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     QVERIFY(tapItem(window(), mark)); settle();
     QCOMPARE(folder->markedCount(), 0);
     auto *filter = hint("filter"); QVERIFY(filter);
+    filter->forceActiveFocus();
     QVERIFY(tapItem(window(), filter)); settle();
     QVERIFY(window()->property("filtering").toBool());
+    QCOMPARE(window()->property("focusRegion").toString(), QStringLiteral("filter"));
+    key('x');
+    QCOMPARE(tab()->property("filter").toString(), QStringLiteral("x"));
+    key(Qt::Key_Backspace);
+    QCOMPARE(tab()->property("filter").toString(), QString());
     auto *keep = hint("keep"); QVERIFY(keep);
     QVERIFY(tapItem(window(), keep)); settle();
     QVERIFY(!window()->property("filtering").toBool());
