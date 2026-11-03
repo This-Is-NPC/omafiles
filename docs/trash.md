@@ -9,8 +9,8 @@ a Trash tab exists; switching away cancels its pending scan.
 A scan, restore or empty blocked on an unresponsive mount gives up its
 background worker slot until it returns, so a refresh and other background
 work never wait for it; a scan's result is discarded once a newer scan has
-started. Restore works while a refresh runs: it cancels that scan and the list
-is read again when the restore ends.
+started. Restore and empty work while a refresh runs: they act on the listed
+entries, cancel that scan, and the list is read again when they end.
 
 Each row shows the original path and local deletion date from its `.trashinfo`
 record. Long paths are elided to keep every row reachable; Enter or the row

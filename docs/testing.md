@@ -39,9 +39,11 @@ while the stale one is still blocked, so the check covers one CPU on any host.
 `listsFolderWhileUndoCaptureBlocks` holds an undo capture for a trash command
 inside the same mount lookup, with the pool at one thread, and requires a
 folder listing to complete while the capture is still blocked.
-`restoresTrashEntryDuringRefresh` holds a Trash refresh the same way and
-requires a restore of a listed entry to complete during it, as when `r` is
-pressed while a watcher-driven refresh runs.
+`operatesOnTrashDuringRefresh` holds a Trash refresh the same way and
+requires a restore of a listed entry, and an empty of the listed entries, to
+complete during it, as when `r` or `e` is pressed while a watcher-driven
+refresh runs. `browsesAndRestoresTrashByKeyboardAndPointer` holds one in the
+window and requires the **restore** and **empty…** buttons to stay usable.
 
 `waitsForDelayedPlaybackAcknowledgement` uses a helper that acknowledges playback
 after six seconds. The assertion waits for the actual acknowledgement and checks
