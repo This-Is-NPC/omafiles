@@ -523,6 +523,8 @@ private slots:
     void showsHiddenFilesOnlyWhenAsked();
     void movesBetweenTheListAndTheTagPanel();
     void reachesControlsWithTabAndComesBackWithEscape();
+    void drawsOneFocusRingOutsideWhatHasFocus();
+    void hintsFollowFocusOntoControls();
     void worksTabsAndPanesFromTheKeyboard();
     void typesAPathAndAFilter();
     void walksTheGraphWithTheKeyboard();
@@ -2399,6 +2401,205 @@ void TestStudio::reachesControlsWithTabAndComesBackWithEscape()
     const int cursorBefore = cursor();
     key('j');
     QVERIFY2(cursor() != cursorBefore, "Escape did not give the keyboard back to the list");
+}
+
+// One ring wherever the keyboard is: focusRing px of accent just outside the
+// box it marks, around the control itself, never cut by a clipping parent,
+// and the cursor row of a focused list keeps only its fill.
+void TestStudio::drawsOneFocusRingOutsideWhatHasFocus()
+{
+    QObject *root = m_engine->rootObjects().first();
+    const qreal width = omafiles::Theme::focusRing();
+    const QColor accent = m_theme->accent();
+    const auto sceneRect = [](QQuickItem *item) {
+        return item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+    };
+    const auto shownRings = [&] {
+        QList<QQuickItem *> shown;
+        for (auto *ring : itemsNamed(QStringLiteral("focusRing")))
+            if (ring->isVisible()) shown.append(ring);
+        return shown;
+    };
+    QSet<QString> regions;
+    const auto check = [&](const QString &step) {
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        QQuickItem *focus = window()->activeFocusItem();
+        QVERIFY(focus);
+        const QString where = step + QLatin1Char(' ') + focus->objectName() + QLatin1Char(' ')
+                              + QString::fromLatin1(focus->metaObject()->className());
+        regions.insert(root->property("focusRegion").toString());
+        const auto shown = shownRings();
+        QVERIFY2(shown.size() == 1, qPrintable(where + QStringLiteral(": %1 rings").arg(shown.size())));
+        QQuickItem *ring = shown.first();
+        auto *pen = ring->property("border").value<QObject *>();
+        QVERIFY(pen);
+        QCOMPARE(pen->property("width").toReal(), width);
+        QCOMPARE(pen->property("color").value<QColor>(), accent);
+        const qreal inset = ring->property("inset").toReal();
+        const QRectF box = sceneRect(ring->parentItem()).adjusted(inset, inset, -inset, -inset);
+        const QRectF drawn = sceneRect(ring);
+        QVERIFY2(drawn == box.adjusted(-width, -width, width, width), qPrintable(where));
+        // A control's ring is around it; only a section heading, which fills
+        // the clipped sidebar, keeps its ring inside its edge.
+        if (ring->parentItem()->property("ringInset").isValid()
+            && !focus->objectName().endsWith(QLatin1String("Heading")))
+            QVERIFY2(inset == 0 && drawn == sceneRect(focus).adjusted(-width, -width, width, width),
+                     qPrintable(where));
+        for (QQuickItem *up = ring->parentItem(); up; up = up->parentItem())
+            if (up->clip())
+                QVERIFY2(sceneRect(up).contains(drawn), qPrintable(where + QStringLiteral(" cut by ")
+                                                                    + up->objectName()));
+        QQuickItem *list = ring->parentItem()->property("currentItem").isValid() ? ring->parentItem() : nullptr;
+        auto *view = filesRoot() ? filesRoot()->property("view").value<QQuickItem *>() : nullptr;
+        if (!list && view && ring->parentItem()->isAncestorOf(view))
+            list = view;
+        auto *row = list ? list->property("currentItem").value<QQuickItem *>() : nullptr;
+        qInfo().noquote() << "Inventory PASS ring" << where << (row ? "cursor row" : "");
+        if (!row)
+            return;
+        // The cursor row keeps its fill: no accent bar in it, and no accent
+        // edge on it or on anything around it inside the ringed region.
+        const QRectF rowRect = sceneRect(row);
+        QList<QQuickItem *> parts{ring->parentItem()};
+        while (!parts.isEmpty()) {
+            QQuickItem *part = parts.takeFirst();
+            parts.append(part->childItems());
+            if (part == ring || !part->isVisible() || !part->inherits("QQuickRectangle"))
+                continue;
+            const bool rowSized = (part == row || row->isAncestorOf(part))
+                                  && part->height() >= row->height() - 2 * omafiles::Theme::spacingXs();
+            if (!rowSized && !sceneRect(part).contains(rowRect))
+                continue;
+            QVERIFY2(!rowSized || part->property("color").value<QColor>() != accent,
+                     qPrintable(where + QStringLiteral(": accent bar on the cursor row")));
+            auto *edge = part->property("border").value<QObject *>();
+            const QColor edgeColor = edge->property("color").value<QColor>();
+            QVERIFY2(edge->property("width").toReal() == 0 || edgeColor.alpha() == 0
+                         || edgeColor.rgb() != accent.rgb(),
+                     qPrintable(where + QStringLiteral(": a second ring at the cursor row")));
+        }
+    };
+
+    key(Qt::Key_Escape);
+    focusRow(QStringLiteral("one.txt"));
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+    check(QStringLiteral("list"));
+    QVERIFY(!QTest::currentTestFailed());
+    QQuickItem *start = window()->activeFocusItem();
+    QSet<QQuickItem *> visited;
+    for (int step = 0; step < 80; ++step) {
+        key(Qt::Key_Tab);
+        if (window()->activeFocusItem() == start)
+            break;
+        visited.insert(window()->activeFocusItem());
+        check(QStringLiteral("tab %1").arg(step));
+        QVERIFY(!QTest::currentTestFailed());
+    }
+    QCOMPARE(window()->activeFocusItem(), start);
+    for (int step = 0; step < 6; ++step) {
+        key(Qt::Key_Backtab, Qt::ShiftModifier);
+        check(QStringLiteral("backtab %1").arg(step));
+        QVERIFY(!QTest::currentTestFailed());
+    }
+    QVERIFY2(visited.size() >= 10, qPrintable(QString::number(visited.size())));
+    for (const char *region : {"views", "tags", "list"})
+        QVERIFY2(regions.contains(QLatin1String(region)), region);
+
+    for (char walk : {'v', 'd', 't'}) {
+        key(Qt::Key_Escape);
+        key(walk);
+        check(QStringLiteral("key %1").arg(QLatin1Char(walk)));
+        QVERIFY(!QTest::currentTestFailed());
+    }
+    QVERIFY(regions.contains(QStringLiteral("devices")));
+    key('a');
+    QTRY_VERIFY(itemsNamed(QStringLiteral("tagSheet")).first()->isVisible());
+    for (int step = 0; step < 8; ++step) {
+        check(QStringLiteral("tag sheet %1").arg(step));
+        QVERIFY(!QTest::currentTestFailed());
+        key(Qt::Key_Tab);
+    }
+    key(Qt::Key_Escape);
+    key(Qt::Key_Escape);
+
+    for (char sheet : {'?', ':', 'r'}) {
+        key(sheet);
+        check(QStringLiteral("sheet %1").arg(QLatin1Char(sheet)));
+        QVERIFY(!QTest::currentTestFailed());
+        key(Qt::Key_Tab);
+        check(QStringLiteral("sheet %1 tab").arg(QLatin1Char(sheet)));
+        QVERIFY(!QTest::currentTestFailed());
+        key(Qt::Key_Escape);
+        key(Qt::Key_Escape);
+    }
+
+    // A click focuses without the ring; the next key brings it back.
+    auto *handle = itemsNamed(QStringLiteral("tabHandle")).first();
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier,
+                      handle->mapToScene(QPointF(handle->width() / 2, handle->height() / 2)).toPoint());
+    settle();
+    QCOMPARE(window()->activeFocusItem(), handle);
+    QVERIFY(shownRings().isEmpty());
+    key(Qt::Key_Shift);
+    check(QStringLiteral("key after click"));
+    key(Qt::Key_Escape);
+}
+
+// The footer names what the focused control does, and its hints act on it.
+void TestStudio::hintsFollowFocusOntoControls()
+{
+    QObject *root = m_engine->rootObjects().first();
+    const auto restore = qScopeGuard([&] {
+        tab()->setCwd(m_tree.path());
+        key(Qt::Key_Escape);
+    });
+    const auto footer = [&] {
+        QStringList shown;
+        for (auto *pair : itemsNamed(QStringLiteral("hintAction")))
+            if (pair->isVisible()) {
+                const auto hint = pair->property("modelData").toMap();
+                shown << hint.value("key").toString() + QLatin1Char(' ') + hint.value("label").toString();
+            }
+        return shown;
+    };
+    const auto press = [&](const QString &hint) {
+        for (auto *pair : itemsNamed(QStringLiteral("hintAction")))
+            if (pair->isVisible() && pair->property("modelData").toMap().value("key").toString() == hint) {
+                QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier,
+                                  pair->mapToScene(QPointF(pair->width() / 2, pair->height() / 2)).toPoint());
+                settle();
+                return;
+            }
+        QFAIL(qPrintable(hint + QStringLiteral(" is not in the footer")));
+    };
+    const QStringList controlHints{QStringLiteral("Enter / Space press"), QStringLiteral("Tab next"),
+                                   QStringLiteral("Esc back to the list")};
+
+    key(Qt::Key_Escape);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+    auto *up = itemsNamed(QStringLiteral("parentFolderButton")).first();
+    for (int step = 0; step < 40 && window()->activeFocusItem() != up; ++step)
+        key(Qt::Key_Tab);
+    QCOMPARE(window()->activeFocusItem(), up);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("control"));
+    QTRY_COMPARE(footer(), controlHints);
+
+    press(QStringLiteral("Enter / Space"));
+    QCOMPARE(cwd(), QFileInfo(m_tree.path()).absolutePath());
+    QCOMPARE(window()->activeFocusItem(), up);
+    press(QStringLiteral("Tab"));
+    QVERIFY(window()->activeFocusItem() != up);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("control"));
+    press(QStringLiteral("Esc"));
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+    QTRY_COMPARE(footer().first(), QStringLiteral("? keys"));
+
+    // A footer hint is a key of the list, and keeps the list's hints.
+    for (int step = 0; step < 80 && window()->activeFocusItem()->objectName() != QLatin1String("hintAction"); ++step)
+        key(Qt::Key_Tab);
+    QCOMPARE(window()->activeFocusItem()->objectName(), QStringLiteral("hintAction"));
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+    QTRY_COMPARE(footer().first(), QStringLiteral("? keys"));
 }
 
 // Tabs and panes are the part of the window with no other way in: there is a
@@ -13972,11 +14173,14 @@ void TestStudio::pausesPreviewMediaWhenCovered()
     QVERIFY(!preview->playing());
 }
 
+// The ring's top edge: just above the frame, or along its edge where the frame
+// keeps the ring inside it.
 static bool hasFocusOutline(QQuickWindow *window, QQuickItem *frame, const QColor &color)
 {
     const QImage image = window->grabWindow();
     const QRect rectangle = frame->mapRectToScene(frame->boundingRect()).toAlignedRect().intersected(image.rect());
-    for (int y = rectangle.top(); y < std::min(rectangle.top() + 4, rectangle.bottom()); ++y) {
+    const int ring = omafiles::Theme::focusRing();
+    for (int y = std::max(0, rectangle.top() - ring); y < std::min(rectangle.top() + ring, rectangle.bottom()); ++y) {
         int matching = 0;
         for (int x = rectangle.left(); x <= rectangle.right(); ++x)
             if (image.pixelColor(x, y) == color) ++matching;
@@ -15057,7 +15261,7 @@ void TestStudio::auditsContextualFooterControls()
     std::unique_ptr<QObject> object(component.create()); QVERIFY2(object, qPrintable(component.errorString()));
     auto *strip = qobject_cast<QQuickItem *>(object.get()); QVERIFY(strip);
     strip->setParentItem(window()->contentItem()); strip->setZ(200);
-    strip->setWidth(2500); strip->setHeight(22);
+    strip->setWidth(2500); strip->setHeight(strip->implicitHeight());
     const QSize original = window()->size(); window()->resize(2600, 800);
     const auto restore = qScopeGuard([&] { window()->resize(original); });
     QSignalSpy chosen(strip, SIGNAL(requested(QString)));

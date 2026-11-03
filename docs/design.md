@@ -67,7 +67,9 @@ The window's colours and sizes come from one QML singleton, `Theme` (`src/studio
 | | `controlHeight` | 24 | buttons, tabs, chips that act, fields |
 | | `chipHeight` | 18 | tag chips and keycaps |
 | Indent | `iconSize`, `iconGap` | 16, 8 | a row's icon and the gap before its text |
-| Focus | `focusInset` | 2 | how far a focus ring sits inside its control |
+| Focus | `focusRing` | 2 | the width of the focus ring, drawn just outside the box it marks |
+
+`FocusRing` (`src/studio/qml/FocusRing.qml`) is the one focus ring: `focusRing` px of accent, radius `rounding`, just outside the box it marks. `FocusableControl` draws it around every button, chip, tab and footer hint. A region that fills a clipped pane (a list, a scrolling viewport, a section heading) and a text field keep their content `focusRing` px inside their edge and draw the ring there; a sheet's scroll keeps the same margin around its content, so the ring of a control at its edge is not cut. The ring is hidden after a pointer press until the next key (`PointerActivity.pointing`). `drawsOneFocusRingOutsideWhatHasFocus` in `tests/tst_studio.cpp` walks the window and its sheets by keyboard and checks that exactly one ring is drawn, where it belongs, uncut, and that no cursor row carries a second one.
 
 `Label` draws `quiet` text at `fontSmall` and other text at `fontBody`. A panel row (`PanelRow`) is `inset | icon | iconGap | text | trailing`, every part on the row's centre line, so its text starts `inset + 24` px inside the panel. A section heading (`SectionHeading`) is one row tall: its name starts at the row icons' edge, and its actions and the key that walks the section sit on the right, on the same centre line. Sections are `spacingL` apart with a `Rule` halfway. The scale is named the way KDE Kirigami's `Units` names its spacings and icon sizes; as in the GNOME HIG, spacing sits on a fixed grid (4 px here, where GNOME uses 6).
 

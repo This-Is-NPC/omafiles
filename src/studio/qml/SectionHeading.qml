@@ -17,6 +17,7 @@ FocusableControl {
 
     handCursor: false
     height: Theme.rowHeight
+    ringInset: Theme.focusRing
 
     Label {
         objectName: "headingCaption"

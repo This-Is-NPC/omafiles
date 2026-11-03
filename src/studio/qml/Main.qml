@@ -140,7 +140,7 @@ Window {
                 ReadOnlyText {
                     id: propertyText
                     objectName: "propertyText"
-                    width: propertiesScroll.width
+                    width: propertiesScroll.contentWidth
                     height: Math.max(implicitHeight, propertiesScroll.height)
                     focusFrame: propertiesScroll
                     onCursorRectangleChanged: if (activeFocus) propertiesScroll.revealRect(propertyText, cursorRectangle)
@@ -197,6 +197,11 @@ Window {
             if (item === activeSidebar.tagsFocusTarget || insideOverlay(activeTagsList, item)) return "tags"
             if (item === activeSidebar.viewsFocusTarget || insideOverlay(activeViewsList, item)) return "views"
         }
+        // A button, chip, tab or the path. A footer hint is a key of the list,
+        // and keeps the list's hints while it has the focus.
+        if ((item instanceof FocusableControl && item.objectName !== "hintAction")
+                || item instanceof TabHandle || item === crumbs)
+            return "control"
         return "list"
     }
     property bool pendingG: false
@@ -475,6 +480,10 @@ Window {
                                          : makingFolder ? "make"
                                          : matching ? "mark"
                                          : finding ? "find" : "save" }]
+        if (focusRegion === "control")
+            return [{ key: "Enter / Space", label: "press" },
+                    { key: "Tab", label: "next" },
+                    { key: "Esc", label: "back to the list" }]
         if (onTrash)
             return [{ key: "?", label: "keys" }, { key: ":", label: "cmd" },
                     { key: "Space", label: "mark" }, { key: "m", label: "menu" },
@@ -1677,6 +1686,17 @@ Window {
             else if (name === "Enter") entry.accepted(entry.text)
             return
         }
+        // The hint keeps the control's focus, so it acts on the control: a
+        // control, a tab and the path each answer `activated`.
+        if (focusRegion === "control") {
+            const control = activeFocusItem
+            // qmllint disable missing-property
+            if (name === "Enter") control.activated()
+            // qmllint enable missing-property
+            else if (name === "Tab") control.nextItemInFocusChain(true).forceActiveFocus(Qt.TabFocusReason)
+            else takeFocus()
+            return
+        }
         const key = name === "Esc" ? Qt.Key_Escape : name === "Enter" ? Qt.Key_Return
             : name === "Space" ? Qt.Key_Space : name.toUpperCase().charCodeAt(0)
         handleKey({ key: key, text: name === "Space" ? " " : name,
@@ -1820,6 +1840,7 @@ Window {
                     spacing: Theme.spacingXs
 
                     ToolButton {
+                        objectName: "parentFolderButton"
                         anchors.verticalCenter: parent.verticalCenter
                         iconKind: "up"
                         caption: "Parent folder"
@@ -1864,24 +1885,26 @@ Window {
                     anchors.verticalCenter: parent.verticalCenter
                     height: Theme.controlHeight
 
+                    FocusRing { focused: crumbs.activeFocus }
+
                     Row {
                         id: crumbs
                         objectName: "pathCrumbs"
                         visible: !win.editingPath
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.fill: parent
                         spacing: 0
                         Accessible.role: Accessible.Button
                         Accessible.name: crumbs.full
                         Accessible.focusable: win.onFiles && crumbs.full !== ""
                         activeFocusOnTab: win.onFiles && crumbs.full !== ""
+                        signal activated()
+                        onActivated: win.startPathEdit()
                         Keys.onReturnPressed: function (event) {
-                            win.startPathEdit()
+                            crumbs.activated()
                             event.accepted = true
                         }
                         Keys.onSpacePressed: function (event) {
-                            win.startPathEdit()
+                            crumbs.activated()
                             event.accepted = true
                         }
 
@@ -2982,6 +3005,7 @@ Window {
                         delegate: TabHandle {
                             id: tabHandle
                             objectName: "tabHandle"
+                            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
                             required property var modelData
                             required property int index
                             title: modelData.title
@@ -3510,18 +3534,6 @@ Window {
                                  : rowHover.hovered ? Theme.fill(Theme.foreground, 0.05)
                                                     : "transparent"
 
-                            // The cursor is a bar at the left edge rather than a
-                            // border around the row: at this row height an
-                            // outline is most of what you see, and the bar still
-                            // reads when the row is half scrolled out of view.
-                            Rectangle {
-                                anchors.left: parent.left
-                                anchors.top: parent.top
-                                anchors.bottom: parent.bottom
-                                width: 2
-                                color: row.onCursor ? Theme.accent : "transparent"
-                            }
-
                             Text {
                                 id: markDot
                                 anchors.left: parent.left
@@ -3765,8 +3777,6 @@ Window {
                                 color: cell.onCursor ? Theme.fill(Theme.accent, 0.16)
                                      : cellHover.hovered ? Theme.fill(Theme.foreground, 0.05)
                                                          : "transparent"
-                                border.width: 1
-                                border.color: cell.onCursor ? Theme.accent : "transparent"
 
                                 Column {
                                     id: tileColumn
@@ -3846,6 +3856,11 @@ Window {
                         // The pane's catch-all has focused the pane already.
                         onStarted: win.takeFocus()
                     }
+
+                    FocusRing {
+                        focused: root.activeFocus && Workspace.focusedPane === filesRoot.paneIndex
+                        inset: Theme.focusRing
+                    }
                 }
 
             }
@@ -3924,6 +3939,11 @@ Window {
                 anchors.margins: Theme.inset
                 quiet: true
                 text: "#tag is a tag · j k walks the map · l opens · m for the menu"
+            }
+
+            FocusRing {
+                focused: root.activeFocus && win.activeGraph === graph
+                inset: Theme.focusRing
             }
         }
     }

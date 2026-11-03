@@ -39,6 +39,7 @@ Rectangle {
         id: scroll
         objectName: "detailsScroll"
         focusOnScroll: true
+        gutter: 0
         anchors.fill: parent
         anchors.topMargin: Theme.inset
         anchors.bottomMargin: Theme.inset

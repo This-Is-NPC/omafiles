@@ -18,16 +18,14 @@ TextEdit {
         id: mouse
         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
     }
-    Rectangle {
-        objectName: "readOnlyFocusRing"
+    // The frame is a scrolling viewport the text fills; its ring sits on the
+    // frame's edge and the padding keeps the lines clear of it.
+    topPadding: Theme.focusRing
+    bottomPadding: Theme.focusRing
+
+    FocusRing {
         parent: edit.focusFrame
-        anchors.fill: parent
-        anchors.margins: Theme.focusInset
-        color: "transparent"
-        border.width: 1
-        border.color: Theme.accent
-        visible: edit.activeFocus
-        z: 2
-        Accessible.ignored: true
+        focused: edit.activeFocus
+        inset: Theme.focusRing
     }
 }

@@ -58,7 +58,11 @@ Column {
         radius: Theme.rounding
         color: Theme.sunken
         border.width: 1
-        border.color: input.activeFocus ? Theme.accent : Theme.fill(Theme.foreground, 0.18)
+        border.color: Theme.fill(Theme.foreground, 0.18)
+        FocusRing {
+            focused: input.activeFocus
+            inset: Theme.focusRing
+        }
         TextInput {
             id: input
             persistentSelection: true

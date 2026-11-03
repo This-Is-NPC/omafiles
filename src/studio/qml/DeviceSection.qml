@@ -53,7 +53,9 @@ Column {
         id: devices
         objectName: "sidebarDevices"
         width: parent.width
-        height: Math.min(contentHeight, deviceSection.maximumHeight)
+        height: Math.min(contentHeight + topMargin + bottomMargin, deviceSection.maximumHeight)
+        topMargin: Theme.focusRing
+        bottomMargin: Theme.focusRing
         visible: count > 0
         activeFocusOnTab: count > 0 || activeFocus
         clip: true
@@ -91,13 +93,10 @@ Column {
             reveal()
         }
         ImmediateWheel { anchors.fill: parent; view: devices; step: 32 }
-        Rectangle {
+        FocusRing {
             parent: devices
-            anchors.fill: parent
-            color: "transparent"
-            border.width: devices.activeFocus ? 1 : 0
-            border.color: Theme.accent
-            z: 2
+            focused: devices.activeFocus
+            inset: Theme.focusRing
         }
         delegate: PanelRow {
             id: row

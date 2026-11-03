@@ -46,7 +46,7 @@ class Theme : public QObject
     Q_PROPERTY(int chipHeight READ chipHeight CONSTANT)
     Q_PROPERTY(int iconSize READ iconSize CONSTANT)
     Q_PROPERTY(int iconGap READ iconGap CONSTANT)
-    Q_PROPERTY(int focusInset READ focusInset CONSTANT)
+    Q_PROPERTY(int focusRing READ focusRing CONSTANT)
 
 public:
     explicit Theme(QObject *parent = nullptr);
@@ -86,8 +86,8 @@ public:
     // A row's icon and the gap between it and the row's text.
     static constexpr int iconSize() { return 16; }
     static constexpr int iconGap() { return spacingS(); }
-    // How far a focus ring sits inside the control it marks.
-    static constexpr int focusInset() { return 2; }
+    // The width of the focus ring, drawn just outside the box it marks.
+    static constexpr int focusRing() { return 2; }
     Q_INVOKABLE QColor fill(const QColor &role, qreal alpha) const;
 
 signals:

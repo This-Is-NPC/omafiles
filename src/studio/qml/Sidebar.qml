@@ -61,6 +61,7 @@ Rectangle {
         id: scroll
         objectName: "sidebarScroll"
         focusOnScroll: true
+        gutter: 0
         anchors.fill: parent
         anchors.topMargin: Theme.inset
         anchors.bottomMargin: Theme.inset
@@ -116,7 +117,8 @@ Rectangle {
                     // Its own contents, and never more than a third of the panel: the
                     // vocabulary underneath has to stay reachable however many views
                     // somebody saves.
-                    height: Math.min(contentHeight, Math.max(Theme.rowHeight, scroll.height * 0.34))
+                    height: Math.min(contentHeight + topMargin + bottomMargin,
+                                     Math.max(Theme.rowHeight, scroll.height * 0.34))
                     onCurrentIndexChanged: Qt.callLater(sidebar.revealSelection)
                     visible: Views.count > 0
                     clip: true
@@ -125,16 +127,15 @@ Rectangle {
                     keyNavigationEnabled: false
                     currentIndex: -1
                     spacing: 1
+                    topMargin: Theme.focusRing
+                    bottomMargin: Theme.focusRing
                     Accessible.role: Accessible.List
                     Accessible.name: "Views"
 
-                    Rectangle {
+                    FocusRing {
                         parent: viewsListView
-                        anchors.fill: parent
-                        color: "transparent"
-                        border.width: viewsListView.activeFocus ? 1 : 0
-                        border.color: Theme.accent
-                        z: 2
+                        focused: viewsListView.activeFocus
+                        inset: Theme.focusRing
                     }
 
                     delegate: PanelRow {
@@ -154,7 +155,6 @@ Rectangle {
                         color: viewRow.onCursor ? Theme.fill(Theme.foreground, 0.10)
                              : viewRow.hovered ? Theme.fill(Theme.foreground, 0.06)
                                                : "transparent"
-                        border.color: viewRow.onCursor ? Theme.fill(Theme.accent, 0.45) : "transparent"
                         // The icon says which of the two it is, so a name that does
                         // not is still readable at a glance.
                         iconKind: viewRow.kind === "folder" ? "folder" : "tag"
@@ -236,7 +236,7 @@ Rectangle {
                     onActiveFocusChanged: sidebar.focusList(tagsListView)
                     onCountChanged: sidebar.keepCursor(tagsListView)
                     width: parent.width
-                    height: Math.min(contentHeight,
+                    height: Math.min(contentHeight + topMargin + bottomMargin,
                                      Math.max(Theme.rowHeight, scroll.height - tagsHeading.height))
                     onCurrentIndexChanged: Qt.callLater(sidebar.revealSelection)
                     clip: true
@@ -245,16 +245,15 @@ Rectangle {
                     keyNavigationEnabled: false
                     currentIndex: -1
                     spacing: 1
+                    topMargin: Theme.focusRing
+                    bottomMargin: Theme.focusRing
                     Accessible.role: Accessible.List
                     Accessible.name: "Tags"
 
-                    Rectangle {
+                    FocusRing {
                         parent: tagsListView
-                        anchors.fill: parent
-                        color: "transparent"
-                        border.width: tagsListView.activeFocus ? 1 : 0
-                        border.color: Theme.accent
-                        z: 2
+                        focused: tagsListView.activeFocus
+                        inset: Theme.focusRing
                     }
 
                     delegate: PanelRow {
@@ -273,9 +272,7 @@ Rectangle {
                              : onCursor ? Theme.fill(Theme.foreground, 0.10)
                              : hovered ? Theme.fill(Theme.foreground, 0.06)
                                        : "transparent"
-                        border.color: chosen ? Theme.fill(Theme.accent, 0.55)
-                                    : onCursor ? Theme.fill(Theme.accent, 0.45)
-                                               : "transparent"
+                        border.color: chosen ? Theme.fill(Theme.accent, 0.55) : "transparent"
                         iconKind: "tag"
                         iconInk: tagRow.chosen ? Theme.accent : Theme.dim
                         text: tagRow.tag

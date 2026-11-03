@@ -4,7 +4,7 @@ import QtQuick
 import QtQuick.Window
 import omafiles
 
-// Shared tab focus, keyboard activation, inner focus ring, and pointer shell.
+// Shared tab focus, keyboard activation, the focus ring, and pointer shell.
 // Host types set chrome colours and content; Escape is not accepted here.
 Item {
     id: control
@@ -15,6 +15,9 @@ Item {
     property int acceptedButtons: Qt.LeftButton
     property var tapped: null
     property Item focusRingSource: control
+    /// How far inside the control the ring's box sits: set by a control that
+    /// fills a clipped pane, where a ring outside it would be cut.
+    property real ringInset: 0
     property Item pointerFocus: control
     property string tooltipCaption: ""
     property string tooltipKey: ""
@@ -107,17 +110,9 @@ Item {
         anchors.fill: parent
     }
 
-    // Inside the control, not around it: chips sit at the edge of clipped rows
-    // where a ring drawn outside loses two of its sides.
-    Rectangle {
-        anchors.fill: parent
-        anchors.margins: Theme.focusInset
-        radius: Math.max(0, Theme.rounding - 1)
-        color: "transparent"
-        border.width: 1
-        border.color: Qt.colorEqual(chrome.border.color, Theme.accent) ? Theme.foreground : Theme.accent
-        visible: control.focusRingSource.activeFocus
-        z: 2
+    FocusRing {
+        focused: control.focusRingSource.activeFocus
+        inset: control.ringInset
     }
 
     HoverHandler {

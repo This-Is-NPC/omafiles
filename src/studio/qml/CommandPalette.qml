@@ -82,7 +82,12 @@ Rectangle {
                         radius: Theme.rounding
                         color: Theme.sunken
                         border.width: 1
-                        border.color: Theme.fill(Theme.accent, 0.45)
+                        border.color: Theme.fill(Theme.foreground, 0.18)
+
+                        FocusRing {
+                            focused: query.activeFocus
+                            inset: Theme.focusRing
+                        }
 
                         Text {
                             id: lead
