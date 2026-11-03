@@ -67,7 +67,11 @@ read-only MIME directory. See Qt's [MIME provider implementation](https://github
 
 Thumbnail tests wait for readiness, the expected painted color, runner completion,
 and GUI heartbeat events. A failed thumbnail decode is observed through its completion
-signal before checking that it has no image. Cancellation checks finish before fixture teardown;
+signal before checking that it has no image; a cache-only miss is observed the same
+way. Whether a thumbnail has a request scheduled is read from its `thumbnailRequest`
+timer at the moment it changes, not after a wait. The visible-rows test adds a file to the folder while quick preview is open, so
+the folder reload that replaces every row happens on every run rather than only
+under host load. Cancellation checks finish before fixture teardown;
 a subsequent completed request proves the queue has progressed. Preview tests wait
 for decoded packets, playback state and seek acknowledgements. A helper PID file is
 ready when it contains a positive PID, not merely when it exists. A completed audio

@@ -3557,7 +3557,8 @@ Window {
                                 folder: folderModel
                                 rowIndex: row.index
                                 path: row.path
-                                allowed: filesRoot.thumbnailsReady && !previewSheet.visible
+                                allowed: filesRoot.thumbnailsReady
+                                cacheOnly: previewSheet.visible
                                 inViewport: filesRoot.view === listing && !row.pooled && row.visible
                                     && row.y + row.height > listing.contentY
                                     && row.y < listing.contentY + listing.height
@@ -3791,7 +3792,8 @@ Window {
                                         rowIndex: cell.index
                                         path: cell.path
                                         extent: 256
-                                        allowed: filesRoot.thumbnailsReady && !previewSheet.visible
+                                        allowed: filesRoot.thumbnailsReady
+                                        cacheOnly: previewSheet.visible
                                         inViewport: filesRoot.view === grid && !cell.pooled && cell.visible
                                             && cell.y + cell.height > grid.contentY
                                             && cell.y < grid.contentY + grid.height

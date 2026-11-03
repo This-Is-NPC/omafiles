@@ -486,6 +486,7 @@ private slots:
     void preservesInheritedHelperAffinity();
     void inheritsPreviewHelperAffinity();
     void cancelsThumbnailWorkAndKeepsTheGuiResponsive();
+    void showsOnlyCachedThumbnailsWhenCacheOnly();
     void thumbnailsOnlyVisibleRowsInEveryFileView();
     void boundsThumbnailHelpersWithoutCachingExecutionFailures();
     void refreshesVisibleThumbnails_data();
@@ -11672,7 +11673,7 @@ void TestStudio::avoidsSourceDecodersForEmptyFiles()
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.close();
         ThumbnailWork work;
-        QVERIFY(thumbnailFor(file.fileName(), 128, f.token(), false, &work).isNull());
+        QVERIFY(thumbnailFor(file.fileName(), 128, f.token(), ThumbnailFetch::CacheOrGenerate, &work).isNull());
         QCOMPARE(work.sourceDecodes, 0);
         QCOMPARE(work.mimeLookups, 0);
     }
@@ -11680,9 +11681,9 @@ void TestStudio::avoidsSourceDecodersForEmptyFiles()
         const QString path = f.source(name);
         QVERIFY(!path.isEmpty());
         ThumbnailWork work;
-        QCOMPARE(thumbnailFor(path, 128, f.token(), false, &work).pixelColor(10, 10), QColor(Qt::red));
+        QCOMPARE(thumbnailFor(path, 128, f.token(), ThumbnailFetch::CacheOrGenerate, &work).pixelColor(10, 10), QColor(Qt::red));
         QCOMPARE(work.sourceDecodes, 1);
-        QVERIFY(!thumbnailFor(path, 128, f.token(), false, &work).isNull());
+        QVERIFY(!thumbnailFor(path, 128, f.token(), ThumbnailFetch::CacheOrGenerate, &work).isNull());
         QCOMPARE(work.sourceDecodes, 0);
     }
     QFile bitmap(f.root.filePath("bitmap.txt"));
@@ -11690,7 +11691,7 @@ void TestStudio::avoidsSourceDecodersForEmptyFiles()
     bitmap.write("#define test_width 8\n#define test_height 1\nstatic char test_bits[] = {\n 0xff };\n");
     bitmap.close();
     ThumbnailWork work;
-    const QImage image = thumbnailFor(bitmap.fileName(), 128, f.token(), false, &work);
+    const QImage image = thumbnailFor(bitmap.fileName(), 128, f.token(), ThumbnailFetch::CacheOrGenerate, &work);
     QCOMPARE(image.size(), QSize(8, 1));
     QCOMPARE(work.sourceDecodes, 1);
 
@@ -11708,7 +11709,7 @@ void TestStudio::avoidsSourceDecodersForEmptyFiles()
     const auto restore = qScopeGuard([&] { setThumbnailRunner(previous); });
     const QString empty = f.root.filePath("extensionless-empty");
     { QFile file(empty); QVERIFY(file.open(QIODevice::WriteOnly)); }
-    QCOMPARE(thumbnailFor(empty, 128, f.token(), false, &work).pixelColor(10, 10), QColor(Qt::green));
+    QCOMPARE(thumbnailFor(empty, 128, f.token(), ThumbnailFetch::CacheOrGenerate, &work).pixelColor(10, 10), QColor(Qt::green));
     QCOMPARE(work.sourceDecodes, 0);
     QCOMPARE(calls, 1);
     QCOMPARE(work.mimeLookups, 1);
@@ -12300,6 +12301,58 @@ void TestStudio::cancelsThumbnailWorkAndKeepsTheGuiResponsive()
     QVERIFY(!item.ready());
 }
 
+void TestStudio::showsOnlyCachedThumbnailsWhenCacheOnly()
+{
+    ThumbnailFixture f;
+    const QString path = f.source("cache-only.png", Qt::blue);
+    QVERIFY(!path.isEmpty());
+    {
+        Thumbnail missing;
+        missing.setPath(path);
+        missing.setCacheOnly(true);
+        QSignalSpy answered(&missing, &Thumbnail::readyChanged);
+        missing.setRequested(true);
+        QTRY_COMPARE(answered.count(), 1);
+        QVERIFY(!missing.ready());
+        QVERIFY(!QFileInfo::exists(f.cached(path)));
+        missing.setCacheOnly(false);
+        QTRY_VERIFY(missing.ready());
+        QTRY_VERIFY(QFileInfo::exists(f.cached(path)));
+    }
+    Thumbnail cached;
+    cached.setWidth(128); cached.setHeight(128);
+    cached.setPath(path);
+    cached.setCacheOnly(true);
+    cached.setRequested(true);
+    QTRY_VERIFY(cached.ready());
+    const auto color = [&] {
+        QImage frame(128, 128, QImage::Format_ARGB32); frame.fill(Qt::transparent);
+        QPainter painter(&frame); cached.paint(&painter); painter.end();
+        return frame.pixelColor(64, 64);
+    };
+    QCOMPARE(color(), QColor(Qt::blue));
+    auto *request = cached.findChild<QTimer *>("thumbnailRequest");
+    QVERIFY(request);
+    cached.setCacheOnly(false);
+    QVERIFY(request->isActive());
+    cached.setCacheOnly(true);
+    QVERIFY(!request->isActive());
+    QVERIFY(cached.ready());
+    int changes = 0;
+    bool scheduled = false;
+    connect(&cached, &Thumbnail::sourceChanged, &cached, [&] { ++changes; scheduled |= request->isActive(); });
+    struct stat before {};
+    QVERIFY(::stat(QFile::encodeName(path).constData(), &before) == 0);
+    QVERIFY(!f.source("cache-only.png", Qt::red).isEmpty());
+    const timespec times[] = {before.st_atim, before.st_mtim};
+    QVERIFY(::utimensat(AT_FDCWD, QFile::encodeName(path).constData(), times, 0) == 0);
+    QTRY_VERIFY(changes > 0);
+    QVERIFY(!scheduled);
+    QVERIFY(!cached.ready());
+    cached.setCacheOnly(false);
+    QTRY_COMPARE(color(), QColor(Qt::red));
+}
+
 void TestStudio::thumbnailsOnlyVisibleRowsInEveryFileView()
 {
     const QString folder = m_tree.filePath("pictures");
@@ -12349,7 +12402,9 @@ void TestStudio::thumbnailsOnlyVisibleRowsInEveryFileView()
         const int capacity = (int(view->property("height").toReal()) / height + 2) * columns;
         const auto requestedCount = [&] {
             const auto items = previews();
-            return std::count_if(items.cbegin(), items.cend(), [](Thumbnail *item) { return item->requested(); });
+            return std::count_if(items.cbegin(), items.cend(), [](Thumbnail *item) {
+                return item->requested() && !item->cacheOnly();
+            });
         };
         QTRY_VERIFY(requestedCount() <= capacity);
         focusRow("image-000.png");
@@ -12362,6 +12417,15 @@ void TestStudio::thumbnailsOnlyVisibleRowsInEveryFileView()
         QTRY_VERIFY(sheet->isVisible());
         QTRY_COMPARE(requestedCount(), 0);
         QVERIFY(hasReady());
+        // A folder reload behind the preview replaces every row; they show cached thumbnails again.
+        const QString added = QDir(folder).filePath("image-new.png");
+        QVERIFY(image.save(added));
+        QTRY_VERIFY(rowOf("image-new.png") >= 0);
+        settle();
+        QTRY_VERIFY(hasReady());
+        QCOMPARE(requestedCount(), 0);
+        QVERIFY(QFile::remove(added));
+        QTRY_VERIFY(rowOf("image-new.png") < 0);
         key(Qt::Key_Escape);
         QTRY_VERIFY(!sheet->isVisible());
         QTRY_VERIFY(requestedCount() > 0);
