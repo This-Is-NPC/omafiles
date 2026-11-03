@@ -60,8 +60,8 @@ Rectangle {
 
             OverlayPanel {
                 preferredWidth: 520
-                preferredHeight: Math.min(380, 2 * Theme.inset + Theme.controlHeight + Theme.spacingS
-                                              + list.contentHeight)
+                readonly property real chrome: 2 * Theme.inset + Theme.controlHeight + Theme.spacingS
+                preferredHeight: chrome + list.wholeRows(Math.min(380, parent.height - 2 * margin) - chrome)
 
                 Accessible.role: Accessible.Dialog
                 Accessible.name: "Commands"

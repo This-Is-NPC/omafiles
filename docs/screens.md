@@ -80,19 +80,21 @@ Picture: No picture yet.
 
 ## Row menu
 
-Right-click a row, press **m**, or hold and press on a touch/pen to open the menu for that row. The menu offers: Open, Quick preview, Mark/Unmark, Cut, Copy, Paste, Rename, New folder, Compress, Extract archive, and others.
+Right-click a row, press **m**, or hold and press on a touch/pen to open the menu for that row. From the keyboard the menu opens at the row's name, below the row, or above it when it does not fit below; from the pointer it opens at the pointer, or above it near the bottom of the window. It stays 12 px inside the window and shows whole rows; a menu longer than the window scrolls.
+
+The entries come in groups with a line between them, in this order: open (Open, Quick preview, Open with…, Go to containing folder, new tab, other pane, parent in new tab, graph tab, terminal, editor); send (LocalSend, scripts); copy (path, name, URI, tags, tag command, open command); tags (add, remove, rename, apply, clear, copy onto the marked, adopt); mark (mark, mark all, clear, invert, same tag, same type, by pattern); archive (Compress, Extract archive); files (copy, cut, paste, to the other pane, duplicate, links, rename, permissions, new folder, trash); browse (filter or browse by tag, save a view, find, recent); index (reindex, prune, verify, reload). A group with nothing to offer for the row is left out, and so is its line.
 
 Reach it: Press **m**, right-click, or touch/pen long-press a row.
 
 Keys: **m / Menu / Shift F10** (open menu).
 
-Menu keys: **l** (open), **i** (quick preview), **Space** (mark), **Ctrl c** (copy), **Ctrl x** (cut), **Ctrl v** (paste), **r** (rename), **n** (new folder), **Esc** (close). Compress and Extract are chosen from the list; they have no key of their own.
+Menu keys: **j k / ↓ ↑** (next, previous entry; the lines between groups are not entries), **Home End / PgUp PgDn** (first, last, page), **Enter / Space** (choose), **Esc** (close). An entry with a key of its own shows it on the right: **l** (open), **i** (quick preview), **Space** (mark), **Ctrl c** (copy), **Ctrl x** (cut), **Ctrl v** (paste), **r** (rename), **n** (new folder). Compress and Extract are chosen from the list; they have no key of their own.
 
 Picture: No picture yet.
 
 ## Command palette
 
-Press **:**, **Ctrl p**, or choose **Commands** to open the command palette. Type to search all commands: Quick preview, Mark all, Sort by name, Undo, Save this as a view, Open Trash, and many others. Use **Ctrl Home / Ctrl End** to jump to the start or end of the list. **Enter** runs the selected command.
+Press **:**, **Ctrl p**, or choose **Commands** to open the command palette. Type to search all commands: Quick preview, Mark all, Sort by name, Undo, Save this as a view, Open Trash, and many others. The list shows whole rows: as many as fit, and the rest scroll. Use **Ctrl Home / Ctrl End** to jump to the start or end of the list. **Enter** runs the selected command.
 
 Reach it: Press **:**, **Ctrl p**, or click the **Cmd** button in the footer.
 

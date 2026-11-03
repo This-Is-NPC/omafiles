@@ -1106,14 +1106,16 @@ Window {
     }
 
     // ------------------------------------------------------------------ menu
-    function openFileMenuAt(x, y) {
+    // Opens below the span from top to bottom, or above it where it does not
+    // fit; a point is a span of no height.
+    function openFileMenuAt(x, top, bottom) {
         // The receipt from the last command answered the question that was
         // asked then. Opening the menu is as good a sign as any that it has
         // been read, and the status bar has one line to say things on.
         IndexModel.clearNotice()
-        menuX = x
-        menuY = y
-        fileMenu.openAt(x, y)
+        fileMenu.openBelow(x, top, bottom)
+        menuX = fileMenu.panel.x
+        menuY = fileMenu.panel.y
     }
 
     // The list of applications, over where the entry that asked for it was.
@@ -1190,18 +1192,19 @@ Window {
     function openFileMenuForPath(path, kind, x, y) {
         fileMenu.targetPath = path
         fileMenu.targetKind = kind
-        openFileMenuAt(x, y)
+        openFileMenuAt(x, y, y)
     }
 
-    // Opened by `m`, so it has to place itself: under the row if the row is on
-    // screen, in the middle of the pane if there is no row to point at.
+    // Opened by `m`, so it has to place itself: under the row, at its name, if
+    // the row is on screen (above it where it does not fit below), in the
+    // middle of the pane if there is no row to point at.
     function openFileMenuForListing() {
         const listing = activeListing
         const folder = activeFolder
         if (!listing || !folder || listing.currentIndex < 0) {
             fileMenu.targetPath = ""
             fileMenu.targetKind = ""
-            openFileMenuAt(root.width / 2, root.height / 3)
+            openFileMenuAt(root.width / 2, root.height / 3, root.height / 3)
             return
         }
         fileMenu.targetPath = folder.pathAt(listing.currentIndex)
@@ -1212,11 +1215,11 @@ Window {
         const item = listing.currentIndex < folder.count
                      ? listing.itemAtIndex(listing.currentIndex) : null
         if (!item) {
-            openFileMenuAt(root.width / 2, root.height / 3)
+            openFileMenuAt(root.width / 2, root.height / 3, root.height / 3)
             return
         }
-        const pos = listing.mapToItem(root, 0, item.y - listing.contentY)
-        openFileMenuAt(pos.x + 24, pos.y + item.height)
+        const top = item.mapToItem(root, 0, 0).y
+        openFileMenuAt(item.nameItem.mapToItem(root, 0, 0).x, top, top + item.height)
     }
 
     function openViewMenuAt(row, x, y) {
@@ -2349,11 +2352,11 @@ Window {
                        ? many.replace("%1", fileMenu.targets.length) : one
             }
 
+            // Groups, in order: open, send, copy, tags, mark, archive, files,
+            // browse, index.
             actions: [
                 { id: "open", label: "Open", key: "l", when: fileMenu.hasTarget },
                 { id: "preview", label: "Quick preview", key: "i", when: fileMenu.isFile },
-                { id: "compress", label: fileMenu.counted("Compress…", "Compress %1 entries…"), when: fileMenu.onRow && !IndexModel.operationBusy },
-                { id: "extract", label: "Extract archive…", when: fileMenu.isFile && !IndexModel.operationBusy },
                 { id: "open-with", label: "Open with…",
                   when: IndexModel.canOpenWith && fileMenu.isRow },
                 { id: "go-to", label: "Go to containing folder",
@@ -2366,61 +2369,29 @@ Window {
                   when: IndexModel.canOpenTerminal && fileMenu.hasHere },
                 { id: "editor", label: "Open in editor",
                   when: IndexModel.canEdit && fileMenu.isFile },
-                { id: "share", label: "Send with LocalSend",
+
+                { id: "share", opensGroup: true, label: "Send with LocalSend",
                   when: IndexModel.canShare && fileMenu.hasTarget },
                 { id: "script",
                   label: fileMenu.counted("Run a script over it…",
                                           "Run a script over %1 files…"),
                   when: IndexModel.hasScripts && fileMenu.isRow },
 
-                { id: "copy-path", label: fileMenu.counted("Copy path", "Copy %1 paths"),
+                { id: "copy-path", opensGroup: true, label: fileMenu.counted("Copy path", "Copy %1 paths"),
                   when: fileMenu.hasTarget },
                 { id: "copy-name", label: "Copy name", when: fileMenu.hasTarget },
                 { id: "copy-uri", label: fileMenu.counted("Copy as URI", "Copy %1 URIs"),
                   when: fileMenu.hasTarget },
-                { id: "edit-tag-add", label: fileMenu.counted("Add tag…", "Add tag to %1 files…"),
+                { id: "copy-tags", label: "Copy tags", when: fileMenu.targetTags.length > 0 },
+                { id: "copy-tag-command", label: "Copy tag command", when: fileMenu.hasTarget },
+                { id: "copy-open-command", label: "Copy open command", when: fileMenu.isFile },
+
+                { id: "edit-tag-add", opensGroup: true, label: fileMenu.counted("Add tag…", "Add tag to %1 files…"),
                   when: fileMenu.onRow },
                 { id: "edit-tag-remove", label: fileMenu.counted("Remove tag…", "Remove tag from %1 files…"),
                   when: fileMenu.onRow },
                 { id: "edit-tag-rename", label: fileMenu.counted("Rename tag…", "Rename tag on %1 files…"),
                   when: fileMenu.onRow },
-                { id: "copy-tags", label: "Copy tags", when: fileMenu.targetTags.length > 0 },
-                { id: "copy-tag-command", label: "Copy tag command", when: fileMenu.hasTarget },
-                { id: "copy-open-command", label: "Copy open command", when: fileMenu.isFile },
-
-                { id: "mark", label: fileMenu.targetMarked ? "Unmark" : "Mark", key: "Space",
-                  when: fileMenu.onRow },
-                { id: "mark-all", label: "Mark all", key: "a", when: win.onFiles },
-                { id: "clear-marks", label: "Clear marks", key: "A",
-                  when: win.onFiles && fileMenu.markedCount > 0 },
-                { id: "invert-marks", label: "Invert marks", when: win.onFiles },
-                { id: "mark-same-tag", label: "Mark same tag",
-                  when: fileMenu.onRow && fileMenu.targetTags.length > 0 },
-                { id: "mark-same-type", label: "Mark same type", when: fileMenu.onRow },
-                { id: "mark-pattern", label: "Mark by pattern", key: "*", when: win.onFiles },
-
-                { id: "filter-tag", label: "Filter by " + fileMenu.firstTag,
-                  when: win.onFiles && fileMenu.firstTag !== "" },
-                // The other half of the same thought: a listing is one tag, a
-                // tags tab is that tag and every one that still divides it.
-                { id: "browse-tag", label: "Browse #" + fileMenu.firstTag,
-                  when: fileMenu.firstTag !== "" },
-                // A folder and a query are pinned by the same entry, because
-                // they are the same thing saved: what is on screen, by a name.
-                { id: "save-view",
-                  label: win.onTags ? "Save this query as a view"
-                                    : "Save this folder as a view",
-                  when: win.onFiles },
-                { id: "leave-tag", label: "Leave tag listing",
-                  when: win.activeTab !== null && win.activeTab.selectedTag !== "" },
-                { id: "find", label: "Find by name across the roots", key: "f",
-                  when: win.onDirectory },
-                { id: "leave-search", label: "Leave the search", key: "h",
-                  when: win.onDirectory && win.activeTab.pattern !== "" },
-                { id: "recent", label: "Recently opened on the desktop",
-                  when: win.onFiles && !(win.onDirectory && win.activeTab.recent) },
-                { id: "leave-recent", label: "Leave the recent list", key: "h",
-                  when: win.onDirectory && win.activeTab.recent },
                 // Not offered where the row already carries it: applying a
                 // tag a file has is a write that changes nothing, and an entry
                 // that does nothing reads as one that failed.
@@ -2437,7 +2408,21 @@ Window {
                         && fileMenu.markedCount > 0 && fileMenu.targetTags.length > 0 },
                 { id: "adopt", label: "Adopt tags from disk here", when: fileMenu.hasHere },
 
-                { id: "copy-files", label: fileMenu.counted("Copy", "Copy %1 files"),
+                { id: "mark", opensGroup: true, label: fileMenu.targetMarked ? "Unmark" : "Mark", key: "Space",
+                  when: fileMenu.onRow },
+                { id: "mark-all", label: "Mark all", key: "a", when: win.onFiles },
+                { id: "clear-marks", label: "Clear marks", key: "A",
+                  when: win.onFiles && fileMenu.markedCount > 0 },
+                { id: "invert-marks", label: "Invert marks", when: win.onFiles },
+                { id: "mark-same-tag", label: "Mark same tag",
+                  when: fileMenu.onRow && fileMenu.targetTags.length > 0 },
+                { id: "mark-same-type", label: "Mark same type", when: fileMenu.onRow },
+                { id: "mark-pattern", label: "Mark by pattern", key: "*", when: win.onFiles },
+
+                { id: "compress", opensGroup: true, label: fileMenu.counted("Compress…", "Compress %1 entries…"), when: fileMenu.onRow && !IndexModel.operationBusy },
+                { id: "extract", label: "Extract archive…", when: fileMenu.isFile && !IndexModel.operationBusy },
+
+                { id: "copy-files", opensGroup: true, label: fileMenu.counted("Copy", "Copy %1 files"),
                   key: "Ctrl c", when: fileMenu.isRow },
                 { id: "cut-files", label: fileMenu.counted("Cut", "Cut %1 files"),
                   key: "Ctrl x", when: fileMenu.isRow },
@@ -2477,7 +2462,30 @@ Window {
                 { id: "trash", label: fileMenu.counted("Move to trash", "Move %1 files to trash"),
                   when: fileMenu.isRow },
 
-                { id: "reindex", label: "Reindex this folder", when: fileMenu.hasHere },
+                { id: "filter-tag", opensGroup: true, label: "Filter by " + fileMenu.firstTag,
+                  when: win.onFiles && fileMenu.firstTag !== "" },
+                // The other half of the same thought: a listing is one tag, a
+                // tags tab is that tag and every one that still divides it.
+                { id: "browse-tag", label: "Browse #" + fileMenu.firstTag,
+                  when: fileMenu.firstTag !== "" },
+                // A folder and a query are pinned by the same entry, because
+                // they are the same thing saved: what is on screen, by a name.
+                { id: "save-view",
+                  label: win.onTags ? "Save this query as a view"
+                                    : "Save this folder as a view",
+                  when: win.onFiles },
+                { id: "leave-tag", label: "Leave tag listing",
+                  when: win.activeTab !== null && win.activeTab.selectedTag !== "" },
+                { id: "find", label: "Find by name across the roots", key: "f",
+                  when: win.onDirectory },
+                { id: "leave-search", label: "Leave the search", key: "h",
+                  when: win.onDirectory && win.activeTab.pattern !== "" },
+                { id: "recent", label: "Recently opened on the desktop",
+                  when: win.onFiles && !(win.onDirectory && win.activeTab.recent) },
+                { id: "leave-recent", label: "Leave the recent list", key: "h",
+                  when: win.onDirectory && win.activeTab.recent },
+
+                { id: "reindex", opensGroup: true, label: "Reindex this folder", when: fileMenu.hasHere },
                 { id: "prune", label: "Prune missing rows here", when: fileMenu.hasHere },
                 { id: "verify", label: "Verify this tree", when: fileMenu.hasHere },
                 { id: "reload", label: "Reload index", key: "F5" }
@@ -3501,6 +3509,7 @@ Window {
                             readonly property var tagList: row.tags.length === 0
                                                            ? [] : row.tags.split(" ")
                             readonly property bool onCursor: listing.currentIndex === index
+                            readonly property Item nameItem: rowName
 
                             width: ListView.view.width
                             height: Theme.rowHeight
@@ -3729,6 +3738,7 @@ Window {
                             required property int count
                             required property int index
                             readonly property bool onCursor: grid.currentIndex === index
+                            readonly property Item nameItem: cellName
 
                             Accessible.role: Accessible.ListItem
                             Accessible.name: cell.name

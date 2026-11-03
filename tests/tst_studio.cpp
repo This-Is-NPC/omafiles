@@ -540,6 +540,10 @@ private slots:
     void spellsEveryKeyOneWay();
     void mergesKeyRowsThatShareALabel();
     void alignsTheKeySheetDescriptions();
+    void groupsTheRowMenu();
+    void opensTheRowMenuAtTheRowName();
+    void showsWholeRowsInOverlayLists_data();
+    void showsWholeRowsInOverlayLists();
     void survivesClosingAPaneWithoutComplaint();
     void noticesTheIndexChangingUnderIt();
     void watchesTheIndexOnAFreshInstall();
@@ -3617,6 +3621,156 @@ void TestStudio::alignsTheKeySheetDescriptions()
         ++rows;
     }
     QVERIFY2(edges.size() >= 10 && rows >= 60, "the key sheet rendered almost nothing");
+    key(Qt::Key_Escape);
+    settle();
+}
+
+// The row menu is grouped: the first entry shown from each group after the
+// first draws a separator on its top edge, a group with nothing shown draws
+// none, and the separator is not a row, so `j` and `k` step entry by entry.
+void TestStudio::groupsTheRowMenu()
+{
+    focusRow(QStringLiteral("one.txt"));
+    key('m');
+    QQuickItem *menu = itemsNamed("fileMenu").first();
+    QVERIFY(menu->isVisible());
+    int group = 0;
+    int shownGroup = -1;
+    QStringList expected;
+    for (const QVariant &action : menu->property("actions").toList()) {
+        const QVariantMap entry = action.toMap();
+        if (entry.value("opensGroup").toBool())
+            ++group;
+        if (entry.contains("when") && !entry.value("when").toBool())
+            continue;
+        if (shownGroup >= 0 && group != shownGroup)
+            expected << entry.value("id").toString();
+        shownGroup = group;
+    }
+    QVERIFY2(group >= 5 && expected.size() >= 4, "the row menu has almost no groups");
+    QStringList separated;
+    const QVariantList shown = menu->property("shown").toList();
+    for (const QVariant &entry : shown)
+        if (entry.toMap().value("separated").toBool())
+            separated << entry.toMap().value("id").toString();
+    QCOMPARE(separated, expected);
+
+    auto *list = menu->findChild<QQuickItem *>("overlayList");
+    QVERIFY(list);
+    for (int step = 0; step < shown.size(); ++step) {
+        QCOMPARE(list->property("currentIndex").toInt(), step);
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        auto *row = qobject_cast<QQuickItem *>(
+            list->property("currentItem").value<QObject *>());
+        QVERIFY(row);
+        auto *line = row->findChild<QQuickItem *>("menuSeparator");
+        QVERIFY(line);
+        QCOMPARE(line->isVisible(), shown.at(step).toMap().value("separated").toBool());
+        QCOMPARE(line->mapToItem(row, QPointF()).y(), 0.0);
+        key('j');
+    }
+    for (int step = shown.size() - 1; step > 0; --step) {
+        key('k');
+        QCOMPARE(list->property("currentIndex").toInt(), step - 1);
+    }
+    key(Qt::Key_Escape);
+    settle();
+}
+
+// `m` opens the row menu at the cursor row's name: below the row, or above it
+// when the menu does not fit below.
+void TestStudio::opensTheRowMenuAtTheRowName()
+{
+    const QSize original = window()->size();
+    const QString before = cwd();
+    QTemporaryDir tall;
+    QVERIFY(tall.isValid());
+    for (int i = 0; i < 60; ++i) {
+        QFile file(tall.filePath(QStringLiteral("row-%1.txt").arg(i, 2, 10, QLatin1Char('0'))));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+    }
+    const auto restore = qScopeGuard([&] {
+        window()->resize(original);
+        tab()->setCwd(before);
+        settle();
+    });
+    window()->resize(1180, 1600);
+    tab()->setCwd(tall.path());
+    tab()->setViewMode(QStringLiteral("list"));
+    settle();
+    QObject *root = m_engine->rootObjects().first();
+    QQuickItem *menu = itemsNamed("fileMenu").first();
+
+    for (const QString &name : {QStringLiteral("row-01.txt"), QStringLiteral("row-59.txt")}) {
+        focusRow(name);
+        QMetaObject::invokeMethod(root, "takeFocus");
+        settle();
+        key('m');
+        QVERIFY(menu->isVisible());
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        QQuickItem *cursorRow = nullptr;
+        QList<QQuickItem *> queue{window()->contentItem()};
+        while (!queue.isEmpty() && !cursorRow) {
+            QQuickItem *item = queue.takeFirst();
+            if (item->property("onCursor").toBool() && item->property("nameItem").isValid()
+                && item->property("name").toString() == name)
+                cursorRow = item;
+            queue.append(item->childItems());
+        }
+        QVERIFY2(cursorRow, qPrintable(name));
+        auto *nameItem = cursorRow->property("nameItem").value<QQuickItem *>();
+        auto *panel = menu->property("panel").value<QQuickItem *>();
+        const QRectF rowRect(cursorRow->mapToScene(QPointF()), cursorRow->size());
+        const QRectF menuRect(panel->mapToScene(QPointF()), panel->size());
+        QCOMPARE(menuRect.x(), nameItem->mapToScene(QPointF()).x());
+        if (name == QLatin1String("row-01.txt"))
+            QCOMPARE(menuRect.top(), rowRect.bottom());
+        else
+            QCOMPARE(menuRect.bottom(), rowRect.top());
+        key(Qt::Key_Escape);
+        settle();
+    }
+}
+
+void TestStudio::showsWholeRowsInOverlayLists_data()
+{
+    QTest::addColumn<QSize>("size");
+    QTest::addColumn<QString>("overlay");
+    for (const QSize size : {QSize(1180, 720), QSize(800, 600), QSize(420, 300)})
+        for (const QString overlay : {"commandPalette", "fileMenu"})
+            QTest::newRow(qPrintable(QStringLiteral("%1-%2x%3").arg(overlay)
+                                         .arg(size.width()).arg(size.height())))
+                << size << overlay;
+}
+
+// The palette and the menus show whole rows: a list as tall as its rows where
+// they fit, and otherwise as many whole rows as fit, never a row cut in half.
+void TestStudio::showsWholeRowsInOverlayLists()
+{
+    QFETCH(QSize, size);
+    QFETCH(QString, overlay);
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    window()->resize(size);
+    focusRow(QStringLiteral("one.txt"));
+    key(overlay == QLatin1String("commandPalette") ? ':' : 'm');
+    QQuickItem *sheet = itemsNamed(overlay).first();
+    QVERIFY(sheet->isVisible());
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    auto *list = sheet->findChild<QQuickItem *>("overlayList");
+    QVERIFY(list);
+    auto *first = qobject_cast<QQuickItem *>(list->property("currentItem").value<QObject *>());
+    QVERIFY(first);
+    const qreal row = first->height();
+    const int count = list->property("count").toInt();
+    QVERIFY(count > 0);
+    const qreal height = list->height();
+    QVERIFY2(height >= row, qPrintable(QString::number(height)));
+    QVERIFY2(std::fmod(height, row) < 0.01,
+             qPrintable(QStringLiteral("the list is %1 px, %2 rows").arg(height).arg(height / row)));
+    QVERIFY(height <= count * row);
+    QVERIFY(QRectF(QPointF(), window()->size())
+                .contains(QRectF(list->mapToScene(QPointF()), list->size())));
     key(Qt::Key_Escape);
     settle();
 }
