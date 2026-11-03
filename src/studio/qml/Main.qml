@@ -461,8 +461,9 @@ Window {
             { key: "Esc", label: "back to the list" } ] }
     ]
 
-    // Hints answer the question in front of you. Least important first: the row
-    // is right-aligned and drops from its left end when the window narrows.
+    // Hints answer the question in front of you. Most important first: the
+    // footer drops them from the end when the window narrows and keeps the
+    // first, `?` wherever a mode has it.
     readonly property var hintsForRegion: {
         if (editingPath)
             return [{ key: "Esc", label: "cancel" }, { key: "Enter", label: "go" }]
@@ -489,16 +490,16 @@ Window {
                     { key: "j k", label: "node" }]
         if (focusRegion === "devices" || focusRegion === "views")
             return [{ key: "?", label: "keys" },
+                    { key: "Enter", label: "open" },
                     { key: "Esc", label: "back" },
                     { key: "m", label: "menu" },
-                    { key: "j k", label: "move" },
-                    { key: "Enter", label: "open" }]
+                    { key: "j k", label: "move" }]
         if (focusRegion === "tags")
             return [{ key: "?", label: "keys" },
+                    { key: "Enter", label: "toggle" },
                     { key: "Esc", label: "back" },
                     { key: "m", label: "menu" },
-                    { key: "j k", label: "move" },
-                    { key: "Enter", label: "toggle" }]
+                    { key: "j k", label: "move" }]
         return [{ key: "?", label: "keys" },
                 { key: ":", label: "cmd" },
                 { key: "Space", label: "mark" },

@@ -62,8 +62,7 @@ Rectangle {
         return parts.join(", ")
     }
 
-    height: bar.alarm ? Theme.stripHeight
-                      : Math.max(Theme.stripHeight, hintStrip.implicitHeight + Theme.spacingXs)
+    height: Theme.stripHeight
     color: Theme.panel
 
     Accessible.role: Accessible.StaticText

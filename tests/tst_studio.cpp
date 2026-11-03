@@ -14517,6 +14517,10 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     key(Qt::Key_Return);
     QVERIFY(!window()->property("editingPath").toBool());
     focusRow("one.txt");
+    // At 420 the footer keeps its first hints and drops `menu` and `filter`;
+    // they are tapped where the window is wide enough to show them.
+    QVERIFY(hint("keys")); QVERIFY(!hint("menu")); QVERIFY(!hint("filter"));
+    window()->resize(1180, 300); settle();
     for (int activation = 0; activation < 3; ++activation) {
         auto *button = hint("menu"); QVERIFY(button);
         window()->update(); QTest::qWait(30);
@@ -14528,6 +14532,7 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
         else { button->forceActiveFocus(); key(activation == 1 ? Qt::Key_Return : Qt::Key_Space); }
         settle(); QVERIFY(menu->isVisible()); key(Qt::Key_Escape);
     }
+    window()->resize(420, 300); settle();
     for (const QString label : {"keys", "cmd"}) {
         auto *button = hint(label); QVERIFY(button);
         QVERIFY(tapItem(window(), button)); settle();
@@ -14540,6 +14545,7 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     QCOMPARE(folder->markedCount(), 1);
     QVERIFY(tapItem(window(), mark)); settle();
     QCOMPARE(folder->markedCount(), 0);
+    window()->resize(1180, 300); settle();
     auto *filter = hint("filter"); QVERIFY(filter);
     filter->forceActiveFocus();
     QVERIFY(tapItem(window(), filter)); settle();
@@ -14549,6 +14555,7 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     QCOMPARE(tab()->property("filter").toString(), QStringLiteral("x"));
     key(Qt::Key_Backspace);
     QCOMPARE(tab()->property("filter").toString(), QString());
+    window()->resize(420, 300); settle();
     auto *keep = hint("keep"); QVERIFY(keep);
     QVERIFY(tapItem(window(), keep)); settle();
     QVERIFY(!window()->property("filtering").toBool());
@@ -15139,20 +15146,47 @@ void TestStudio::keepsEveryFooterActionReachable()
         // Resize with the actions already present so their layout must update.
         footerWindow.resize(1180, 720); bar->setWidth(1180); settle();
         footerWindow.resize(size); bar->setWidth(size.width()); settle();
-        QTRY_VERIFY(bar->height() >= 26);
+        QCOMPARE(bar->height(), qreal(Theme::stripHeight()));
         bar->setY(size.height() - bar->height());
         footerWindow.grabWindow();
         QList<QQuickItem *> buttons;
+        QQuickItem *note = nullptr;
         const auto collect = [&](auto &&self, QQuickItem *parent) -> void {
             for (auto *child : parent->childItems()) {
                 if (child->objectName() == "hintAction") buttons.append(child);
+                if (child->objectName() == "statusNote") note = child;
                 self(self, child);
             }
         };
         collect(collect, bar);
+        QVERIFY(note);
+        // The hints are one line: those shown are the first ones, the rest
+        // are dropped from the end, and `?` always stays.
+        const QVariantList hints = bar->property("hints").toList();
+        QCOMPARE(buttons.size(), hints.size());
+        std::sort(buttons.begin(), buttons.end(), [](QQuickItem *a, QQuickItem *b) {
+            return a->property("index").toInt() < b->property("index").toInt(); });
+        int shown = 0;
+        while (shown < buttons.size() && buttons[shown]->isVisible()) ++shown;
+        for (int at = shown; at < buttons.size(); ++at) QVERIFY(!buttons[at]->isVisible());
+        QCOMPARE(buttons.first()->property("modelData").toMap().value("key").toString(), QStringLiteral("?"));
+        QVERIFY(buttons.first()->isVisible());
+        if (size.width() == 1180) QCOMPARE(shown, buttons.size());
+        buttons = buttons.mid(0, shown);
+        const QQuickItem *facts = note->parentItem();
+        const QRectF factsRect = facts->mapRectToScene(QRectF(0, 0, facts->width(), facts->height()));
+        QRectF previous;
+        for (auto *button : buttons) {
+            const QRectF rect = button->mapRectToScene(button->boundingRect());
+            QVERIFY2(!rect.intersects(factsRect), qPrintable(region + " " + button->property("tooltipCaption").toString()));
+            QVERIFY(previous.isNull() || previous.right() <= rect.left());
+            QCOMPARE(rect.center().y(), bar->mapRectToScene(bar->boundingRect()).center().y());
+            previous = rect;
+        }
+        QCOMPARE(previous.right(), qreal(size.width() - Theme::inset()));
         for (auto *button : buttons) {
             QTRY_VERIFY(QRectF(QPointF(), size).contains(button->mapRectToScene(button->boundingRect())));
-            QVERIFY(button->isVisible()); QVERIFY(button->isEnabled());
+            QVERIFY(button->isEnabled());
             QCOMPARE(button->opacity(), 1.0);
             const QString expected = button->property("modelData").toMap().value("key").toString();
             button->forceActiveFocus();
@@ -15169,7 +15203,9 @@ void TestStudio::keepsEveryFooterActionReachable()
             }
         }
         QVERIFY(buttons.size() >= 3);
-        if (size.width() == 420) QVERIFY(bar->height() > 26);
+        bar->setWidth(4 * Theme::inset()); settle();
+        QVERIFY(buttons.first()->isVisible());
+        for (auto *button : buttons.mid(1)) QVERIFY(!button->isVisible());
     }
 }
 
@@ -15644,7 +15680,9 @@ void TestStudio::reversesFreshControlGroups()
     QList<QQuickItem *> chain;
     for (int at = 0; at < controls.property("length").toInt(); ++at) {
         auto *control = qobject_cast<QQuickItem *>(controls.property(at).toQObject());
-        QVERIFY(control); chain.append(control);
+        QVERIFY(control);
+        // A footer hint the width dropped is not a Tab stop.
+        if (control->isVisible()) chain.append(control);
     }
     QVERIFY(chain.size() >= 3);
     // Exercise the Shift-modified Tab representation before any forward traversal.
