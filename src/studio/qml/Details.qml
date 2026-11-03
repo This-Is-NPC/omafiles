@@ -132,8 +132,7 @@ Rectangle {
                         visible: details.has && details.entry.directory
                                  && details.entry.items !== undefined && details.entry.items >= 0
                         text: details.has && details.entry.items !== undefined
-                              ? (details.entry.items === 1 ? "1 item"
-                                                            : details.entry.items + " items")
+                              ? Counted.of(details.entry.items, "item")
                               : ""
                     }
 

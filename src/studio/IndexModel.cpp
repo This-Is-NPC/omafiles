@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QFutureWatcher>
 #include "IndexModel.h"
+#include "Counted.h"
 
 #include "Open.h"
 #include "Paths.h"
@@ -187,13 +188,15 @@ IndexModel::Presence IndexModel::countPresence(const QMap<QString, Record> &reco
         }
     }
     if (result.unreachable > 0)
-        storageWarnings.prepend(QStringLiteral("%1 index row(s) are on a root that is not here")
-                                    .arg(result.unreachable));
+        storageWarnings.prepend(QStringLiteral("%1 on a root that is not here")
+                                    .arg(countOf(result.unreachable, QStringLiteral("index row"))));
     if (result.unknown > 0)
-        storageWarnings.append(QStringLiteral("%1 index row(s) not counted; %2").arg(result.unknown).arg(declined));
+        storageWarnings.append(QStringLiteral("%1 not counted; %2")
+                                   .arg(countOf(result.unknown, QStringLiteral("index row")), declined));
     if (result.missing > 0 && result.present == 0)
-        storageWarnings.append(QStringLiteral("%1 index row(s), and none of their files are there; "
-                                              "omafiles prune drops them").arg(result.missing));
+        storageWarnings.append(QStringLiteral("%1, and none of their files are there; "
+                                              "omafiles prune drops them")
+                                   .arg(countOf(result.missing, QStringLiteral("index row"))));
     result.error = storageWarnings.join(QStringLiteral("; "));
     return result;
 }
@@ -442,16 +445,6 @@ void IndexModel::clearNotice()
     setNotice(QString());
 }
 
-namespace {
-
-QString countOf(int n, const QString &noun)
-{
-    return n == 1 ? QStringLiteral("1 %1").arg(noun)
-                  : QStringLiteral("%1 %2s").arg(n).arg(noun);
-}
-
-} // namespace
-
 void IndexModel::report(const QStringList &arguments, const QString &success, bool tagEdit)
 {
     clearNotice();
@@ -496,7 +489,7 @@ void IndexModel::reportEach(const QVector<QStringList> &runs, const QString &ver
         if (!self)
             return;
         const QString summary = ok ? QStringLiteral("%1 %2").arg(verb, countOf(output.toInt(), QStringLiteral("file")))
-            : QStringLiteral("%1 %2 of %3 files").arg(verb).arg(output.toInt()).arg(asked);
+            : QStringLiteral("%1 %2 of %3").arg(verb).arg(output.toInt()).arg(countOf(asked, QStringLiteral("file")));
         self->reload();
         receive(verbNotice(true, summary, error));
     }, true);
@@ -556,11 +549,11 @@ void IndexModel::publishArchive(const QStringList &paths, const QString &directo
             self->m_undo->install(paths, directory, label,
                 [self, label, stage](bool done, const QString &count, const QString &diagnostics) {
                     if (!self) return;
-                    const QString message = label + QStringLiteral(": published %1 entries").arg(count);
+                    const QString message = label + QStringLiteral(": published %1").arg(countOf(count.toLongLong(), QStringLiteral("entry")));
                     self->finishArchive(done, verbNotice(true, message, diagnostics), stage);
                 }, [self] { return !self || self->m_archive->canceled(); },
                 [self](int done, int total) {
-                    if (self) self->m_archive->updateProgress(QStringLiteral("Publishing %1 of %2 entries; Cancel stops after the current entry").arg(done).arg(total));
+                    if (self) self->m_archive->updateProgress(QStringLiteral("Publishing %1 of %2; Cancel stops after the current entry").arg(done).arg(countOf(total, QStringLiteral("entry"))));
                 });
         });
     });

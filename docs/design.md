@@ -84,6 +84,10 @@ Every key the window names is written one way, and `KeyCaps` (`src/studio/qml/Ke
 
 `spellsEveryKeyOneWay` in `tests/tst_studio.cpp` checks every spelling in the key map, the palette, the menus, the footer and the tooltips against these rules, and that every keycap on screen is drawn by `KeyCaps`.
 
+### Counts
+
+Every count the window puts before a noun is spelled by `countOf` (`src/studio/Counted.h`), and QML reaches it as `Counted.of`: `1 entry`, `2 entries`, `1 selected file`. The last word is plural unless the count is one. `tests/test_counted_nouns.py`, run by `mise run test`, fails on a count written beside its noun anywhere else in `src/studio`.
+
 ### Helpers
 
 Three helper processes run separately when needed. Each is a small, focused CLI tool that communicates with the window over stdin/stdout.
@@ -281,7 +285,7 @@ The full gate is run before each commit if hooks are installed (`mise run hooks:
 
 **Store**: Index read/write tests in `tests/tst_store.cpp`, including lock contention and concurrent writes.
 
-**Other Python tests**: Cover the benchmark runner, incremental builds, the link checker itself, portal installation, the test harness, usage-doc generation, the write-scope script, and the studio metrics (§3).
+**Other Python tests**: Cover the benchmark runner, incremental builds, the link checker itself, portal installation, the test harness, usage-doc generation, the write-scope script, the studio metrics and the studio count wording (§3).
 
 The test environment is disposable: tests use fresh HOME, XDG directories, private D-Bus, and isolated /tmp. See [docs/testing.md](testing.md) for the complete testing strategy, including how tests isolate thumbnail caches and MIME data, how they handle asynchronous operations, and the resource budgets for helpers.
 

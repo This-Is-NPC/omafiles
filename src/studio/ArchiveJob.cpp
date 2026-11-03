@@ -1,4 +1,5 @@
 #include "ArchiveJob.h"
+#include "Counted.h"
 #include "BlockingJob.h"
 #include "../core/Paths.h"
 #include "../core/Open.h"
@@ -74,8 +75,9 @@ ArchiveJob::ArchiveJob(QObject *parent) : QObject(parent), d(std::make_unique<Pr
             if (message.value("ready").toBool()) d->prepared = true;
             if (message.contains("processed") && !d->canceled) {
                 d->processed = message.value("processed").toInteger();
-                d->progress = QString("Preparing archive: %1 entries, %2 bytes")
-                    .arg(message.value("entries").toInteger()).arg(d->processed);
+                d->progress = QStringLiteral("Preparing archive: %1, %2")
+                    .arg(countOf(message.value("entries").toInteger(), QStringLiteral("entry")),
+                         countOf(d->processed, QStringLiteral("byte")));
                 emit changed();
             }
         }

@@ -352,6 +352,7 @@ private slots:
     void refusesUnsafeArchiveDestinations();
     void navigatesArchiveControls_data();
     void navigatesArchiveControls();
+    void countsEntriesInTheSingularAndPlural();
     void browsesAndRestoresTrashByKeyboardAndPointer();
     void showsTheWholeEmptyTrashConfirmation();
     void showsTrashReceiptBesideAnUnsearchableMount();
@@ -3593,7 +3594,7 @@ void TestStudio::saysHowMuchOfTheIndexTheGraphDrew()
              qPrintable(QStringLiteral("the map carries %1 files of %2").arg(drawn).arg(total)));
     QVERIFY2(drawn < total, "nothing was left out, so there is nothing to check");
     QCOMPARE(graph->property("summary").toString(),
-             QStringLiteral("1 tags · %1 of %2 files").arg(drawn).arg(total));
+             QStringLiteral("1 tag · %1 of %2 files").arg(drawn).arg(total));
 
     writeIndex();
 
@@ -9216,7 +9217,7 @@ void TestStudio::revealsDesktopItemsAndProperties()
     QObject *text = dialog->findChild<QObject *>("propertyText");
     QVERIFY(text);
     QVERIFY(text->property("text").toString().contains(file));
-    QVERIFY(text->property("text").toString().contains("Size: 1 bytes"));
+    QVERIFY(text->property("text").toString().contains("Size: 1 byte\n"));
     QVERIFY(text->property("text").toString().contains("Permissions: -rw"));
     QMetaObject::invokeMethod(dialog, "close");
     while (m_workspace->paneAtIndex(0)->tabCount() > before)
@@ -16422,7 +16423,7 @@ void TestStudio::showsTrashReceiptBesideAnUnsearchableMount()
     key('r');
     QTRY_VERIFY(QFileInfo::exists(dir.filePath("kept.txt")));
     QTRY_VERIFY(!model->busy() && !model->loading());
-    QCOMPARE(status->property("message").toString(), QStringLiteral("Restored 1 item(s)."));
+    QCOMPARE(status->property("message").toString(), QStringLiteral("Restored 1 item."));
 }
 
 void TestStudio::browsesAndRestoresTrashByKeyboardAndPointer()
@@ -17376,6 +17377,40 @@ void TestStudio::refusesUnsafeArchiveDestinations()
     QVERIFY(QDir(dir.filePath("out")).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty());
 }
 
+void TestStudio::countsEntriesInTheSingularAndPlural()
+{
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const QStringList files{fixture.filePath("a.txt"), fixture.filePath("b.txt")};
+    for (const QString &file : files) QVERIFY(writeLooknfeel(file, "payload"));
+    auto *sheet = itemsNamed(QStringLiteral("archiveSheet")).first();
+    const auto restore = qScopeGuard([&] { QMetaObject::invokeMethod(sheet, "close"); });
+    JournalDriver driver;
+    for (int n : {1, 2}) {
+        const QStringList paths = files.mid(0, n);
+        const QString entries = n == 1 ? QStringLiteral("1 entry") : QStringLiteral("2 entries");
+        QVERIFY(QMetaObject::invokeMethod(sheet, "openFor", Q_ARG(QVariant, paths),
+                                          Q_ARG(QVariant, false), Q_ARG(QVariant, fixture.path())));
+        auto *heading = shownItem(sheet, QStringLiteral("archiveHeading"));
+        QVERIFY(heading);
+        QCOMPARE(heading->property("text").toString(),
+                 n == 1 ? QStringLiteral("Compress 1 selected entry")
+                        : QStringLiteral("Compress 2 selected entries"));
+        QVERIFY(QMetaObject::invokeMethod(sheet, "close"));
+        QTRY_VERIFY(!sheet->isVisible());
+        // An archive publishes one entry; extracting it publishes one per file.
+        const QString archive = fixture.filePath(QStringLiteral("out%1.zip").arg(n));
+        QSignalSpy finished(m_index->archive(), &ArchiveJob::finished);
+        m_index->compress(paths, archive, "zip");
+        QTRY_COMPARE(finished.size(), 1);
+        QVERIFY2(m_index->notice().contains(QStringLiteral("published 1 entry")), qPrintable(m_index->notice()));
+        QVERIFY(QDir(fixture.path()).mkdir(QStringLiteral("out%1").arg(n)));
+        m_index->extract(archive, fixture.filePath(QStringLiteral("out%1").arg(n)));
+        QTRY_COMPARE(finished.size(), 2);
+        QVERIFY2(m_index->notice().contains(QStringLiteral("published ") + entries), qPrintable(m_index->notice()));
+    }
+}
+
 void TestStudio::navigatesArchiveControls_data()
 {
     QTest::addColumn<QSize>("size"); QTest::addColumn<bool>("extracting");
@@ -17903,7 +17938,7 @@ void TestStudio::keepsStorageWarningsAheadOfCompletedReceipts()
     QCOMPARE(status->property("message").toString(), warning);
     m_index->compress({source}, fixture.filePath("source.zip"), "zip");
     QTRY_VERIFY(!m_index->archive()->busy());
-    QVERIFY(m_index->notice().contains("published 1 entries"));
+    QVERIFY(m_index->notice().contains("published 1 entry"));
     QCOMPARE(status->property("message").toString(), warning);
     const QString trash = QDir(dataHome()).filePath("Trash");
     QVERIFY(writeLooknfeel(trash + "/files/r30.txt", "trashed"));

@@ -1,4 +1,5 @@
 #include "TrashModel.h"
+#include "Counted.h"
 #include "BlockingJob.h"
 #include <QFileInfo>
 #include <QFutureWatcher>
@@ -189,8 +190,8 @@ void TrashModel::operate(const QVector<Trash::Item> &items, bool erase)
             const QString error = erase ? Trash::erase(item) : Trash::restore(item);
             if (error.isEmpty()) ++completed; else errors.append(error);
         }
-        QString result = (erase ? QStringLiteral("Permanently deleted %1 item(s).")
-                                : QStringLiteral("Restored %1 item(s).")).arg(completed);
+        QString result = (erase ? QStringLiteral("Permanently deleted %1.")
+                                : QStringLiteral("Restored %1.")).arg(countOf(completed, QStringLiteral("item")));
         if (!errors.isEmpty()) result += QLatin1Char('\n') + errors.join(QLatin1Char('\n'));
         return result;
     }));

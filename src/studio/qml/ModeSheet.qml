@@ -133,7 +133,7 @@ Rectangle {
                             font.pixelSize: Theme.fontTitle
                             text: sheet.paths.length === 1
                                   ? "permissions of " + String(sheet.paths[0]).split("/").pop()
-                                  : "permissions of " + sheet.paths.length + " files"
+                                  : "permissions of " + Counted.of(sheet.paths.length, "file")
                         }
 
                         Flow {
@@ -160,7 +160,7 @@ Rectangle {
                             quiet: true
                             text: sheet.refusal !== "" ? sheet.refusal
                                 : "sets " + bits.octal + " on "
-                                  + (sheet.paths.length === 1 ? "it" : sheet.paths.length + " files")
+                                  + (sheet.paths.length === 1 ? "it" : Counted.of(sheet.paths.length, "file"))
                                   + "; setuid, setgid and sticky stay as each file has them"
                         }
 

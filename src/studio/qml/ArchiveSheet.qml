@@ -95,7 +95,7 @@ Rectangle {
                             bottomPadding: Theme.focusRing
                             width: parent.width
                             spacing: Theme.spacingM
-                            Label { width: parent.width; wrapMode: Text.Wrap; font.bold: true; font.pixelSize: Theme.fontTitle; text: sheet.extracting ? "Extract archive" : "Compress " + sheet.paths.length + " selected entries" }
+                            Label { objectName: "archiveHeading"; width: parent.width; wrapMode: Text.Wrap; font.bold: true; font.pixelSize: Theme.fontTitle; text: sheet.extracting ? "Extract archive" : "Compress " + Counted.of(sheet.paths.length, "selected entry") }
                             Label { width: parent.width; wrapMode: Text.Wrap; text: sheet.extracting ? "Existing destination folder" : "Archive path (inside an existing folder)" }
                             Entry {
                                 id: destination
