@@ -525,6 +525,7 @@ private slots:
     void movesBetweenTheListAndTheTagPanel();
     void reachesControlsWithTabAndComesBackWithEscape();
     void drawsOneFocusRingOutsideWhatHasFocus();
+    void keepsTheFocusRingOnTheViewAcrossTabSwitches();
     void hintsFollowFocusOntoControls();
     void worksTabsAndPanesFromTheKeyboard();
     void typesAPathAndAFilter();
@@ -2566,6 +2567,86 @@ void TestStudio::drawsOneFocusRingOutsideWhatHasFocus()
     key(Qt::Key_Shift);
     check(QStringLiteral("key after click"));
     key(Qt::Key_Escape);
+}
+
+// Every tab switch leaves the keyboard on the new tab's view, under its ring.
+void TestStudio::keepsTheFocusRingOnTheViewAcrossTabSwitches()
+{
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const QByteArray oldData = qgetenv("XDG_DATA_HOME");
+    qputenv("XDG_DATA_HOME", fixture.path().toUtf8());
+    const auto cleanup = qScopeGuard([&] { qputenv("XDG_DATA_HOME", oldData); });
+    const QDir dir(fixture.path());
+    QVERIFY(QDir().mkpath(dir.filePath("Trash/files")));
+    QVERIFY(QDir().mkpath(dir.filePath("Trash/info")));
+    QVERIFY(writeLooknfeel(dir.filePath("Trash/files/gone.txt"), "payload"));
+    QVERIFY(writeLooknfeel(dir.filePath("Trash/info/gone.txt.trashinfo"),
+        "[Trash Info]\nPath=" + QString::fromLatin1(QUrl::toPercentEncoding(dir.filePath("gone.txt"), "/"))
+        + "\nDeletionDate=2026-10-11T13:14:15\n"));
+
+    key(Qt::Key_Escape);
+    focusRow(QStringLiteral("one.txt"));
+    key('j');
+    QQuickItem *list = window()->activeFocusItem();
+    QVERIFY(list);
+    m_workspace->addTab(QStringLiteral("files"));
+    m_workspace->addTab(QStringLiteral("graph"));
+    settle();
+    key(':');
+    for (char ch : QByteArray("open trash")) key(ch);
+    key(Qt::Key_Return);
+    QTRY_COMPARE(tab()->kind(), QStringLiteral("trash"));
+    const QStringList kinds{QStringLiteral("files"), QStringLiteral("files"), QStringLiteral("graph"),
+                            QStringLiteral("trash")};
+    QCOMPARE(m_workspace->paneAtIndex(0)->tabCount(), kinds.size());
+
+    QObject *window = m_engine->rootObjects().first();
+    const auto check = [&](const QString &step) {
+        QVERIFY(QQuickTest::qWaitForPolish(this->window(), asyncTimeout));
+        QQuickItem *focus = this->window()->activeFocusItem();
+        QVERIFY2(focus, qPrintable(step));
+        const QString where = step + QLatin1Char(' ') + focus->objectName() + QLatin1Char(' ')
+                              + QString::fromLatin1(focus->metaObject()->className());
+        QQuickItem *view = nullptr;
+        if (tab()->kind() == QLatin1String("trash")) {
+            view = window->property("activeTrash").value<QQuickItem *>();
+            QVERIFY2(view, qPrintable(where));
+            auto *target = view->property("focusTarget").value<QQuickItem *>();
+            QVERIFY2(focus == target || target->isAncestorOf(focus), qPrintable(where));
+        } else {
+            view = tab()->kind() == QLatin1String("graph")
+                ? window->property("activeGraph").value<QQuickItem *>()->parentItem()
+                : qobject_cast<QQuickItem *>(filesRoot());
+            QVERIFY2(view, qPrintable(where));
+            QVERIFY2(focus == list, qPrintable(where));
+        }
+        QList<QQuickItem *> shown;
+        for (auto *ring : itemsNamed(QStringLiteral("focusRing")))
+            if (ring->isVisible()) shown.append(ring);
+        QVERIFY2(shown.size() == 1, qPrintable(where + QStringLiteral(": %1 rings").arg(shown.size())));
+        QVERIFY2(view->isAncestorOf(shown.first()), qPrintable(where + QStringLiteral(": ring off the view")));
+    };
+
+    for (int from = 0; from < kinds.size(); ++from) {
+        for (int to = 0; to < kinds.size(); ++to) {
+            if (from == to)
+                continue;
+            key(Qt::Key(Qt::Key_1 + from), Qt::AltModifier);
+            QCOMPARE(m_workspace->paneAtIndex(0)->currentIndex(), from);
+            const QString step = kinds.at(from) + QString::number(from) + QStringLiteral(" to ")
+                                 + kinds.at(to) + QString::number(to);
+            check(step + QStringLiteral(" before"));
+            QVERIFY(!QTest::currentTestFailed());
+            if (to == from + 1) key(']');
+            else if (to == from - 1) key('[');
+            else key(Qt::Key(Qt::Key_1 + to), Qt::AltModifier);
+            QCOMPARE(m_workspace->paneAtIndex(0)->currentIndex(), to);
+            key('j');
+            check(step);
+            QVERIFY(!QTest::currentTestFailed());
+        }
+    }
 }
 
 // The footer names what the focused control does, and its hints act on it.
