@@ -108,6 +108,12 @@ The fixture and its HOME, XDG directories and QML cache live in temporary storag
 and are removed on completion. Dependency-package checks run separately in the
 gate; the small fixture substitutes an empty dependency-check script.
 
+`python3 tests/test_qmake_warnings.py` is part of the gate. It runs `qmake6 -r`
+on `omafiles.pro` and on every project in `tests/`, each in an empty build
+directory under the disposable environment, and fails when qmake prints a
+`WARNING:` line. A fresh build directory is the case that warns about a
+generated input which does not exist yet.
+
 
 ## Device services
 
