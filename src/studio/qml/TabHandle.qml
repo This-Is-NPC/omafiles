@@ -23,8 +23,10 @@ FocusScope {
     signal menuRequested(real x, real y)
 
     readonly property int closeColumn: Theme.controlHeight
+    // The narrowest a tab gets when the strip is short of room.
+    readonly property int minimumWidth: 96
 
-    implicitWidth: Math.max(96, Math.min(220, label.implicitWidth + Theme.spacingS + Theme.iconSize
+    implicitWidth: Math.max(minimumWidth, Math.min(220, label.implicitWidth + Theme.spacingS + Theme.iconSize
                                               + Theme.iconGap + closeColumn))
     implicitHeight: Theme.controlHeight
     width: implicitWidth

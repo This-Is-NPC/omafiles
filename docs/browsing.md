@@ -135,8 +135,8 @@ actions appear when a file or directory is selected for editing.
 The footer's visible key-and-label hints are buttons: tap either part, or use
 **Tab** and **Enter / Space**. They invoke the displayed keyboard command. For
 a grouped hint such as **j k move**, tapping invokes its first key (**j**, move
-down); both directions remain available on the keyboard. Hints wrap within
-the window so every action remains reachable. Prompt
+down); both directions remain available on the keyboard. Every hint is also a key,
+and **?** lists them all. Prompt
 **cancel** and **rename / make / mark / find / save** actions use the same
 cancellation and submission paths as **Esc / Enter**.
 
@@ -201,15 +201,18 @@ semantics while buttons share visible focus and keyboard activation.
 
 ### Compact footer and unreadable images
 
-Footer action hints wrap onto additional lines as the window narrows. File counts
-and descriptive text share a capped portion of the width so every action remains
-visible and reachable by touch, pen and keyboard, including at 420 × 300.
+The footer is one line in every mode. File counts and descriptive text sit on
+the left in a capped portion of the width; the hints sit on the right, listed
+most important first. When the window narrows, hints are dropped from the least
+important end; the first one, **? keys** wherever a mode has it, always stays.
+A dropped hint's key still works. At 420 × 300 the footer keeps the strip
+height and its text does not overlap.
 
 An image that cannot be decoded reports that its data is incomplete or unreadable
 when Qt provides no specific cause. Specific decoder and device errors retain
 their reported cause; source-size and pixel limits are reported only when exceeded.
 This follows QImageReader's distinction between image dimensions and a failed
-read, and uses Qt Quick Flow for the conventional wrapping layout.
+read.
 
 ### Reversing focus navigation
 

@@ -4,7 +4,9 @@ import QtQuick
 import "Focus.js" as Focus
 import omafiles
 
-// Action hints wrap within the available footer width.
+// Action hints on one line, right-aligned. The model lists them most important
+// first; those that do not fit are dropped from the end, the first is always
+// shown.
 Item {
     id: hints
     property var model: []
@@ -13,6 +15,17 @@ Item {
     property var controls: []
     readonly property Item firstControl: adjacent(-1, 1)
     readonly property Item lastControl: adjacent(controls.length, -1)
+    // How many hints, from the first, fit in the width.
+    readonly property int shown: {
+        let used = 0
+        let count = 0
+        for (; count < controls.length && controls[count]; ++count) {
+            used += controls[count].implicitWidth + (count > 0 ? strip.spacing : 0)
+            if (count > 0 && used > width)
+                break
+        }
+        return count
+    }
     signal requested(string key)
 
     ListModel { id: actions }
@@ -38,12 +51,13 @@ Item {
         return direction > 0 ? nextFocus : previousFocus
     }
 
-    implicitHeight: strip.implicitHeight
+    implicitHeight: Theme.controlHeight
     clip: true
 
-    Flow {
+    Row {
         id: strip
-        width: parent.width
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
         spacing: Theme.spacingS
 
         Repeater {
@@ -67,6 +81,7 @@ Item {
                 required property string caption
                 readonly property var modelData: ({ key: shortcut, label: caption })
                 required property int index
+                visible: index < hints.shown
                 Keys.onTabPressed: function (event) { Focus.move(event, hints.adjacent(index, 1), hints.adjacent(index, -1)) }
                 Keys.onBacktabPressed: function (event) { Focus.move(event, hints.adjacent(index, -1)) }
                 implicitWidth: contents.implicitWidth

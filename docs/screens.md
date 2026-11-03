@@ -6,7 +6,7 @@ The studio window is 1180×720 pixels, its default size. Pictures are generated 
 
 ## Main window
 
-The main window shows files and folders in a list, details, or icon view. The path bar at the top shows the current location. Tabs open multiple folders in one pane. The sidebar on the left holds where to go: saved views, devices, and tags, in that order. The details panel on the right shows what the current row is. Both follow the focused pane: a split window has one sidebar and one details panel. The details panel is dropped while a pane would be narrower than 640 pixels, and the sidebar while it would be narrower than 480; **v**, **d** and **t** bring the sidebar back while they walk it. The footer shows status and hints for available keys.
+The main window shows files and folders in a list, details, or icon view. The path bar at the top shows the current location. Tabs open multiple folders in one pane. The sidebar on the left holds where to go: saved views, devices, and tags, in that order. The details panel on the right shows what the current row is. Both follow the focused pane: a split window has one sidebar and one details panel. The details panel is dropped while a pane would be narrower than 640 pixels, and the sidebar while it would be narrower than 480; **v**, **d** and **t** bring the sidebar back while they walk it. On the right of the tab strip, three icon buttons switch between list, details and icons view, and in list and icons view a sort chip shows the sort key and direction, for example **name ↑**. Both stay down to the narrowest pane that shows a list: the tabs shrink and elide their titles to leave them room; a pane too narrow for them drops them, and their keys still work. The footer is one line: status on the left, hints for available keys on the right. When the window narrows, the least important hints are dropped first; **? keys** always stays.
 
 Reach it: The main window opens when the application starts.
 
@@ -16,9 +16,9 @@ Picture: **img/01-studio.png**
 
 ## Details pane
 
-Press **2** to switch the file list to a table: name, then tags, type, size, and modified, one row per file. The row's tags, type, and other details always show in the details panel too, right of the file list, whichever view is active.
+Press **2** to switch the file list to a table: name, then tags, type, size, and modified, one row per file. The name column has priority: it keeps at least 160 px, or 40% of the list when the list is narrower than 400 px. When the other columns do not fit beside it, they are dropped with their headings in a fixed order: mode, owner, modified, type, size, then tags. The name grows to at most 420 px; wider lists give the extra width to the tags. Sizes are right-aligned under a right-aligned heading. A dropped column still sorts with **s** and **S**. The row's tags, type, and other details always show in the details panel too, right of the file list, whichever view is active.
 
-Reach it: Press **2** in the main window, or click **details** in the row above the file list.
+Reach it: Press **2** in the main window, or click the details button (the middle icon) right of the tabs.
 
 Keys (same as the main window): **j k / ↓ ↑** (down, up), **l / Enter / →** (open), **h / ← / Bksp** (parent folder).
 
@@ -28,7 +28,7 @@ Picture: **img/02-details.png**
 
 Files and folders appear as icons. Same keys and navigation as list and details views.
 
-Reach it: Press **3** in the main window.
+Reach it: Press **3** in the main window, or click the icons button (the right icon) right of the tabs.
 
 Keys: **j k / ↓ ↑** (down, up), **← →** (prev, next file), **l / Enter** (open), **h / Bksp** (parent folder).
 
@@ -36,9 +36,9 @@ Picture: No picture yet.
 
 ## Sorting
 
-Press **s** to cycle the sort order: name, tags, type, size, then modified, and back to name. Press **S** to flip the sort direction. In details view, click a column header to sort by that column directly; click it again to flip the direction.
+Press **s** to cycle the sort order: name, tags, type, size, then modified, and back to name. Press **S** to flip the sort direction. In list and icons view, the sort chip right of the tabs does the same: click the key (**name**) to go to the next key, click the arrow to flip the direction. In details view the chip is hidden; click a column header to sort by that column directly; click it again to flip the direction.
 
-Reach it: Press **s** or click a column header in details view.
+Reach it: Press **s**, click the sort chip in list and icons view, or click a column header in details view.
 
 Keys: **s** (sort), **S** (flip direction).
 

@@ -667,6 +667,8 @@ private slots:
     void activatesFooterHintsByTouchAndKeyboard();
     void keepsEveryFooterActionReachable_data();
     void keepsEveryFooterActionReachable();
+    void keepsTheViewControlsInNarrowPanes();
+    void givesTheNameColumnPriority();
     void cancelsRowHoldOnMovement();
     void waitsForDelayedPlaybackAcknowledgement();
     void boundsPreviewImageTransfers_data();
@@ -6418,12 +6420,18 @@ void TestStudio::choosesTheDetailsColumnsAndKeepsThem()
     const QStringList defaults{QStringLiteral("tags"), QStringLiteral("type"),
                                QStringLiteral("size"), QStringLiteral("mtime")};
     QCOMPARE(m_workspace->columns(), defaults);
-    const auto restore = qScopeGuard([this, &defaults] {
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([this, &defaults, original] {
         for (const QString &field : m_workspace->columns())
             m_workspace->toggleColumn(field);
         for (const QString &field : defaults)
             m_workspace->toggleColumn(field);
+        window()->resize(original);
     });
+    // Wide enough that every field fits beside the name at its minimum, so
+    // the columns drawn are the columns chosen; dropping is
+    // givesTheNameColumnPriority's.
+    window()->resize(1600, 720);
     tab()->setViewMode(QStringLiteral("details"));
     settle();
 
@@ -10976,8 +10984,8 @@ void TestStudio::routesTooltipKeysOnlyWhenContentOverflows()
     QVERIFY(folder);
     QTRY_COMPARE(folder->property("count").toInt(), 101);
     QQuickItem *control = nullptr;
-    for (auto *item : itemsNamed(QString()))
-        if (item->isVisible() && item->property("tooltipCaption").toString() == "Sort by name")
+    for (auto *item : itemsNamed("sortDirection"))
+        if (item->isVisible())
             control = item;
     QVERIFY(control);
     const QString caption = control->property("tooltipCaption").toString();
@@ -14517,6 +14525,10 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     key(Qt::Key_Return);
     QVERIFY(!window()->property("editingPath").toBool());
     focusRow("one.txt");
+    // At 420 the footer keeps its first hints and drops `menu` and `filter`;
+    // they are tapped where the window is wide enough to show them.
+    QVERIFY(hint("keys")); QVERIFY(!hint("menu")); QVERIFY(!hint("filter"));
+    window()->resize(1180, 300); settle();
     for (int activation = 0; activation < 3; ++activation) {
         auto *button = hint("menu"); QVERIFY(button);
         window()->update(); QTest::qWait(30);
@@ -14528,6 +14540,7 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
         else { button->forceActiveFocus(); key(activation == 1 ? Qt::Key_Return : Qt::Key_Space); }
         settle(); QVERIFY(menu->isVisible()); key(Qt::Key_Escape);
     }
+    window()->resize(420, 300); settle();
     for (const QString label : {"keys", "cmd"}) {
         auto *button = hint(label); QVERIFY(button);
         QVERIFY(tapItem(window(), button)); settle();
@@ -14540,6 +14553,7 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     QCOMPARE(folder->markedCount(), 1);
     QVERIFY(tapItem(window(), mark)); settle();
     QCOMPARE(folder->markedCount(), 0);
+    window()->resize(1180, 300); settle();
     auto *filter = hint("filter"); QVERIFY(filter);
     filter->forceActiveFocus();
     QVERIFY(tapItem(window(), filter)); settle();
@@ -14549,6 +14563,7 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     QCOMPARE(tab()->property("filter").toString(), QStringLiteral("x"));
     key(Qt::Key_Backspace);
     QCOMPARE(tab()->property("filter").toString(), QString());
+    window()->resize(420, 300); settle();
     auto *keep = hint("keep"); QVERIFY(keep);
     QVERIFY(tapItem(window(), keep)); settle();
     QVERIFY(!window()->property("filtering").toBool());
@@ -15139,20 +15154,47 @@ void TestStudio::keepsEveryFooterActionReachable()
         // Resize with the actions already present so their layout must update.
         footerWindow.resize(1180, 720); bar->setWidth(1180); settle();
         footerWindow.resize(size); bar->setWidth(size.width()); settle();
-        QTRY_VERIFY(bar->height() >= 26);
+        QCOMPARE(bar->height(), qreal(Theme::stripHeight()));
         bar->setY(size.height() - bar->height());
         footerWindow.grabWindow();
         QList<QQuickItem *> buttons;
+        QQuickItem *note = nullptr;
         const auto collect = [&](auto &&self, QQuickItem *parent) -> void {
             for (auto *child : parent->childItems()) {
                 if (child->objectName() == "hintAction") buttons.append(child);
+                if (child->objectName() == "statusNote") note = child;
                 self(self, child);
             }
         };
         collect(collect, bar);
+        QVERIFY(note);
+        // The hints are one line: those shown are the first ones, the rest
+        // are dropped from the end, and `?` always stays.
+        const QVariantList hints = bar->property("hints").toList();
+        QCOMPARE(buttons.size(), hints.size());
+        std::sort(buttons.begin(), buttons.end(), [](QQuickItem *a, QQuickItem *b) {
+            return a->property("index").toInt() < b->property("index").toInt(); });
+        int shown = 0;
+        while (shown < buttons.size() && buttons[shown]->isVisible()) ++shown;
+        for (int at = shown; at < buttons.size(); ++at) QVERIFY(!buttons[at]->isVisible());
+        QCOMPARE(buttons.first()->property("modelData").toMap().value("key").toString(), QStringLiteral("?"));
+        QVERIFY(buttons.first()->isVisible());
+        if (size.width() == 1180) QCOMPARE(shown, buttons.size());
+        buttons = buttons.mid(0, shown);
+        const QQuickItem *facts = note->parentItem();
+        const QRectF factsRect = facts->mapRectToScene(QRectF(0, 0, facts->width(), facts->height()));
+        QRectF previous;
+        for (auto *button : buttons) {
+            const QRectF rect = button->mapRectToScene(button->boundingRect());
+            QVERIFY2(!rect.intersects(factsRect), qPrintable(region + " " + button->property("tooltipCaption").toString()));
+            QVERIFY(previous.isNull() || previous.right() <= rect.left());
+            QCOMPARE(rect.center().y(), bar->mapRectToScene(bar->boundingRect()).center().y());
+            previous = rect;
+        }
+        QCOMPARE(previous.right(), qreal(size.width() - Theme::inset()));
         for (auto *button : buttons) {
             QTRY_VERIFY(QRectF(QPointF(), size).contains(button->mapRectToScene(button->boundingRect())));
-            QVERIFY(button->isVisible()); QVERIFY(button->isEnabled());
+            QVERIFY(button->isEnabled());
             QCOMPARE(button->opacity(), 1.0);
             const QString expected = button->property("modelData").toMap().value("key").toString();
             button->forceActiveFocus();
@@ -15169,8 +15211,192 @@ void TestStudio::keepsEveryFooterActionReachable()
             }
         }
         QVERIFY(buttons.size() >= 3);
-        if (size.width() == 420) QVERIFY(bar->height() > 26);
+        bar->setWidth(4 * Theme::inset()); settle();
+        QVERIFY(buttons.first()->isVisible());
+        for (auto *button : buttons.mid(1)) QVERIFY(!button->isVisible());
     }
+}
+
+void TestStudio::keepsTheViewControlsInNarrowPanes()
+{
+    const QSize original = window()->size();
+    const int panesBefore = m_workspace->paneCount();
+    const auto restore = qScopeGuard([&] {
+        if (m_workspace->paneCount() > panesBefore)
+            key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+        tab()->setViewMode("list"); tab()->setSortRole("name"); tab()->setSortAscending(true);
+        window()->resize(original); QMetaObject::invokeMethod(window(), "takeFocus");
+    });
+    window()->resize(420, 300); tab()->setViewMode("list"); settle(); focusRow("one.txt");
+    QQuickItem *pane = nullptr;
+    for (auto *item : itemsNamed("pane")) if (item->isVisible()) pane = item;
+    QVERIFY(pane); QVERIFY(pane->width() <= 480);
+    auto *modes = shownItem(pane, "viewModes"); QVERIFY(modes);
+    QVERIFY(QRectF(QPointF(), window()->size()).contains(modes->mapRectToScene(modes->boundingRect())));
+    QVERIFY(modes->width() + shownItem(pane, "sortControl")->width() <= 160);
+    QList<QQuickItem *> buttons;
+    for (auto *item : itemsNamed("viewMode")) if (pane->isAncestorOf(item)) buttons.append(item);
+    QCOMPARE(buttons.size(), 3);
+    const QStringList modeNames{"list", "details", "icons"};
+    for (int at = 0; at < 3; ++at) {
+        QCOMPARE(buttons[at]->height(), qreal(Theme::controlHeight()));
+        QCOMPARE(buttons[at]->property("tooltipKey").toString(), QString::number(at + 1));
+        QVERIFY(tapItem(window(), buttons[at])); settle();
+        QCOMPARE(tab()->viewMode(), modeNames[at]);
+        QVERIFY(buttons[at]->property("on").toBool());
+        // In details view the column headings sort, in the others the chip:
+        // never both.
+        const bool details = modeNames[at] == "details";
+        QCOMPARE(shownItem(pane, "sortControl") == nullptr, details);
+        bool heading = false;
+        for (auto *head : itemsNamed("columnHead"))
+            heading |= pane->isAncestorOf(head) && head->isVisible() && head->height() > 0;
+        QCOMPARE(heading, details);
+    }
+    for (int at = 0; at < 3; ++at) {
+        key(char('1' + at)); settle();
+        QCOMPARE(tab()->viewMode(), modeNames[at]);
+        for (int other = 0; other < 3; ++other) QCOMPARE(buttons[other]->property("on").toBool(), other == at);
+    }
+    key('1'); settle();
+    auto *sortKey = shownItem(pane, "sortKey"); QVERIFY(sortKey);
+    auto *direction = shownItem(pane, "sortDirection"); QVERIFY(direction);
+    QCOMPARE(sortKey->property("label").toString(), QStringLiteral("name"));
+    QCOMPARE(direction->property("label").toString(), QStringLiteral("↑"));
+    QVERIFY(tapItem(window(), direction)); settle();
+    QCOMPARE(tab()->sortRole(), QStringLiteral("name")); QVERIFY(!tab()->sortAscending());
+    QCOMPARE(direction->property("label").toString(), QStringLiteral("↓"));
+    QVERIFY(tapItem(window(), sortKey)); settle();
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
+    QCOMPARE(sortKey->property("label").toString(), QStringLiteral("tags"));
+    sortKey->forceActiveFocus(); key(Qt::Key_Return); settle();
+    QCOMPARE(tab()->sortRole(), QStringLiteral("type"));
+    direction->forceActiveFocus(); key(Qt::Key_Space); settle();
+    QVERIFY(!tab()->sortAscending());
+    // Each pane of a split keeps its own controls.
+    window()->resize(1180, 720); settle();
+    if (panesBefore == 1) key(Qt::Key_Backslash, Qt::ControlModifier);
+    QCOMPARE(m_workspace->paneCount(), 2);
+    settle();
+    int panes = 0;
+    for (auto *item : itemsNamed("pane")) {
+        if (!item->isVisible()) continue;
+        ++panes;
+        auto *paneModes = shownItem(item, "viewModes");
+        QVERIFY2(paneModes, qPrintable(QString("pane %1 px").arg(item->width())));
+        // The tabs yield the width: they end before the controls start.
+        const qreal controlsLeft = paneModes->mapToScene(QPointF()).x();
+        for (auto *handle : itemsNamed("tabHandle"))
+            if (item->isAncestorOf(handle))
+                QVERIFY(handle->mapRectToScene(handle->boundingRect()).right() < controlsLeft);
+    }
+    QCOMPARE(panes, 2);
+}
+
+void TestStudio::givesTheNameColumnPriority()
+{
+    const QSize original = window()->size();
+    const int panesBefore = m_workspace->paneCount();
+    const auto restore = qScopeGuard([&] {
+        if (m_workspace->paneCount() > panesBefore)
+            key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+        tab()->setViewMode("list"); tab()->setSortRole("name"); tab()->setSortAscending(true);
+        window()->resize(original); QMetaObject::invokeMethod(window(), "takeFocus");
+    });
+    const QStringList chosen = m_workspace->columns();
+    QVERIFY(chosen.contains("tags") && chosen.contains("size") && chosen.contains("mtime"));
+    QList<qreal> lists;
+    // Window widths and pane counts that give lists from 160 to 1340 px; the
+    // sidebar and the details panel take 474 px beside a single pane.
+    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(1022, 1), qMakePair(1180, 1),
+                                         qMakePair(1593, 1), qMakePair(1814, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
+        window()->resize(layout.first, 600);
+        if (layout.second == 2 && m_workspace->paneCount() == 1) key(Qt::Key_Backslash, Qt::ControlModifier);
+        QCOMPARE(m_workspace->paneCount(), layout.second);
+        for (int pane = 0; pane < layout.second; ++pane)
+            m_workspace->paneAtIndex(pane)->property("current").value<QObject *>()->setProperty("viewMode", "details");
+        settle(); focusRow("one.txt");
+        for (auto *pane : itemsNamed("pane")) {
+            if (!pane->isVisible()) continue;
+            QList<QQuickItem *> rows;
+            for (auto *row : itemsNamed("fileRow"))
+                if (pane->isAncestorOf(row) && row->isVisible() && row->property("details").toBool()
+                        && !row->property("pooled").toBool()) rows.append(row);
+            QVERIFY(!rows.isEmpty());
+            const qreal list = rows.first()->width();
+            lists.append(list);
+            const qreal minimum = std::min(160.0, list * 0.4);
+            QStringList shown;
+            for (auto *row : rows) {
+                QQuickItem *name = nullptr;
+                QList<QQuickItem *> cells;
+                for (auto *child : row->childItems()) {
+                    if (child->objectName() == "rowName") name = child;
+                    for (auto *cell : child->childItems())
+                        if (cell->objectName() == "columnCell" && cell->isVisible()) cells.append(cell);
+                }
+                QVERIFY(name);
+                const QString where = QString("list %1 px, %2").arg(list).arg(row->property("name").toString());
+                QVERIFY2(name->width() >= minimum - 0.5, qPrintable(where + QString(": name %1 px").arg(name->width())));
+                QStringList fields;
+                QRectF previous = name->mapRectToItem(row, QRectF(0, 0, name->width(), name->height()));
+                QVERIFY2(previous.left() >= 0, qPrintable(where));
+                for (auto *cell : cells) {
+                    const QString field = cell->property("modelData").toString();
+                    fields.append(field);
+                    const QRectF rect = cell->mapRectToItem(row, QRectF(0, 0, cell->width(), cell->height()));
+                    QVERIFY2(rect.left() >= previous.right(), qPrintable(where + " " + field + " overlaps"));
+                    previous = rect;
+                    if (field == "size") {
+                        auto *text = cell->property("item").value<QQuickItem *>(); QVERIFY(text);
+                        QCOMPARE(text->property("horizontalAlignment").toInt(), int(Qt::AlignRight));
+                        QCOMPARE(text->width(), cell->width());
+                    }
+                }
+                QVERIFY2(previous.right() <= row->width(), qPrintable(where));
+                if (fields.contains("tags")) QVERIFY2(name->width() <= 420.5, qPrintable(where));
+                if (row == rows.first()) shown = fields;
+                QCOMPARE(fields, shown);
+            }
+            // Columns drop modified first, then type, size and tags, each with
+            // its heading; those left keep the chosen order.
+            QStringList expected = chosen;
+            for (const QString field : {"mode", "owner", "mtime", "type", "size", "tags"})
+                if (expected.size() > shown.size()) expected.removeAll(field);
+            QCOMPARE(shown, expected);
+            QStringList headings;
+            for (auto *head : itemsNamed("columnHead")) {
+                if (!pane->isAncestorOf(head) || !head->isVisible() || head->height() <= 0
+                        || head->property("label").toString() == "name") continue;
+                const QString field = head->property("role").toString();
+                headings.append(field);
+                QCOMPARE(head->property("alignRight").toBool(), field == "size");
+            }
+            std::sort(headings.begin(), headings.end());
+            QStringList sortedShown = shown; std::sort(sortedShown.begin(), sortedShown.end());
+            QCOMPARE(headings, sortedShown);
+            if (list >= 1340) QCOMPARE(shown, chosen);
+            if (list > 1000) QVERIFY(shown.contains("tags"));
+        }
+        if (layout.first == 640 && layout.second == 1) {
+            // A dropped column still sorts from the keyboard.
+            QVERIFY(!m_workspace->columns().isEmpty());
+            bool dropped = false;
+            for (auto *head : itemsNamed("columnHead"))
+                dropped |= head->isVisible() && head->property("role").toString() == "mtime";
+            QVERIFY(!dropped);
+            while (tab()->sortRole() != "mtime") key('s');
+            const bool ascending = tab()->sortAscending();
+            key('S');
+            QCOMPARE(tab()->sortAscending(), !ascending);
+            QCOMPARE(tab()->sortRole(), QStringLiteral("mtime"));
+            tab()->setSortRole("name"); tab()->setSortAscending(true); settle();
+        }
+    }
+    qInfo() << "list widths" << lists;
+    QVERIFY(std::any_of(lists.begin(), lists.end(), [](qreal list) { return list <= 300; }));
+    QVERIFY(std::any_of(lists.begin(), lists.end(), [](qreal list) { return list >= 1340; }));
+    QVERIFY(std::any_of(lists.begin(), lists.end(), [](qreal list) { return qAbs(list - 548) <= 1; }));
 }
 
 void TestStudio::preservesTagsWrittenBeforeTheOperationLock()
@@ -15644,7 +15870,9 @@ void TestStudio::reversesFreshControlGroups()
     QList<QQuickItem *> chain;
     for (int at = 0; at < controls.property("length").toInt(); ++at) {
         auto *control = qobject_cast<QQuickItem *>(controls.property(at).toQObject());
-        QVERIFY(control); chain.append(control);
+        QVERIFY(control);
+        // A footer hint the width dropped is not a Tab stop.
+        if (control->isVisible()) chain.append(control);
     }
     QVERIFY(chain.size() >= 3);
     // Exercise the Shift-modified Tab representation before any forward traversal.

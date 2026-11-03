@@ -165,6 +165,31 @@ Item {
                 ctx.beginPath()
                 ctx.arc(6, 6.2, 0.9, 0, Math.PI * 2)
                 ctx.fill()
+            } else if (k === "view-list") {
+                ctx.beginPath()
+                for (const y of [4, 8, 12]) {
+                    ctx.moveTo(2.4, y)
+                    ctx.lineTo(3.2, y)
+                    ctx.moveTo(5.6, y)
+                    ctx.lineTo(13.6, y)
+                }
+                ctx.stroke()
+            } else if (k === "view-details") {
+                ctx.beginPath()
+                for (const y of [4, 8, 12]) {
+                    ctx.moveTo(2.4, y)
+                    ctx.lineTo(8.4, y)
+                    ctx.moveTo(10.8, y)
+                    ctx.lineTo(13.6, y)
+                }
+                ctx.stroke()
+            } else if (k === "view-icons") {
+                for (const x of [2.4, 9.2])
+                    for (const y of [2.4, 9.2]) {
+                        ctx.beginPath()
+                        ctx.rect(x, y, 4.4, 4.4)
+                        ctx.stroke()
+                    }
             }
         }
     }
