@@ -98,6 +98,18 @@ bool basename(const QString& name)
     return !name.isEmpty() && name != "." && name != ".." && !name.contains('/')
         && !name.contains(QChar::Null);
 }
+// Drops GTK mnemonic underlines: "_" before a character marks it, "__" is one "_".
+QString withoutMnemonics(const QString& label)
+{
+    QString text;
+    text.reserve(label.size());
+    for (qsizetype i = 0; i < label.size(); ++i) {
+        if (label[i] == '_' && ++i == label.size())
+            break;
+        text += label[i];
+    }
+    return text;
+}
 QVariantMap filterMap(const Filter& f)
 {
     QVariantList rules;
@@ -142,7 +154,8 @@ bool PortalRequest::parse(const QVariantMap& o, QString* reason)
     for (const auto& key : { "modal", "multiple", "directory" })
         if (o.contains(key) && o[key].metaType() != QMetaType::fromType<bool>())
             return fail(QStringLiteral("Invalid boolean option: ") + key);
-    acceptLabel = o.value("accept_label", kind == "open" ? "Open" : "Save").toString();
+    acceptLabel
+        = withoutMnemonics(o.value("accept_label", kind == "open" ? "Open" : "Save").toString());
     modal = o.value("modal", true).toBool();
     multiple = o.value("multiple", false).toBool();
     directory = o.value("directory", false).toBool();

@@ -68,6 +68,14 @@ and Ctrl+H to show hidden entries. The up button navigates to the parent folder.
 SaveFile provides a filename field; an existing destination requires explicit
 overwrite consent. Canceling that question returns to the chooser.
 
+The accept button shows the application's `accept_label`, or **Open** or
+**Save** when it sends none. The specification allows GTK mnemonic underlines
+in that label; the chooser removes them as GTK's portal backend displays them:
+each single `_` is dropped and `__` shows one `_`, so `_Save` reads **Save**
+and `Save__as` reads **Save_as**. The chooser has no Alt mnemonics; Tab and
+Enter reach the button. Filter, choice and option labels are shown as sent,
+as both GTK's and KDE's portal backends show them.
+
 The application's filters are available in a filter control. Files outside the
 selected filter are dimmed, rather than treated as unsafe: the portal protocol
 allows an explicit selection outside a filter. The chosen filter is returned
