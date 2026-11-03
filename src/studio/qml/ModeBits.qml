@@ -86,7 +86,9 @@ Row {
                     color: cell.on && bits.editable ? Theme.fill(Theme.accent, 0.16)
                                                     : "transparent"
                     border.width: 1
-                    border.color: bits.cursor === cell.at ? Theme.accent
+                    // The cursor while the sheet around it has the keyboard;
+                    // a focused cell has the focus ring instead.
+                    border.color: bits.cursor === cell.at && !cell.activeFocus ? Theme.accent
                                 : hovered ? Theme.fill(Theme.foreground, 0.3)
                                 : "transparent"
 

@@ -40,6 +40,7 @@ C.ToolTip {
     }
     contentItem: OverlayScroll {
         id: scroll
+        gutter: 0
         contentHeight: label.implicitHeight
         HoverHandler {
             id: tipHover

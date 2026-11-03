@@ -9,8 +9,13 @@ Flickable {
     id: viewport
     objectName: "overlayScroll"
     property bool focusOnScroll: false
+    /// Room either side of the content for the focus ring of a control at its
+    /// edge; a panel whose rows fill it keeps their rings inside them instead.
+    property real gutter: Theme.focusRing
     clip: true
-    contentWidth: width
+    leftMargin: gutter
+    rightMargin: gutter
+    contentWidth: width - 2 * gutter
     boundsBehavior: Flickable.StopAtBounds
 
     function revealItem(item) {
@@ -28,12 +33,16 @@ Flickable {
             ancestor = ancestor.parent
         if (!ancestor)
             return
-        const point = item.mapToItem(contentItem, rectangle.x, rectangle.y)
+        // The gutter above and below too, where the item's focus ring is,
+        // when both fit.
+        const room = rectangle.height + 2 * gutter <= height ? gutter : 0
+        const point = item.mapToItem(contentItem, rectangle.x, rectangle.y - room)
+        const extent = rectangle.height + 2 * room
         let next = contentY
         if (point.y < next)
             next = point.y
-        else if (point.y + rectangle.height > next + height)
-            next = point.y + Math.min(rectangle.height, height) - height
+        else if (point.y + extent > next + height)
+            next = point.y + Math.min(extent, height) - height
         contentY = Math.max(0, Math.min(next, Math.max(0, contentHeight - height)))
     }
     function revealFocus() {
@@ -82,13 +91,10 @@ Flickable {
         function onActiveFocusItemChanged() { Qt.callLater(viewport.revealFocus) }
     }
     ImmediateWheel { anchors.fill: parent; view: viewport; step: 28 }
-    Rectangle {
+    FocusRing {
         parent: viewport
-        anchors.fill: parent
-        color: "transparent"
-        border.width: viewport.activeFocus ? 1 : 0
-        border.color: Theme.accent
-        z: 2
+        focused: viewport.activeFocus
+        inset: Theme.focusRing
     }
     C.ScrollBar.vertical: C.ScrollBar {}
 }

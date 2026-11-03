@@ -193,11 +193,13 @@ Window {
             id: form
             objectName: "chooserForm"
             anchors.fill: parent
-            anchors.margins: Theme.inset
+            anchors.margins: Theme.inset - Theme.focusRing
             contentHeight: contents.height
             Column {
                 id: contents
-                width: form.width
+                topPadding: Theme.focusRing
+                bottomPadding: Theme.focusRing
+                width: form.contentWidth
                 spacing: Theme.spacingS
                 Text {
                     textFormat: Text.PlainText
@@ -276,6 +278,8 @@ Window {
                     height: Math.max(4 * Theme.rowHeight, chooser.height * 0.38)
                     model: folder
                     clip: true
+                    topMargin: Theme.focusRing
+                    bottomMargin: Theme.focusRing
                     activeFocusOnTab: true
                     boundsBehavior: Flickable.StopAtBounds
                     onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
@@ -316,7 +320,8 @@ Window {
                         required property string kind
                         required property bool marked
                         readonly property bool matches: !chooser.request || kind !== "file" || (chooser.request.selectedFilter < 0 || chooser.request.matches(name))
-                        width: files.width
+                        x: Theme.focusRing
+                        width: files.width - 2 * Theme.focusRing
                         height: Theme.rowHeight
                         color: files.currentIndex === index ? Theme.fill(Theme.accent, 0.18) : "transparent"
                         Text {
@@ -344,11 +349,10 @@ Window {
                         step: Theme.rowHeight
                     }
                     C.ScrollBar.vertical: C.ScrollBar {}
-                    Rectangle {
-                        anchors.fill: parent
-                        color: "transparent"
-                        border.width: files.activeFocus ? 1 : 0
-                        border.color: Theme.accent
+                    FocusRing {
+                        parent: files
+                        focused: files.activeFocus
+                        inset: Theme.focusRing
                     }
                 }
                 Text {
@@ -433,10 +437,12 @@ Window {
             color: Theme.background
             OverlayScroll {
                 anchors.fill: parent
-                anchors.margins: Theme.inset
+                anchors.margins: Theme.inset - Theme.focusRing
                 contentHeight: confirmation.height
                 Column {
                     id: confirmation
+                    topPadding: Theme.focusRing
+                    bottomPadding: Theme.focusRing
                     width: parent.width
                     spacing: Theme.spacingM
                     Text {
@@ -484,8 +490,12 @@ Window {
         background: Rectangle {
             color: Theme.panel
             implicitHeight: Theme.controlHeight
-            border.color: combo.activeFocus ? Theme.accent : Theme.line
+            border.color: Theme.line
             border.width: 1
+            FocusRing {
+                focused: combo.activeFocus
+                inset: Theme.focusRing
+            }
         }
         delegate: C.ItemDelegate {
             id: option

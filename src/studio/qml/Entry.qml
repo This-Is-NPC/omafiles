@@ -8,8 +8,8 @@ import omafiles
 // this, rather than two bare TextInputs styled separately and free to drift;
 // where it appears is the caller's business.
 //
-// The border is the focus ring: for a field, the ring and the frame are the same
-// edge, and drawing both would be saying it twice.
+// A field's focus ring lies on its frame, inside it: a field fills the width
+// of the sheet or bar it sits in, where a ring outside it would be cut.
 Rectangle {
     id: box
 
@@ -36,9 +36,12 @@ Rectangle {
     radius: Theme.rounding
     color: Theme.sunken
     border.width: 1
-    border.color: entry.activeFocus ? Theme.accent : Theme.fill(Theme.foreground, 0.18)
+    border.color: Theme.fill(Theme.foreground, 0.18)
 
-    Behavior on border.color { ColorAnimation { duration: 90 } }
+    FocusRing {
+        focused: entry.activeFocus
+        inset: Theme.focusRing
+    }
 
     Text {
         id: leadMark

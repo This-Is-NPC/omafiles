@@ -61,14 +61,16 @@ Rectangle {
                     id: scroll
                     Component.onCompleted: sheet.scroller = scroll
                     anchors.fill: parent
-                    anchors.margins: Theme.inset
+                    anchors.margins: Theme.inset - Theme.focusRing
                     Keys.onTabPressed: function (event) { Focus.move(event, scroll.nextItemInFocusChain(true), previewText) }
                     Keys.onBacktabPressed: function (event) { Focus.move(event, previewText) }
                     activeFocusOnTab: true
                     contentHeight: contents.implicitHeight
                     Column {
                         id: contents
-                        width: scroll.width
+                        width: scroll.contentWidth
+                        topPadding: Theme.focusRing
+                        bottomPadding: Theme.focusRing
                         spacing: Theme.spacingM
                         Label {
                             width: parent.width

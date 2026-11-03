@@ -71,20 +71,22 @@ Loader {
             }
             OverlayPanel {
                 preferredWidth: 540
-                preferredHeight: column.implicitHeight + 2 * Theme.inset
+                preferredHeight: column.implicitHeight + 2 * (Theme.inset - Theme.focusRing)
                 Accessible.role: Accessible.Dialog
                 Accessible.name: "Destination already exists"
                 MouseArea { anchors.fill: parent; onClicked: function (mouse) { mouse.accepted = true } }
                 OverlayScroll {
                     id: scroll
                     anchors.fill: parent
-                    anchors.margins: Theme.inset
+                    anchors.margins: Theme.inset - Theme.focusRing
                     focusOnScroll: true
                     contentHeight: column.implicitHeight
                     Keys.onTabPressed: function (event) { Focus.move(event, skipButton, cancelButton) }
                     Keys.onBacktabPressed: function (event) { Focus.move(event, cancelButton) }
                     Column {
                         id: column
+                        topPadding: Theme.focusRing
+                        bottomPadding: Theme.focusRing
                         width: parent.width
                         spacing: Theme.spacingM
                         Label { width: parent.width; wrapMode: Text.Wrap; font.bold: true; font.pixelSize: Theme.fontTitle; text: "Destination already exists" }

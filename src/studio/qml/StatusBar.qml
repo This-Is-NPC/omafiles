@@ -146,9 +146,9 @@ Rectangle {
         id: hintStrip
         visible: !bar.alarm
         anchors.left: facts.right
-        anchors.leftMargin: Theme.spacingL
+        anchors.leftMargin: Theme.spacingL - Theme.focusRing
         anchors.right: parent.right
-        anchors.rightMargin: Theme.inset
+        anchors.rightMargin: Theme.inset - Theme.focusRing
         anchors.verticalCenter: parent.verticalCenter
         model: bar.hints
         onRequested: function (key) { bar.hintRequested(key) }

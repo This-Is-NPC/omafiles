@@ -140,7 +140,7 @@ Window {
                 ReadOnlyText {
                     id: propertyText
                     objectName: "propertyText"
-                    width: propertiesScroll.width
+                    width: propertiesScroll.contentWidth
                     height: Math.max(implicitHeight, propertiesScroll.height)
                     focusFrame: propertiesScroll
                     onCursorRectangleChanged: if (activeFocus) propertiesScroll.revealRect(propertyText, cursorRectangle)
@@ -1864,13 +1864,13 @@ Window {
                     anchors.verticalCenter: parent.verticalCenter
                     height: Theme.controlHeight
 
+                    FocusRing { focused: crumbs.activeFocus }
+
                     Row {
                         id: crumbs
                         objectName: "pathCrumbs"
                         visible: !win.editingPath
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.fill: parent
                         spacing: 0
                         Accessible.role: Accessible.Button
                         Accessible.name: crumbs.full
@@ -2982,6 +2982,7 @@ Window {
                         delegate: TabHandle {
                             id: tabHandle
                             objectName: "tabHandle"
+                            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
                             required property var modelData
                             required property int index
                             title: modelData.title
@@ -3510,18 +3511,6 @@ Window {
                                  : rowHover.hovered ? Theme.fill(Theme.foreground, 0.05)
                                                     : "transparent"
 
-                            // The cursor is a bar at the left edge rather than a
-                            // border around the row: at this row height an
-                            // outline is most of what you see, and the bar still
-                            // reads when the row is half scrolled out of view.
-                            Rectangle {
-                                anchors.left: parent.left
-                                anchors.top: parent.top
-                                anchors.bottom: parent.bottom
-                                width: 2
-                                color: row.onCursor ? Theme.accent : "transparent"
-                            }
-
                             Text {
                                 id: markDot
                                 anchors.left: parent.left
@@ -3765,8 +3754,6 @@ Window {
                                 color: cell.onCursor ? Theme.fill(Theme.accent, 0.16)
                                      : cellHover.hovered ? Theme.fill(Theme.foreground, 0.05)
                                                          : "transparent"
-                                border.width: 1
-                                border.color: cell.onCursor ? Theme.accent : "transparent"
 
                                 Column {
                                     id: tileColumn
@@ -3846,6 +3833,11 @@ Window {
                         // The pane's catch-all has focused the pane already.
                         onStarted: win.takeFocus()
                     }
+
+                    FocusRing {
+                        focused: root.activeFocus && Workspace.focusedPane === filesRoot.paneIndex
+                        inset: Theme.focusRing
+                    }
                 }
 
             }
@@ -3924,6 +3916,11 @@ Window {
                 anchors.margins: Theme.inset
                 quiet: true
                 text: "#tag is a tag · j k walks the map · l opens · m for the menu"
+            }
+
+            FocusRing {
+                focused: root.activeFocus && win.activeGraph === graph
+                inset: Theme.focusRing
             }
         }
     }

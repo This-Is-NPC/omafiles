@@ -108,6 +108,15 @@ Dialogs are recognized through Qt's common Popup base so their footer controls
 belong to the same focus layer. Buttons share the window's focus and keyboard
 activation component.
 
+One focus ring shows where the keyboard is: 2 px of accent just outside the
+focused button, chip, tab or path. A list, a scrolling sheet, a section heading
+and a text field fill the pane they sit in, so they draw the ring along their
+own edge, clear of their rows and text; the cursor row of a focused list keeps
+only its fill. A click or tap hides the ring until the next key, the way Qt
+Quick Controls show
+[visual focus](https://doc.qt.io/qt-6/qml-qtquick-controls-control.html#visualFocus-prop)
+only for keyboard focus.
+
 Keyboard navigation and key hints follow the focused control. **t** and **v**
 focus the tag or saved-view list, revealing the sidebar at narrow widths; an
 empty list focuses its heading. Clicking or tapping a sidebar heading focuses

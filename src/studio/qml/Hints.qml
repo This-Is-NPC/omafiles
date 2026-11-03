@@ -21,7 +21,7 @@ Item {
         let count = 0
         for (; count < controls.length && controls[count]; ++count) {
             used += controls[count].implicitWidth + (count > 0 ? strip.spacing : 0)
-            if (count > 0 && used > width)
+            if (count > 0 && used > width - 2 * Theme.focusRing)
                 break
         }
         return count
@@ -51,12 +51,15 @@ Item {
         return direction > 0 ? nextFocus : previousFocus
     }
 
-    implicitHeight: Theme.controlHeight
+    // The clip keeps a wide first hint off the status text; the margin keeps
+    // a hint's focus ring inside it.
+    implicitHeight: Theme.controlHeight + 2 * Theme.focusRing
     clip: true
 
     Row {
         id: strip
         anchors.right: parent.right
+        anchors.rightMargin: Theme.focusRing
         anchors.verticalCenter: parent.verticalCenter
         spacing: Theme.spacingS
 

@@ -80,17 +80,19 @@ Rectangle {
                 }
                 OverlayPanel {
                     preferredWidth: 540
-                    preferredHeight: column.implicitHeight + 2 * Theme.inset
+                    preferredHeight: column.implicitHeight + 2 * (Theme.inset - Theme.focusRing)
                     Accessible.role: Accessible.Dialog
                     Accessible.name: sheet.extracting ? "Extract archive" : "Compress files"
                     MouseArea { anchors.fill: parent; onClicked: function (mouse) { mouse.accepted = true } }
                     OverlayScroll {
                         id: scroll
                         anchors.fill: parent
-                        anchors.margins: Theme.inset
+                        anchors.margins: Theme.inset - Theme.focusRing
                         contentHeight: column.implicitHeight
                         Column {
                             id: column
+                            topPadding: Theme.focusRing
+                            bottomPadding: Theme.focusRing
                             width: parent.width
                             spacing: Theme.spacingM
                             Label { width: parent.width; wrapMode: Text.Wrap; font.bold: true; font.pixelSize: Theme.fontTitle; text: sheet.extracting ? "Extract archive" : "Compress " + sheet.paths.length + " selected entries" }

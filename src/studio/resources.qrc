@@ -8,6 +8,7 @@
         <file>qml/Chip.qml</file>
         <file>qml/CriteriaBar.qml</file>
         <file>qml/FocusableControl.qml</file>
+        <file>qml/FocusRing.qml</file>
         <file>qml/Focus.js</file>
         <file>qml/FileDragGrip.qml</file>
         <file>qml/FileDropArea.qml</file>

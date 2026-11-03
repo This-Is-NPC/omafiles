@@ -102,7 +102,7 @@ Rectangle {
 
                 OverlayPanel {
                     preferredWidth: 420
-                    preferredHeight: column.implicitHeight + 2 * Theme.inset
+                    preferredHeight: column.implicitHeight + 2 * (Theme.inset - Theme.focusRing)
 
                     Accessible.role: Accessible.Dialog
                     Accessible.name: heading.text
@@ -117,10 +117,12 @@ Rectangle {
                         Keys.onTabPressed: function (event) { Focus.move(event, bits.editable ? bits.firstControl : cancelButton, cancelButton) }
                         Keys.onBacktabPressed: function (event) { Focus.move(event, cancelButton) }
                         anchors.fill: parent
-                        anchors.margins: Theme.inset
+                        anchors.margins: Theme.inset - Theme.focusRing
                         contentHeight: column.implicitHeight
                     Column {
                         id: column
+                        topPadding: Theme.focusRing
+                        bottomPadding: Theme.focusRing
                         width: parent.width
                         spacing: Theme.spacingM
 

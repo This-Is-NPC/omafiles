@@ -134,13 +134,18 @@ FocusScope {
                 }
                 Qt.callLater(revealCurrent)
             }
+            topMargin: Theme.focusRing
+            bottomMargin: Theme.focusRing
             highlight: Rectangle {
                 color: Theme.fill(Theme.accent, 0.12)
-                border.width: list.activeFocus || (list.currentItem && list.currentItem.activeFocus) ? 1 : 0
-                border.color: Theme.accent
                 radius: Theme.rounding
             }
             highlightFollowsCurrentItem: true
+            FocusRing {
+                parent: list
+                focused: list.activeFocus || (list.currentItem !== null && list.currentItem.activeFocus)
+                inset: Theme.focusRing
+            }
             Keys.onTabPressed: function (event) { Focus.move(event, restoreButton, receiptButton.visible ? receiptButton : refreshButton) }
             Keys.onBacktabPressed: function (event) { Focus.move(event, receiptButton.visible ? receiptButton : refreshButton) }
             delegate: Rectangle {
@@ -152,7 +157,8 @@ FocusScope {
                 required property string deleted
                 required property string problem
                 required property bool marked
-                width: list.width
+                x: Theme.focusRing
+                width: list.width - 2 * Theme.focusRing
                 height: rowLabels.implicitHeight + 2 * Theme.spacingS
                 color: row.marked ? Theme.fill(Theme.accent, 0.08) : "transparent"
                 Accessible.role: Accessible.ListItem
