@@ -94,7 +94,7 @@ Three helper processes run separately when needed. Each is a small, focused CLI 
 
 **Devices** (`src/devices`) enumerates removable drives and phones using GLib and UDisks2. The window sends device enumeration requests, receives JSON describing available devices, and shows them in a list. Mounting is handled by gvfs and system tools. See [devices.md](devices.md) for the devices feature.
 
-Helpers are separate processes so that expensive or unsafe work (untrusted file parsing, privilege-requiring operations) cannot crash the window or stall the GUI. Each helper can use one allowed CPU, inherit CPU affinity and cgroup membership, and is memory-bounded.
+Helpers are separate processes so that expensive or unsafe work (untrusted file parsing, privilege-requiring operations) cannot crash the window or stall the GUI. Each helper can use one allowed CPU, inherit CPU affinity and cgroup membership, and is memory-bounded. `prepareHelper` in `src/studio/HelperProcess.cpp` starts every helper with `vfork`, so the window's page tables are not copied for the moment before exec.
 
 ## 4. State on disk
 

@@ -33,6 +33,9 @@ qint64 helperResidentBytes(qint64 processId)
 void prepareHelper(QProcess &process, unsigned cpuSeconds, qint64 outputBytes, std::optional<int> preferredCpu)
 {
     process.setStandardErrorFile(QProcess::nullDevice());
+    // The modifier only makes system calls on its own stack, so the child may share the window's
+    // memory until exec instead of copying its page tables.
+    process.setUnixProcessParameters(QProcess::UnixProcessFlag::UseVFork);
     process.setChildProcessModifier([cpuSeconds, outputBytes, preferredCpu] {
         ::setsid();
         cpu_set_t allowed;
