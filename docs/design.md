@@ -69,7 +69,7 @@ The window's colours and sizes come from one QML singleton, `Theme` (`src/studio
 | Indent | `iconSize`, `iconGap` | 16, 8 | a row's icon and the gap before its text |
 | Focus | `focusInset` | 2 | how far a focus ring sits inside its control |
 
-`Label` draws `quiet` text at `fontSmall` and other text at `fontBody`. The scale is named the way KDE Kirigami's `Units` names its spacings and icon sizes; as in the GNOME HIG, spacing sits on a fixed grid (4 px here, where GNOME uses 6).
+`Label` draws `quiet` text at `fontSmall` and other text at `fontBody`. A panel row (`PanelRow`) is `inset | icon | iconGap | text | trailing`, every part on the row's centre line, so its text starts `inset + 24` px inside the panel. A section heading (`SectionHeading`) is one row tall: its name starts at the row icons' edge, and its actions and the key that walks the section sit on the right, on the same centre line. Sections are `spacingL` apart with a `Rule` halfway. The scale is named the way KDE Kirigami's `Units` names its spacings and icon sizes; as in the GNOME HIG, spacing sits on a fixed grid (4 px here, where GNOME uses 6).
 
 ### Key spelling
 

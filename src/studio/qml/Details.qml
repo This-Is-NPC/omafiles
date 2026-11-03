@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Layouts
 import omafiles
 
 // What the row under the cursor is.
@@ -24,6 +25,16 @@ Item {
     Accessible.name: "Details"
     Accessible.description: details.has ? details.entry.name : "no row"
     Accessible.ignored: false
+
+    component Fact: Label {
+        quiet: true
+        Layout.alignment: Qt.AlignLeft | Qt.AlignBaseline
+    }
+    component Value: Label {
+        Layout.fillWidth: true
+        Layout.alignment: Qt.AlignLeft | Qt.AlignBaseline
+    }
+
     Column {
         id: body
         width: parent.width
@@ -34,6 +45,7 @@ Item {
             spacing: Theme.iconGap
 
             Icon {
+                objectName: "detailsIcon"
                 anchors.verticalCenter: parent.verticalCenter
                 kind: !details.has ? "file"
                     : details.entry.kind === "file" ? "file"
@@ -43,6 +55,7 @@ Item {
                 opacity: details.has ? 1 : 0.4
             }
             Label {
+                objectName: "detailsName"
                 width: parent.width - Theme.iconSize - Theme.iconGap
                 anchors.verticalCenter: parent.verticalCenter
                 text: details.has ? details.entry.name : "no row"
@@ -66,7 +79,9 @@ Item {
             renderType: Text.NativeRendering
         }
 
-        Grid {
+        // The name column is as wide as its widest name, each name sits on its
+        // value's baseline, and a value too long for the rest elides.
+        GridLayout {
             width: parent.width
             visible: details.has
             columns: 2
@@ -77,16 +92,14 @@ Item {
             // suffix, and one word for two different values is how you end up
             // reading `ods` in one place and `application/vnd.oasis…` in
             // another and believing they disagree.
-            Label { quiet: true; text: "mime" }
-            Label {
-                width: body.width - 58
+            Fact { text: "mime" }
+            Value {
                 text: details.has ? details.entry.mime : ""
             }
 
-            Label { quiet: true; text: "size"; visible: sizeValue.visible }
-            Label {
+            Fact { text: "size"; visible: sizeValue.visible }
+            Value {
                 id: sizeValue
-                width: body.width - 58
                 visible: details.has && !details.entry.directory
                 text: details.has && details.entry.sizeText ? details.entry.sizeText : ""
             }
@@ -96,10 +109,9 @@ Item {
             // not carry it, because a column of them is an open() per folder on
             // every rebuild, and on a big tree or a network mount that is the
             // list going slow to fill a column nobody asked for.
-            Label { quiet: true; text: "items"; visible: itemsValue.visible }
-            Label {
+            Fact { text: "items"; visible: itemsValue.visible }
+            Value {
                 id: itemsValue
-                width: body.width - 58
                 visible: details.has && details.entry.directory
                          && details.entry.items !== undefined && details.entry.items >= 0
                 text: details.has && details.entry.items !== undefined
@@ -108,10 +120,9 @@ Item {
                       : ""
             }
 
-            Label { quiet: true; text: "changed"; visible: timeValue.visible }
-            Label {
+            Fact { text: "changed"; visible: timeValue.visible }
+            Value {
                 id: timeValue
-                width: body.width - 58
                 visible: details.has && details.entry.mtimeText !== ""
                 text: details.has ? details.entry.mtimeText : ""
             }
@@ -122,10 +133,9 @@ Item {
             // the group -- the question the line answers is whether it is
             // yours, and a name you would have to recognise as your own is
             // a slower way of saying so.
-            Label { quiet: true; text: "owner"; visible: ownerValue.visible }
-            Label {
+            Fact { text: "owner"; visible: ownerValue.visible }
+            Value {
                 id: ownerValue
-                width: body.width - 58
                 visible: details.has && details.entry.owner !== ""
                 text: !details.has ? ""
                     : details.entry.mine ? "you"
@@ -135,9 +145,14 @@ Item {
             // A click on a bit runs `chmod` on the row. Greyed where the row is
             // not yours, since only the owner or root may; and on a link, whose
             // bits are the target's and which `chmod` refuses to change through.
-            Label { quiet: true; text: "mode"; visible: modeValue.visible }
+            Fact {
+                text: "mode"
+                visible: modeValue.visible
+                Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
+            }
             ModeBits {
                 id: modeValue
+                Layout.alignment: Qt.AlignLeft | Qt.AlignVCenter
                 objectName: "detailsMode"
                 visible: details.has && details.entry.mode !== ""
                 value: details.has && details.entry.permissions !== undefined
@@ -149,8 +164,8 @@ Item {
                 }
             }
 
-            Label { quiet: true; text: "marked"; visible: markValue.visible }
-            Label {
+            Fact { text: "marked"; visible: markValue.visible }
+            Value {
                 id: markValue
                 visible: details.has && details.entry.marked === true
                 text: "yes"

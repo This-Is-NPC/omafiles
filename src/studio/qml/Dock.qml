@@ -50,13 +50,12 @@ Rectangle {
 
     function revealSelection() {
         const list = walking ? tagsListView : walkingViews ? viewsListView : walkingDevices ? devices.list : null
-        const heading = walking ? tagsHeading : walkingDevices ? devices : viewsHeading
+        const section = walking ? tagsSection : walkingDevices ? devices : viewsSection
         if (!list)
             return
         if (list.currentIndex >= 0)
             list.positionViewAtIndex(list.currentIndex, ListView.Contain)
-        scroll.revealRect(heading, Qt.rect(0, 0, heading.width,
-            heading.height + column.spacing + list.height))
+        scroll.revealRect(section, Qt.rect(0, 0, section.width, section.height))
     }
     onWalkingChanged: Qt.callLater(revealSelection)
     onWalkingViewsChanged: Qt.callLater(revealSelection)
@@ -67,294 +66,256 @@ Rectangle {
         objectName: "dockScroll"
         focusOnScroll: true
         anchors.fill: parent
-        anchors.margins: Theme.inset
+        anchors.topMargin: Theme.inset
+        anchors.bottomMargin: Theme.inset
         contentHeight: column.implicitHeight
         onHeightChanged: Qt.callLater(dock.revealSelection)
         onWidthChanged: Qt.callLater(dock.revealSelection)
         onContentHeightChanged: Qt.callLater(dock.revealSelection)
 
-    Column {
-        id: column
-        width: scroll.width
-        spacing: Theme.spacingS
+        // Sections spacingL apart with a hairline halfway; inside a section
+        // the heading and its rows touch, the heading being a row tall.
+        Column {
+            id: column
+            width: scroll.width
+            spacing: Theme.spacingS
 
-        Label { quiet: true; text: "details" }
+            Column {
+                width: parent.width
 
-        Details {
-            width: parent.width
-            entry: dock.entry
-            onTagActivated: function (tag) { dock.tagChipActivated(dock.entry.path, tag) }
-        }
+                SectionHeading { width: parent.width; usable: false; text: "details" }
 
-        Item { width: 1; height: Theme.spacingXs }
-
-        Rule {}
-
-        Item { width: 1; height: Theme.spacingXs }
-
-        DeviceSection {
-            id: devices
-            width: parent.width
-            maximumHeight: Math.max(32, scroll.height * 0.3)
-            onFocusEntered: { dock.focusEntered(); dock.revealSelection() }
-            onSelectionChanged: Qt.callLater(dock.revealSelection)
-            onKeyRequested: function (event) { dock.keyRequested(event) }
-            onActivated: function (id) { dock.deviceActivated(id) }
-            onMenuRequested: function (id, x, y) { dock.deviceMenuRequested(id, x, y) }
-        }
-
-        // Where you keep coming back to.
-        //
-        // A folder, a tag and a saved query are one list and not three: each of
-        // them is a way of asking that somebody wanted back, and which kind it
-        // is only matters at the moment it opens. Above the vocabulary because
-        // it is a shorter list somebody chose, where the vocabulary is a long
-        // one the index grew.
-        // Always here, empty or not: a panel that showed only once something
-        // was saved would hide where saving lives from whoever has not yet.
-        FocusableControl {
-            handCursor: false
-            pointerFocus: dock.viewsFocusTarget
-            tabFocusable: Views.count === 0
-            Accessible.role: Accessible.Grouping
-            Accessible.name: "Saved views"
-            onActiveFocusChanged: if (activeFocus) dock.focusEntered()
-            id: viewsHeading
-            width: parent.width
-            height: viewsCaption.implicitHeight
-
-            Label { id: viewsCaption; quiet: true; text: "views" }
-            Label {
-                anchors.right: parent.right
-                quiet: true
-                color: dock.walkingViews ? Theme.accent : Theme.dim
-                text: dock.walkingViews ? "esc leaves" : "v"
-            }
-        }
-
-        ListView {
-            highlightMoveDuration: 0
-            highlightResizeDuration: 0
-            reuseItems: true
-            id: viewsListView
-            objectName: "sidebarViews"
-            activeFocusOnTab: count > 0
-            Keys.onPressed: function (event) { dock.keyRequested(event) }
-            onActiveFocusChanged: dock.focusList(viewsListView)
-            width: parent.width
-            // Its own contents, and never more than a third of the panel: the
-            // vocabulary underneath has to stay reachable however many views
-            // somebody saves.
-            height: Math.min(contentHeight, Math.max(Theme.rowHeight, scroll.height * 0.34))
-            onCurrentIndexChanged: Qt.callLater(dock.revealSelection)
-            visible: Views.count > 0
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            model: Views
-            keyNavigationEnabled: false
-            currentIndex: -1
-            spacing: 1
-            Accessible.role: Accessible.List
-            Accessible.name: "Views"
-
-            Rectangle {
-                parent: viewsListView
-                anchors.fill: parent
-                color: "transparent"
-                border.width: viewsListView.activeFocus ? 1 : 0
-                border.color: Theme.accent
-                z: 2
+                Details {
+                    x: Theme.inset
+                    width: parent.width - 2 * Theme.inset
+                    entry: dock.entry
+                    onTagActivated: function (tag) { dock.tagChipActivated(dock.entry.path, tag) }
+                }
             }
 
-            delegate: Rectangle {
-                id: viewRow
-                objectName: "viewRow"
-                required property string name
-                required property string kind
-                required property string asks
-                required property int index
-                readonly property bool onCursor: dock.walkingViews
-                                                 && viewsListView.currentIndex === index
+            Rule {}
 
-                width: ListView.view.width
-                height: Theme.rowHeight
-                Accessible.role: Accessible.ListItem
-                Accessible.name: viewRow.name
-                Accessible.description: viewRow.asks
-                radius: Theme.rounding
-                color: viewRow.onCursor ? Theme.fill(Theme.foreground, 0.10)
-                     : viewHover.hovered ? Theme.fill(Theme.foreground, 0.06)
-                                         : "transparent"
-                border.width: 1
-                border.color: viewRow.onCursor ? Theme.fill(Theme.accent, 0.45) : "transparent"
+            DeviceSection {
+                id: devices
+                width: parent.width
+                maximumHeight: Math.max(Theme.rowHeight, scroll.height * 0.3)
+                onFocusEntered: { dock.focusEntered(); dock.revealSelection() }
+                onSelectionChanged: Qt.callLater(dock.revealSelection)
+                onKeyRequested: function (event) { dock.keyRequested(event) }
+                onActivated: function (id) { dock.deviceActivated(id) }
+                onMenuRequested: function (id, x, y) { dock.deviceMenuRequested(id, x, y) }
+            }
 
-                Icon {
-                    id: viewMark
-                    anchors.left: parent.left
-                    anchors.leftMargin: Theme.spacingS
-                    anchors.verticalCenter: parent.verticalCenter
-                    // The icon says which of the two it is, so a name that does
-                    // not is still readable at a glance.
-                    kind: viewRow.kind === "folder" ? "folder" : "tag"
-                    ink: Theme.dim
+            Rule {}
+
+            // Where you keep coming back to.
+            //
+            // A folder, a tag and a saved query are one list and not three: each of
+            // them is a way of asking that somebody wanted back, and which kind it
+            // is only matters at the moment it opens. Above the vocabulary because
+            // it is a shorter list somebody chose, where the vocabulary is a long
+            // one the index grew.
+            // Always here, empty or not: a panel that showed only once something
+            // was saved would hide where saving lives from whoever has not yet.
+            Column {
+                id: viewsSection
+                width: parent.width
+
+                SectionHeading {
+                    id: viewsHeading
+                    objectName: "viewsHeading"
+                    width: parent.width
+                    pointerFocus: dock.viewsFocusTarget
+                    tabFocusable: Views.count === 0
+                    Accessible.role: Accessible.Grouping
+                    Accessible.name: "Saved views"
+                    onActiveFocusChanged: if (activeFocus) dock.focusEntered()
+                    text: "views"
+                    key: "v"
+                    walking: dock.walkingViews
                 }
-                Label {
-                    anchors.left: viewMark.right
-                    anchors.leftMargin: Theme.iconGap
-                    anchors.right: parent.right
-                    anchors.rightMargin: Theme.spacingS
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: viewRow.name
-                    opacity: 0.85
-                }
 
-                HoverHandler { id: viewHover; cursorShape: Qt.PointingHandCursor }
-                RowTapHandler {
-                    onClicked: dock.viewActivated(viewRow.index)
-                    onContextRequested: function (position) {
-                        const at = viewRow.mapToItem(null, position.x, position.y)
-                        dock.viewMenuRequested(viewRow.index, at.x, at.y)
+                ListView {
+                    highlightMoveDuration: 0
+                    highlightResizeDuration: 0
+                    reuseItems: true
+                    id: viewsListView
+                    objectName: "sidebarViews"
+                    activeFocusOnTab: count > 0
+                    Keys.onPressed: function (event) { dock.keyRequested(event) }
+                    onActiveFocusChanged: dock.focusList(viewsListView)
+                    width: parent.width
+                    // Its own contents, and never more than a third of the panel: the
+                    // vocabulary underneath has to stay reachable however many views
+                    // somebody saves.
+                    height: Math.min(contentHeight, Math.max(Theme.rowHeight, scroll.height * 0.34))
+                    onCurrentIndexChanged: Qt.callLater(dock.revealSelection)
+                    visible: Views.count > 0
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    model: Views
+                    keyNavigationEnabled: false
+                    currentIndex: -1
+                    spacing: 1
+                    Accessible.role: Accessible.List
+                    Accessible.name: "Views"
+
+                    Rectangle {
+                        parent: viewsListView
+                        anchors.fill: parent
+                        color: "transparent"
+                        border.width: viewsListView.activeFocus ? 1 : 0
+                        border.color: Theme.accent
+                        z: 2
+                    }
+
+                    delegate: PanelRow {
+                        id: viewRow
+                        objectName: "viewRow"
+                        required property string name
+                        required property string kind
+                        required property string asks
+                        required property int index
+                        readonly property bool onCursor: dock.walkingViews
+                                                         && viewsListView.currentIndex === index
+
+                        width: ListView.view.width
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: viewRow.name
+                        Accessible.description: viewRow.asks
+                        color: viewRow.onCursor ? Theme.fill(Theme.foreground, 0.10)
+                             : viewRow.hovered ? Theme.fill(Theme.foreground, 0.06)
+                                               : "transparent"
+                        border.color: viewRow.onCursor ? Theme.fill(Theme.accent, 0.45) : "transparent"
+                        // The icon says which of the two it is, so a name that does
+                        // not is still readable at a glance.
+                        iconKind: viewRow.kind === "folder" ? "folder" : "tag"
+                        text: viewRow.name
+                        textOpacity: 0.85
+
+                        RowTapHandler {
+                            onClicked: dock.viewActivated(viewRow.index)
+                            onContextRequested: function (position) {
+                                const at = viewRow.mapToItem(null, position.x, position.y)
+                                dock.viewMenuRequested(viewRow.index, at.x, at.y)
+                            }
+                        }
                     }
                 }
-            }
-        }
 
-        // What the list says when there is nothing in it: where they come
-        // from, in the words of the two ways to make one.
-        Label {
-            width: parent.width
-            visible: Views.count === 0
-            quiet: true
-            text: "nothing saved yet · m to save one"
-        }
-
-        Item { width: 1; height: Theme.spacingXs }
-
-        FocusableControl {
-            handCursor: false
-            pointerFocus: dock.tagsFocusTarget
-            tabFocusable: IndexModel.tagRowCount() === 0
-            Accessible.role: Accessible.Grouping
-            Accessible.name: "Tags"
-            onActiveFocusChanged: if (activeFocus) dock.focusEntered()
-            id: tagsHeading
-            objectName: "tagsHeading"
-            width: parent.width
-            height: Theme.controlHeight
-            visible: dock.showTags
-
-            Label { quiet: true; text: "tags"; anchors.verticalCenter: parent.verticalCenter }
-            Chip {
-                objectName: "editTagsButton"
-                anchors.horizontalCenter: parent.horizontalCenter
-                label: "+"
-                caption: "Add a tag to the row or marked files"
-                key: "t a"
-                onClicked: dock.tagEditRequested()
-                usable: dock.entry && (dock.entry.kind === "file" || dock.entry.kind === "dir")
-            }
-            Label {
-                anchors.right: parent.right
-                quiet: true
-                color: dock.walking ? Theme.accent : Theme.dim
-                text: dock.walking ? "esc leaves" : "t"
-            }
-        }
-
-        ListView {
-            highlightMoveDuration: 0
-            highlightResizeDuration: 0
-            reuseItems: true
-            id: tagsListView
-            // No off-screen delegates built ahead: one still being built when
-            // a reload shrinks the vocabulary is cancelled by a stale index.
-            cacheBuffer: 0
-            objectName: "sidebarTags"
-            activeFocusOnTab: count > 0
-            Keys.onPressed: function (event) { dock.keyRequested(event) }
-            onActiveFocusChanged: dock.focusList(tagsListView)
-            width: parent.width
-            visible: dock.showTags
-            height: dock.showTags ? Math.min(contentHeight,
-                Math.max(25, scroll.height - tagsHeading.height - column.spacing)) : 0
-            onCurrentIndexChanged: Qt.callLater(dock.revealSelection)
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            model: IndexModel.tags
-            keyNavigationEnabled: false
-            currentIndex: -1
-            spacing: 1
-            Accessible.role: Accessible.List
-            Accessible.name: "Tags"
-
-            Rectangle {
-                parent: tagsListView
-                anchors.fill: parent
-                color: "transparent"
-                border.width: tagsListView.activeFocus ? 1 : 0
-                border.color: Theme.accent
-                z: 2
-            }
-
-            delegate: Rectangle {
-                id: tagRow
-                objectName: "tagRow"
-                required property string tag
-                required property int count
-                required property int index
-                readonly property bool chosen: dock.tab && dock.tab.selectedTag === tag
-                readonly property bool onCursor: dock.walking && tagsListView.currentIndex === index
-
-                width: ListView.view.width
-                height: Theme.rowHeight
-                Accessible.role: Accessible.ListItem
-                Accessible.name: tagRow.tag
-                radius: Theme.rounding
-                color: chosen ? Theme.fill(Theme.accent, 0.16)
-                     : onCursor ? Theme.fill(Theme.foreground, 0.10)
-                     : tagHover.hovered ? Theme.fill(Theme.foreground, 0.06)
-                                        : "transparent"
-                border.width: 1
-                border.color: chosen ? Theme.fill(Theme.accent, 0.55)
-                            : onCursor ? Theme.fill(Theme.accent, 0.45)
-                                       : "transparent"
-
-                Icon {
-                    id: tagMark
-                    anchors.left: parent.left
-                    anchors.leftMargin: Theme.spacingS
-                    anchors.verticalCenter: parent.verticalCenter
-                    kind: "tag"
-                    ink: tagRow.chosen ? Theme.accent : Theme.dim
-                }
+                // What the list says when there is nothing in it: where they come
+                // from, in the words of the two ways to make one.
                 Label {
-                    anchors.left: tagMark.right
-                    anchors.leftMargin: Theme.iconGap
-                    anchors.right: tagCount.left
-                    anchors.rightMargin: Theme.spacingS
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: tagRow.tag
-                    opacity: tagRow.chosen ? 1 : 0.85
-                }
-                Label {
-                    id: tagCount
-                    anchors.right: parent.right
-                    anchors.rightMargin: Theme.spacingS
-                    anchors.verticalCenter: parent.verticalCenter
+                    x: Theme.inset
+                    width: parent.width - 2 * Theme.inset
+                    visible: Views.count === 0
                     quiet: true
-                    text: tagRow.count
+                    text: "nothing saved yet · m to save one"
+                }
+            }
+
+            Rule { visible: dock.showTags }
+
+            Column {
+                id: tagsSection
+                width: parent.width
+                visible: dock.showTags
+
+                SectionHeading {
+                    id: tagsHeading
+                    objectName: "tagsHeading"
+                    width: parent.width
+                    pointerFocus: dock.tagsFocusTarget
+                    tabFocusable: IndexModel.tagRowCount() === 0
+                    Accessible.role: Accessible.Grouping
+                    Accessible.name: "Tags"
+                    onActiveFocusChanged: if (activeFocus) dock.focusEntered()
+                    text: "tags"
+                    key: "t"
+                    walking: dock.walking
+                    actions: Chip {
+                        objectName: "editTagsButton"
+                        label: "+"
+                        caption: "Add a tag to the row or marked files"
+                        key: "t a"
+                        onClicked: dock.tagEditRequested()
+                        usable: dock.entry && (dock.entry.kind === "file" || dock.entry.kind === "dir")
+                    }
                 }
 
-                HoverHandler { id: tagHover; cursorShape: Qt.PointingHandCursor }
-                RowTapHandler {
-                    onClicked: dock.tagActivated(tagRow.tag)
-                    onContextRequested: function (position) {
-                        const at = tagRow.mapToItem(null, position.x, position.y)
-                        dock.tagMenuRequested(tagRow.index, at.x, at.y)
+                ListView {
+                    highlightMoveDuration: 0
+                    highlightResizeDuration: 0
+                    reuseItems: true
+                    id: tagsListView
+                    // No off-screen delegates built ahead: one still being built when
+                    // a reload shrinks the vocabulary is cancelled by a stale index.
+                    cacheBuffer: 0
+                    objectName: "sidebarTags"
+                    activeFocusOnTab: count > 0
+                    Keys.onPressed: function (event) { dock.keyRequested(event) }
+                    onActiveFocusChanged: dock.focusList(tagsListView)
+                    width: parent.width
+                    height: dock.showTags ? Math.min(contentHeight,
+                        Math.max(Theme.rowHeight, scroll.height - tagsHeading.height)) : 0
+                    onCurrentIndexChanged: Qt.callLater(dock.revealSelection)
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    model: IndexModel.tags
+                    keyNavigationEnabled: false
+                    currentIndex: -1
+                    spacing: 1
+                    Accessible.role: Accessible.List
+                    Accessible.name: "Tags"
+
+                    Rectangle {
+                        parent: tagsListView
+                        anchors.fill: parent
+                        color: "transparent"
+                        border.width: tagsListView.activeFocus ? 1 : 0
+                        border.color: Theme.accent
+                        z: 2
+                    }
+
+                    delegate: PanelRow {
+                        id: tagRow
+                        objectName: "tagRow"
+                        required property string tag
+                        required property int count
+                        required property int index
+                        readonly property bool chosen: dock.tab && dock.tab.selectedTag === tag
+                        readonly property bool onCursor: dock.walking && tagsListView.currentIndex === index
+
+                        width: ListView.view.width
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: tagRow.tag
+                        color: chosen ? Theme.fill(Theme.accent, 0.16)
+                             : onCursor ? Theme.fill(Theme.foreground, 0.10)
+                             : hovered ? Theme.fill(Theme.foreground, 0.06)
+                                       : "transparent"
+                        border.color: chosen ? Theme.fill(Theme.accent, 0.55)
+                                    : onCursor ? Theme.fill(Theme.accent, 0.45)
+                                               : "transparent"
+                        iconKind: "tag"
+                        iconInk: tagRow.chosen ? Theme.accent : Theme.dim
+                        text: tagRow.tag
+                        textOpacity: tagRow.chosen ? 1 : 0.85
+                        trailing: Label {
+                            anchors.verticalCenter: parent.verticalCenter
+                            quiet: true
+                            text: tagRow.count
+                        }
+
+                        RowTapHandler {
+                            onClicked: dock.tagActivated(tagRow.tag)
+                            onContextRequested: function (position) {
+                                const at = tagRow.mapToItem(null, position.x, position.y)
+                                dock.tagMenuRequested(tagRow.index, at.x, at.y)
+                            }
+                        }
                     }
                 }
             }
         }
-    }
     }
 }

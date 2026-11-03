@@ -395,6 +395,7 @@ private slots:
     void keepsCliNotesInWindowReceipts();
     void keepsFileSelectionVisibleAfterResize();
     void keepsSidebarSelectionVisibleInSmallWindows();
+    void alignsPanelRowsOnOneEdgeAndOneCentre();
     void scrollsActualSheetsWithPageKeys();
     void scrollsLongOverlayListsWithPointerAndKeyboard();
     void keepsTagEditorFocusAndSuggestionsVisible();
@@ -11279,6 +11280,92 @@ void TestStudio::keepsSidebarSelectionVisibleInSmallWindows()
     key(Qt::Key_Escape);
     auto *folder = qobject_cast<FolderModel *>(filesRoot()->property("folder").value<QObject *>());
     folder->clearMarks();
+}
+
+// Every row of the panel follows one rule -- inset, icon, gap, text -- and each
+// section heading starts where the row icons do, with its label, its actions
+// and its key letter on the heading's centre line.
+void TestStudio::alignsPanelRowsOnOneEdgeAndOneCentre()
+{
+    putIndexRow(m_tree.filePath("one.txt"), {QStringLiteral("work")});
+    m_index->reload();
+    QFile savedViews(m_desktop.filePath("config/omafiles/views.jsonl"));
+    QVERIFY(savedViews.open(QIODevice::ReadOnly));
+    const QByteArray originalViews = savedViews.readAll();
+    savedViews.close();
+    QVERIFY(savedViews.open(QIODevice::Append));
+    savedViews.write("{\"name\":\"aligned-view\",\"tags\":[\"work\"]}\n");
+    savedViews.close();
+    m_views->reload();
+    const auto restoreFixture = qScopeGuard([&] {
+        writeIndex(); m_index->reload();
+        if (savedViews.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            savedViews.write(originalViews); savedViews.close();
+        }
+        m_views->reload();
+    });
+    settle();
+    focusRow("one.txt");
+    auto *dock = qobject_cast<QQuickItem *>(window()->property("activeDock").value<QObject *>());
+    QVERIFY(dock && dock->isVisible());
+    const qreal edge = dock->mapToScene(QPointF()).x() + omafiles::Theme::inset();
+    const qreal text = edge + omafiles::Theme::iconSize() + omafiles::Theme::iconGap();
+    const auto left = [](QQuickItem *item) { return item->mapToScene(QPointF()).x(); };
+    const auto middle = [](QQuickItem *item) {
+        return item->mapToScene(QPointF(0, item->height() / 2)).y();
+    };
+
+    QStringList headings;
+    for (auto *caption : itemsNamed(QStringLiteral("headingCaption"))) {
+        if (!dock->isAncestorOf(caption) || !caption->isVisible()) continue;
+        auto *heading = caption->parentItem()->parentItem();
+        headings.append(caption->property("text").toString());
+        QCOMPARE(left(caption), edge);
+        QCOMPARE(heading->height(), qreal(omafiles::Theme::rowHeight()));
+        QCOMPARE(middle(caption), middle(heading));
+        if (auto *letter = itemNamedWithin(heading, QStringLiteral("headingKey"));
+                letter && letter->isVisible())
+            QCOMPARE(middle(letter), middle(caption));
+    }
+    QCOMPARE(headings, (QStringList{"details", "devices", "views", "tags"}));
+
+    auto *tags = dock->findChild<QQuickItem *>(QStringLiteral("tagsHeading"));
+    auto *add = dock->findChild<QQuickItem *>(QStringLiteral("editTagsButton"));
+    auto *letter = itemNamedWithin(tags, QStringLiteral("headingKey"));
+    QVERIFY(tags && add && letter);
+    QCOMPARE(middle(add), middle(tags));
+    QCOMPARE(left(add) + add->width() + omafiles::Theme::spacingS(), left(letter));
+
+    int rows = 0;
+    for (const QString &name : {QStringLiteral("viewRow"), QStringLiteral("tagRow"),
+                                QStringLiteral("deviceRow")}) {
+        for (auto *row : itemsNamed(name)) {
+            if (!dock->isAncestorOf(row) || !row->isVisible()) continue;
+            auto *icon = itemNamedWithin(row, QStringLiteral("rowIcon"));
+            auto *label = itemNamedWithin(row, QStringLiteral("rowText"));
+            QVERIFY(icon && label);
+            QCOMPARE(left(icon), edge);
+            QCOMPARE(left(label), text);
+            QCOMPARE(middle(icon), middle(row));
+            QCOMPARE(middle(label), middle(row));
+            ++rows;
+        }
+    }
+    QVERIFY2(rows >= 2, "no view or tag row to measure");
+    auto *icon = itemNamedWithin(dock, QStringLiteral("detailsIcon"));
+    auto *name = itemNamedWithin(dock, QStringLiteral("detailsName"));
+    QVERIFY(icon && name);
+    QCOMPARE(left(icon), edge);
+    QCOMPARE(left(name), text);
+    QCOMPARE(middle(name), middle(icon));
+
+    // The permission bits fit inside the panel's inset at its default width.
+    auto *bits = itemNamedWithin(dock, QStringLiteral("detailsMode"));
+    QVERIFY(bits && bits->isVisible());
+    QCOMPARE(dock->width(), qreal(252));
+    QVERIFY2(left(bits) + bits->width() <= left(dock) + dock->width() - omafiles::Theme::inset(),
+             qPrintable(QStringLiteral("mode bits end at %1 in a panel ending at %2")
+                            .arg(left(bits) + bits->width()).arg(left(dock) + dock->width())));
 }
 
 void TestStudio::scrollsActualSheetsWithPageKeys()
