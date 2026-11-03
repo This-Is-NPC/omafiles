@@ -153,7 +153,7 @@ Every editable permission bit is a separate **Tab / Shift Tab** stop, in
 owner, group, others order, with read, write, execute within each group.
 **Enter / Space** flips the focused bit. In the Permissions sheet these are
 draft changes: focus **Apply** to save or **Cancel** to discard. **h / l** and
-the left/right arrows move between bits. The details sidebar applies a bit
+the left/right arrows move between bits. The details panel applies a bit
 change immediately, just as clicking it does; links and non-owned rows have
 disabled bits and are skipped.
 
@@ -173,8 +173,9 @@ The command palette's explicit Ctrl Home / Ctrl End commands select its first/la
 Ctrl n / Ctrl p also choose the next/previous result. Unmodified arrows/pages keep their
 documented result or panel navigation.
 
-Sidebar tag chips, the add-tag button, and the saved-view and tag lists join
-the Tab order. A list has one focus stop; arrows choose its rows and
+The saved-view, device and tag lists, the add-tag button and the details
+panel's tag chips join the Tab order: the sidebar first, then the files, then
+the details. A list has one focus stop; arrows choose its rows and
 **Enter / Space** opens the saved view or toggles the tag. Its focus outline
 and current row remain visible while scrolling or resizing. Menu selection
 uses **Tab / Shift Tab** or arrows, and both **Enter** and **Space** activate

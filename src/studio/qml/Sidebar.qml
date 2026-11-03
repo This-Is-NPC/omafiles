@@ -3,12 +3,10 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import omafiles
 
-// The right-hand panel: row details, removable devices, saved views and tags.
-//
-// It lives beside the pane rather than under the tab strip, so it runs the full
-// height of the window and no row of the strip's controls sits over it.
+// The left-hand panel: where to go. Saved views, removable devices and tags,
+// one panel for the window that acts on the focused pane.
 Rectangle {
-    id: dock
+    id: sidebar
 
     property var tab: null
     property var entry: ({})
@@ -16,10 +14,6 @@ Rectangle {
     property bool walking: false
     /// The same, for the views above them.
     property bool walkingViews: false
-    /// Whether the tag vocabulary belongs here. On a tags tab it does not: the
-    /// list in front of you is already the vocabulary, narrowed, and a second
-    /// copy of it beside that one is a second thing to read.
-    property bool showTags: true
     property alias tagsList: tagsListView
     property alias viewsList: viewsListView
     property alias devicesList: devices.list
@@ -33,10 +27,8 @@ Rectangle {
     signal tagActivated(string tag)
     signal tagMenuRequested(int row, real x, real y)
     signal tagEditRequested()
-    signal tagChipActivated(string path, string tag)
     signal viewActivated(int row)
     signal viewMenuRequested(int row, real x, real y)
-    signal focusEntered()
     signal keyRequested(var event)
 
     color: Theme.panel
@@ -44,7 +36,6 @@ Rectangle {
     function focusList(list) {
         if (!list.activeFocus) return
         if (list.currentIndex < 0) list.currentIndex = 0
-        focusEntered()
         revealSelection()
     }
 
@@ -68,15 +59,15 @@ Rectangle {
 
     OverlayScroll {
         id: scroll
-        objectName: "dockScroll"
+        objectName: "sidebarScroll"
         focusOnScroll: true
         anchors.fill: parent
         anchors.topMargin: Theme.inset
         anchors.bottomMargin: Theme.inset
         contentHeight: column.implicitHeight
-        onHeightChanged: Qt.callLater(dock.revealSelection)
-        onWidthChanged: Qt.callLater(dock.revealSelection)
-        onContentHeightChanged: Qt.callLater(dock.revealSelection)
+        onHeightChanged: Qt.callLater(sidebar.revealSelection)
+        onWidthChanged: Qt.callLater(sidebar.revealSelection)
+        onContentHeightChanged: Qt.callLater(sidebar.revealSelection)
 
         // Sections spacingL apart with a hairline halfway; inside a section
         // the heading and its rows touch, the heading being a row tall.
@@ -84,34 +75,6 @@ Rectangle {
             id: column
             width: scroll.width
             spacing: Theme.spacingS
-
-            Column {
-                width: parent.width
-
-                SectionHeading { width: parent.width; usable: false; text: "details" }
-
-                Details {
-                    x: Theme.inset
-                    width: parent.width - 2 * Theme.inset
-                    entry: dock.entry
-                    onTagActivated: function (tag) { dock.tagChipActivated(dock.entry.path, tag) }
-                }
-            }
-
-            Rule {}
-
-            DeviceSection {
-                id: devices
-                width: parent.width
-                maximumHeight: Math.max(Theme.rowHeight, scroll.height * 0.3)
-                onFocusEntered: { dock.focusEntered(); dock.revealSelection() }
-                onSelectionChanged: Qt.callLater(dock.revealSelection)
-                onKeyRequested: function (event) { dock.keyRequested(event) }
-                onActivated: function (id) { dock.deviceActivated(id) }
-                onMenuRequested: function (id, x, y) { dock.deviceMenuRequested(id, x, y) }
-            }
-
-            Rule {}
 
             // Where you keep coming back to.
             //
@@ -130,14 +93,13 @@ Rectangle {
                     id: viewsHeading
                     objectName: "viewsHeading"
                     width: parent.width
-                    pointerFocus: dock.viewsFocusTarget
+                    pointerFocus: sidebar.viewsFocusTarget
                     tabFocusable: Views.count === 0
                     Accessible.role: Accessible.Grouping
                     Accessible.name: "Saved views"
-                    onActiveFocusChanged: if (activeFocus) dock.focusEntered()
                     text: "views"
                     key: "v"
-                    walking: dock.walkingViews
+                    walking: sidebar.walkingViews
                 }
 
                 ListView {
@@ -147,15 +109,15 @@ Rectangle {
                     id: viewsListView
                     objectName: "sidebarViews"
                     activeFocusOnTab: count > 0
-                    Keys.onPressed: function (event) { dock.keyRequested(event) }
-                    onActiveFocusChanged: dock.focusList(viewsListView)
-                    onCountChanged: dock.keepCursor(viewsListView)
+                    Keys.onPressed: function (event) { sidebar.keyRequested(event) }
+                    onActiveFocusChanged: sidebar.focusList(viewsListView)
+                    onCountChanged: sidebar.keepCursor(viewsListView)
                     width: parent.width
                     // Its own contents, and never more than a third of the panel: the
                     // vocabulary underneath has to stay reachable however many views
                     // somebody saves.
                     height: Math.min(contentHeight, Math.max(Theme.rowHeight, scroll.height * 0.34))
-                    onCurrentIndexChanged: Qt.callLater(dock.revealSelection)
+                    onCurrentIndexChanged: Qt.callLater(sidebar.revealSelection)
                     visible: Views.count > 0
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
@@ -182,7 +144,7 @@ Rectangle {
                         required property string kind
                         required property string asks
                         required property int index
-                        readonly property bool onCursor: dock.walkingViews
+                        readonly property bool onCursor: sidebar.walkingViews
                                                          && viewsListView.currentIndex === index
 
                         width: ListView.view.width
@@ -200,10 +162,10 @@ Rectangle {
                         textOpacity: 0.85
 
                         RowTapHandler {
-                            onClicked: dock.viewActivated(viewRow.index)
+                            onClicked: sidebar.viewActivated(viewRow.index)
                             onContextRequested: function (position) {
                                 const at = viewRow.mapToItem(null, position.x, position.y)
-                                dock.viewMenuRequested(viewRow.index, at.x, at.y)
+                                sidebar.viewMenuRequested(viewRow.index, at.x, at.y)
                             }
                         }
                     }
@@ -220,32 +182,43 @@ Rectangle {
                 }
             }
 
-            Rule { visible: dock.showTags }
+            Rule {}
+
+            DeviceSection {
+                id: devices
+                width: parent.width
+                maximumHeight: Math.max(Theme.rowHeight, scroll.height * 0.3)
+                onFocusEntered: sidebar.revealSelection()
+                onSelectionChanged: Qt.callLater(sidebar.revealSelection)
+                onKeyRequested: function (event) { sidebar.keyRequested(event) }
+                onActivated: function (id) { sidebar.deviceActivated(id) }
+                onMenuRequested: function (id, x, y) { sidebar.deviceMenuRequested(id, x, y) }
+            }
+
+            Rule {}
 
             Column {
                 id: tagsSection
                 width: parent.width
-                visible: dock.showTags
 
                 SectionHeading {
                     id: tagsHeading
                     objectName: "tagsHeading"
                     width: parent.width
-                    pointerFocus: dock.tagsFocusTarget
+                    pointerFocus: sidebar.tagsFocusTarget
                     tabFocusable: IndexModel.tagRowCount() === 0
                     Accessible.role: Accessible.Grouping
                     Accessible.name: "Tags"
-                    onActiveFocusChanged: if (activeFocus) dock.focusEntered()
-                    text: "tags"
+                            text: "tags"
                     key: "t"
-                    walking: dock.walking
+                    walking: sidebar.walking
                     actions: Chip {
                         objectName: "editTagsButton"
                         label: "+"
                         caption: "Add a tag to the row or marked files"
                         key: "t a"
-                        onClicked: dock.tagEditRequested()
-                        usable: dock.entry && (dock.entry.kind === "file" || dock.entry.kind === "dir")
+                        onClicked: sidebar.tagEditRequested()
+                        usable: sidebar.entry && (sidebar.entry.kind === "file" || sidebar.entry.kind === "dir")
                     }
                 }
 
@@ -259,13 +232,13 @@ Rectangle {
                     cacheBuffer: 0
                     objectName: "sidebarTags"
                     activeFocusOnTab: count > 0
-                    Keys.onPressed: function (event) { dock.keyRequested(event) }
-                    onActiveFocusChanged: dock.focusList(tagsListView)
-                    onCountChanged: dock.keepCursor(tagsListView)
+                    Keys.onPressed: function (event) { sidebar.keyRequested(event) }
+                    onActiveFocusChanged: sidebar.focusList(tagsListView)
+                    onCountChanged: sidebar.keepCursor(tagsListView)
                     width: parent.width
-                    height: dock.showTags ? Math.min(contentHeight,
-                        Math.max(Theme.rowHeight, scroll.height - tagsHeading.height)) : 0
-                    onCurrentIndexChanged: Qt.callLater(dock.revealSelection)
+                    height: Math.min(contentHeight,
+                                     Math.max(Theme.rowHeight, scroll.height - tagsHeading.height))
+                    onCurrentIndexChanged: Qt.callLater(sidebar.revealSelection)
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
                     model: IndexModel.tags
@@ -290,8 +263,8 @@ Rectangle {
                         required property string tag
                         required property int count
                         required property int index
-                        readonly property bool chosen: dock.tab && dock.tab.selectedTag === tag
-                        readonly property bool onCursor: dock.walking && tagsListView.currentIndex === index
+                        readonly property bool chosen: sidebar.tab && sidebar.tab.selectedTag === tag
+                        readonly property bool onCursor: sidebar.walking && tagsListView.currentIndex === index
 
                         width: ListView.view.width
                         Accessible.role: Accessible.ListItem
@@ -314,10 +287,10 @@ Rectangle {
                         }
 
                         RowTapHandler {
-                            onClicked: dock.tagActivated(tagRow.tag)
+                            onClicked: sidebar.tagActivated(tagRow.tag)
                             onContextRequested: function (position) {
                                 const at = tagRow.mapToItem(null, position.x, position.y)
-                                dock.tagMenuRequested(tagRow.index, at.x, at.y)
+                                sidebar.tagMenuRequested(tagRow.index, at.x, at.y)
                             }
                         }
                     }

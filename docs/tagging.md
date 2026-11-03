@@ -66,11 +66,12 @@ a declined gesture does not scroll an ancestor panel.
 Mouse selection and Ctrl a / Ctrl c keep the receipt available for copying, while
 touch drags scroll its text. Esc closes the dialog and returns to the files.
 
-The details sidebar scrolls as a whole, so its tag heading and `+` stay
-reachable in short windows. Entering tag or saved-view navigation reveals that
-section's heading and selected row. Moving the selection or resizing the window
-keeps them visible. Wheel and touch can browse the other details without changing
-the selected file.
+The sidebar scrolls as a whole, so its tag heading and `+` stay reachable in
+short windows. Entering tag or saved-view navigation reveals that section's
+heading and selected row. Moving the selection or resizing the window keeps them
+visible. The details panel on the right scrolls on its own, so walking the tags
+never moves the facts about the file you are tagging. Wheel and touch can browse
+the details without changing the selected file.
 
 Tag completion has its own bounded list. Resizing preserves the chosen
 suggestion and keeps it beside the visible text field, rather than scrolling
