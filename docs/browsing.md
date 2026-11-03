@@ -123,10 +123,13 @@ empty list focuses its heading. Clicking or tapping a sidebar heading focuses
 its list. **j k**, **Home End**, **PgUp PgDn** and **Ctrl d / Ctrl u** then
 navigate that list. Returning focus to the file-list control restores file
 navigation, including after a forward and reverse Tab round trip. Toolbar,
-details and footer controls use file-view shortcuts; Enter/Space activate the
-focused button. Sidebar Enter hints describe the focused tag or saved-view
-list. Footer actions describe the file view while a footer button has focus,
-so an action's label does not depend on the last sidebar section visited.
+tab, details and footer controls pass other keys to the file view;
+Enter/Space activate the focused button. While a button, chip, tab or the path
+has focus the footer reads **Enter / Space** press, **Tab** next and **Esc**
+back to the list, and tapping one of those hints acts on that control. Sidebar
+Enter hints describe the focused tag or saved-view list. Footer actions
+describe the file view while a footer button has focus, so an action's label
+does not depend on the last sidebar section visited.
 Tapping a hint preserves the current control's focus while invoking its
 displayed command, including a sidebar tag toggle.
 

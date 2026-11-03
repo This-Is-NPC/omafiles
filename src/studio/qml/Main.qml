@@ -197,6 +197,11 @@ Window {
             if (item === activeSidebar.tagsFocusTarget || insideOverlay(activeTagsList, item)) return "tags"
             if (item === activeSidebar.viewsFocusTarget || insideOverlay(activeViewsList, item)) return "views"
         }
+        // A button, chip, tab or the path. A footer hint is a key of the list,
+        // and keeps the list's hints while it has the focus.
+        if ((item instanceof FocusableControl && item.objectName !== "hintAction")
+                || item instanceof TabHandle || item === crumbs)
+            return "control"
         return "list"
     }
     property bool pendingG: false
@@ -475,6 +480,10 @@ Window {
                                          : makingFolder ? "make"
                                          : matching ? "mark"
                                          : finding ? "find" : "save" }]
+        if (focusRegion === "control")
+            return [{ key: "Enter / Space", label: "press" },
+                    { key: "Tab", label: "next" },
+                    { key: "Esc", label: "back to the list" }]
         if (onTrash)
             return [{ key: "?", label: "keys" }, { key: ":", label: "cmd" },
                     { key: "Space", label: "mark" }, { key: "m", label: "menu" },
@@ -1677,6 +1686,17 @@ Window {
             else if (name === "Enter") entry.accepted(entry.text)
             return
         }
+        // The hint keeps the control's focus, so it acts on the control: a
+        // control, a tab and the path each answer `activated`.
+        if (focusRegion === "control") {
+            const control = activeFocusItem
+            // qmllint disable missing-property
+            if (name === "Enter") control.activated()
+            // qmllint enable missing-property
+            else if (name === "Tab") control.nextItemInFocusChain(true).forceActiveFocus(Qt.TabFocusReason)
+            else takeFocus()
+            return
+        }
         const key = name === "Esc" ? Qt.Key_Escape : name === "Enter" ? Qt.Key_Return
             : name === "Space" ? Qt.Key_Space : name.toUpperCase().charCodeAt(0)
         handleKey({ key: key, text: name === "Space" ? " " : name,
@@ -1820,6 +1840,7 @@ Window {
                     spacing: Theme.spacingXs
 
                     ToolButton {
+                        objectName: "parentFolderButton"
                         anchors.verticalCenter: parent.verticalCenter
                         iconKind: "up"
                         caption: "Parent folder"
@@ -1876,12 +1897,14 @@ Window {
                         Accessible.name: crumbs.full
                         Accessible.focusable: win.onFiles && crumbs.full !== ""
                         activeFocusOnTab: win.onFiles && crumbs.full !== ""
+                        signal activated()
+                        onActivated: win.startPathEdit()
                         Keys.onReturnPressed: function (event) {
-                            win.startPathEdit()
+                            crumbs.activated()
                             event.accepted = true
                         }
                         Keys.onSpacePressed: function (event) {
-                            win.startPathEdit()
+                            crumbs.activated()
                             event.accepted = true
                         }
 

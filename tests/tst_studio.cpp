@@ -524,6 +524,7 @@ private slots:
     void movesBetweenTheListAndTheTagPanel();
     void reachesControlsWithTabAndComesBackWithEscape();
     void drawsOneFocusRingOutsideWhatHasFocus();
+    void hintsFollowFocusOntoControls();
     void worksTabsAndPanesFromTheKeyboard();
     void typesAPathAndAFilter();
     void walksTheGraphWithTheKeyboard();
@@ -2542,6 +2543,63 @@ void TestStudio::drawsOneFocusRingOutsideWhatHasFocus()
     key(Qt::Key_Shift);
     check(QStringLiteral("key after click"));
     key(Qt::Key_Escape);
+}
+
+// The footer names what the focused control does, and its hints act on it.
+void TestStudio::hintsFollowFocusOntoControls()
+{
+    QObject *root = m_engine->rootObjects().first();
+    const auto restore = qScopeGuard([&] {
+        tab()->setCwd(m_tree.path());
+        key(Qt::Key_Escape);
+    });
+    const auto footer = [&] {
+        QStringList shown;
+        for (auto *pair : itemsNamed(QStringLiteral("hintAction")))
+            if (pair->isVisible()) {
+                const auto hint = pair->property("modelData").toMap();
+                shown << hint.value("key").toString() + QLatin1Char(' ') + hint.value("label").toString();
+            }
+        return shown;
+    };
+    const auto press = [&](const QString &hint) {
+        for (auto *pair : itemsNamed(QStringLiteral("hintAction")))
+            if (pair->isVisible() && pair->property("modelData").toMap().value("key").toString() == hint) {
+                QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier,
+                                  pair->mapToScene(QPointF(pair->width() / 2, pair->height() / 2)).toPoint());
+                settle();
+                return;
+            }
+        QFAIL(qPrintable(hint + QStringLiteral(" is not in the footer")));
+    };
+    const QStringList controlHints{QStringLiteral("Enter / Space press"), QStringLiteral("Tab next"),
+                                   QStringLiteral("Esc back to the list")};
+
+    key(Qt::Key_Escape);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+    auto *up = itemsNamed(QStringLiteral("parentFolderButton")).first();
+    for (int step = 0; step < 40 && window()->activeFocusItem() != up; ++step)
+        key(Qt::Key_Tab);
+    QCOMPARE(window()->activeFocusItem(), up);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("control"));
+    QTRY_COMPARE(footer(), controlHints);
+
+    press(QStringLiteral("Enter / Space"));
+    QCOMPARE(cwd(), QFileInfo(m_tree.path()).absolutePath());
+    QCOMPARE(window()->activeFocusItem(), up);
+    press(QStringLiteral("Tab"));
+    QVERIFY(window()->activeFocusItem() != up);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("control"));
+    press(QStringLiteral("Esc"));
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+    QTRY_COMPARE(footer().first(), QStringLiteral("? keys"));
+
+    // A footer hint is a key of the list, and keeps the list's hints.
+    for (int step = 0; step < 80 && window()->activeFocusItem()->objectName() != QLatin1String("hintAction"); ++step)
+        key(Qt::Key_Tab);
+    QCOMPARE(window()->activeFocusItem()->objectName(), QStringLiteral("hintAction"));
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+    QTRY_COMPARE(footer().first(), QStringLiteral("? keys"));
 }
 
 // Tabs and panes are the part of the window with no other way in: there is a
