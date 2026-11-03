@@ -9,8 +9,8 @@ import omafiles
 // Every heading is flush left, `size` included, and so is every cell under it,
 // so no one column starts somewhere the rest do not.
 //
-// Not a Tab stop: sorting has its chips and `s` / `S`, and the column menu is in
-// the command palette.
+// Not a Tab stop: sorting has `s` / `S`, and the column menu is in the command
+// palette.
 Item {
     id: head
 

@@ -667,6 +667,7 @@ private slots:
     void activatesFooterHintsByTouchAndKeyboard();
     void keepsEveryFooterActionReachable_data();
     void keepsEveryFooterActionReachable();
+    void keepsTheViewControlsInNarrowPanes();
     void cancelsRowHoldOnMovement();
     void waitsForDelayedPlaybackAcknowledgement();
     void boundsPreviewImageTransfers_data();
@@ -10976,8 +10977,8 @@ void TestStudio::routesTooltipKeysOnlyWhenContentOverflows()
     QVERIFY(folder);
     QTRY_COMPARE(folder->property("count").toInt(), 101);
     QQuickItem *control = nullptr;
-    for (auto *item : itemsNamed(QString()))
-        if (item->isVisible() && item->property("tooltipCaption").toString() == "Sort by name")
+    for (auto *item : itemsNamed("sortDirection"))
+        if (item->isVisible())
             control = item;
     QVERIFY(control);
     const QString caption = control->property("tooltipCaption").toString();
@@ -15207,6 +15208,82 @@ void TestStudio::keepsEveryFooterActionReachable()
         QVERIFY(buttons.first()->isVisible());
         for (auto *button : buttons.mid(1)) QVERIFY(!button->isVisible());
     }
+}
+
+void TestStudio::keepsTheViewControlsInNarrowPanes()
+{
+    const QSize original = window()->size();
+    const int panesBefore = m_workspace->paneCount();
+    const auto restore = qScopeGuard([&] {
+        if (m_workspace->paneCount() > panesBefore)
+            key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+        tab()->setViewMode("list"); tab()->setSortRole("name"); tab()->setSortAscending(true);
+        window()->resize(original); QMetaObject::invokeMethod(window(), "takeFocus");
+    });
+    window()->resize(420, 300); tab()->setViewMode("list"); settle(); focusRow("one.txt");
+    QQuickItem *pane = nullptr;
+    for (auto *item : itemsNamed("pane")) if (item->isVisible()) pane = item;
+    QVERIFY(pane); QVERIFY(pane->width() <= 480);
+    auto *modes = shownItem(pane, "viewModes"); QVERIFY(modes);
+    QVERIFY(QRectF(QPointF(), window()->size()).contains(modes->mapRectToScene(modes->boundingRect())));
+    QVERIFY(modes->width() + shownItem(pane, "sortControl")->width() <= 160);
+    QList<QQuickItem *> buttons;
+    for (auto *item : itemsNamed("viewMode")) if (pane->isAncestorOf(item)) buttons.append(item);
+    QCOMPARE(buttons.size(), 3);
+    const QStringList modeNames{"list", "details", "icons"};
+    for (int at = 0; at < 3; ++at) {
+        QCOMPARE(buttons[at]->height(), qreal(Theme::controlHeight()));
+        QCOMPARE(buttons[at]->property("tooltipKey").toString(), QString::number(at + 1));
+        QVERIFY(tapItem(window(), buttons[at])); settle();
+        QCOMPARE(tab()->viewMode(), modeNames[at]);
+        QVERIFY(buttons[at]->property("on").toBool());
+        // In details view the column headings sort, in the others the chip:
+        // never both.
+        const bool details = modeNames[at] == "details";
+        QCOMPARE(shownItem(pane, "sortControl") == nullptr, details);
+        bool heading = false;
+        for (auto *head : itemsNamed("columnHead"))
+            heading |= pane->isAncestorOf(head) && head->isVisible() && head->height() > 0;
+        QCOMPARE(heading, details);
+    }
+    for (int at = 0; at < 3; ++at) {
+        key(char('1' + at)); settle();
+        QCOMPARE(tab()->viewMode(), modeNames[at]);
+        for (int other = 0; other < 3; ++other) QCOMPARE(buttons[other]->property("on").toBool(), other == at);
+    }
+    key('1'); settle();
+    auto *sortKey = shownItem(pane, "sortKey"); QVERIFY(sortKey);
+    auto *direction = shownItem(pane, "sortDirection"); QVERIFY(direction);
+    QCOMPARE(sortKey->property("label").toString(), QStringLiteral("name"));
+    QCOMPARE(direction->property("label").toString(), QStringLiteral("↑"));
+    QVERIFY(tapItem(window(), direction)); settle();
+    QCOMPARE(tab()->sortRole(), QStringLiteral("name")); QVERIFY(!tab()->sortAscending());
+    QCOMPARE(direction->property("label").toString(), QStringLiteral("↓"));
+    QVERIFY(tapItem(window(), sortKey)); settle();
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
+    QCOMPARE(sortKey->property("label").toString(), QStringLiteral("tags"));
+    sortKey->forceActiveFocus(); key(Qt::Key_Return); settle();
+    QCOMPARE(tab()->sortRole(), QStringLiteral("type"));
+    direction->forceActiveFocus(); key(Qt::Key_Space); settle();
+    QVERIFY(!tab()->sortAscending());
+    // Each pane of a split keeps its own controls.
+    window()->resize(1180, 720); settle();
+    if (panesBefore == 1) key(Qt::Key_Backslash, Qt::ControlModifier);
+    QCOMPARE(m_workspace->paneCount(), 2);
+    settle();
+    int panes = 0;
+    for (auto *item : itemsNamed("pane")) {
+        if (!item->isVisible()) continue;
+        ++panes;
+        auto *paneModes = shownItem(item, "viewModes");
+        QVERIFY2(paneModes, qPrintable(QString("pane %1 px").arg(item->width())));
+        // The tabs yield the width: they end before the controls start.
+        const qreal controlsLeft = paneModes->mapToScene(QPointF()).x();
+        for (auto *handle : itemsNamed("tabHandle"))
+            if (item->isAncestorOf(handle))
+                QVERIFY(handle->mapRectToScene(handle->boundingRect()).right() < controlsLeft);
+    }
+    QCOMPARE(panes, 2);
 }
 
 void TestStudio::preservesTagsWrittenBeforeTheOperationLock()

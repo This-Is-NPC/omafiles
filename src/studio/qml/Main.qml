@@ -2953,7 +2953,7 @@ Window {
 
             // The tab strip, and on its right the controls that say how the
             // list is drawn. They sit here rather than in a bar of their own,
-            // which spends a whole strip of window on six words that belong
+            // which spends a whole strip of window on two controls that belong
             // beside the tabs.
             Rectangle {
                 id: strip
@@ -2962,8 +2962,15 @@ Window {
                 color: Workspace.focusedPane === paneRoot.paneIndex ? Theme.panel : Theme.sunken
                 clip: true
 
+                // The tabs share what the new-tab chip and the view controls
+                // leave, so the controls stay in a narrow pane and the titles
+                // elide instead.
+                readonly property real tabRoom: width - tabRow.anchors.leftMargin - tabGap.width - newTab.width
+                                                - (viewRow.wanted ? viewRow.room : 0)
+
                 Row {
                     id: tabRow
+                    readonly property int tabCount: Math.max(1, paneRoot.pane?.tabs.length ?? 0)
                     anchors.left: parent.left
                     anchors.leftMargin: Theme.spacingXs
                     anchors.top: parent.top
@@ -2991,6 +2998,8 @@ Window {
                             // enclosing scope is kept, so this runs once more
                             // with `pane` already null.
                             current: paneRoot.pane?.currentIndex === index
+                            width: Math.min(implicitWidth, Math.max(minimumWidth,
+                                                                    strip.tabRoom / tabRow.tabCount))
                             FileDropArea {
                                 anchors.fill: parent
                                 directory: win.isFolderTab(tabHandle.modelData) ? tabHandle.modelData.cwd : ""
@@ -3020,9 +3029,10 @@ Window {
                         }
                     }
 
-                    Item { width: Theme.spacingXs; height: 1 }
+                    Item { id: tabGap; width: Theme.spacingXs; height: 1 }
 
                     Chip {
+                        id: newTab
                         anchors.verticalCenter: parent.verticalCenter
                         label: "+"
                         caption: "New tab"
@@ -3040,96 +3050,73 @@ Window {
                     id: viewRow
 
                     property var tab: paneRoot.pane.current
-
-                    function sortMark(role) {
-                        if (!viewRow.tab || viewRow.tab.sortRole !== role)
-                            return ""
-                        return viewRow.tab.sortAscending ? " ↑" : " ↓"
-                    }
+                    readonly property bool wanted: viewRow.tab !== null && viewRow.tab.kind === "files"
+                    // The width it needs beside the tabs, with its gap and margin.
+                    readonly property real room: implicitWidth + Theme.spacingL + anchors.rightMargin
 
                     // Dropped whole when the pane is too narrow for it rather
                     // than sliding under the tabs. Every one of these has a key.
-                    visible: viewRow.tab && viewRow.tab.kind === "files"
-                             && strip.width - tabRow.width > implicitWidth + 28
+                    visible: viewRow.wanted && strip.width - tabRow.width > viewRow.room
                     anchors.right: parent.right
                     anchors.rightMargin: Theme.spacingS
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 1
+                    spacing: Theme.spacingS
 
-                    Chip {
-                        quiet: true
-                        label: "list"
-                        caption: "List view"
-                        key: "1"
-                        on: viewRow.tab && viewRow.tab.viewMode === "list"
-                        onClicked: if (viewRow.tab) viewRow.tab.viewMode = "list"
-                    }
-                    Chip {
-                        quiet: true
-                        label: "details"
-                        caption: "Details view"
-                        key: "2"
-                        on: viewRow.tab && viewRow.tab.viewMode === "details"
-                        onClicked: if (viewRow.tab) viewRow.tab.viewMode = "details"
-                    }
-                    Chip {
-                        quiet: true
-                        label: "icons"
-                        caption: "Icons view"
-                        key: "3"
-                        on: viewRow.tab && viewRow.tab.viewMode === "icons"
-                        onClicked: if (viewRow.tab) viewRow.tab.viewMode = "icons"
-                    }
+                    // The view mode: one segmented control of three icons.
+                    Rectangle {
+                        objectName: "viewModes"
+                        width: modes.width
+                        height: Theme.controlHeight
+                        radius: Theme.rounding
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.fill(Theme.foreground, 0.18)
 
-                    Item {
-                        width: Theme.iconSize
-                        height: Theme.iconSize
-                        anchors.verticalCenter: parent.verticalCenter
-                        Rule {
-                            vertical: true
-                            anchors.horizontalCenter: parent.horizontalCenter
+                        Row {
+                            id: modes
+                            Repeater {
+                                model: [{ mode: "list", caption: "List view", key: "1" },
+                                        { mode: "details", caption: "Details view", key: "2" },
+                                        { mode: "icons", caption: "Icons view", key: "3" }]
+                                ToolButton {
+                                    id: modeButton
+                                    required property var modelData
+                                    objectName: "viewMode"
+                                    iconKind: "view-" + modeButton.modelData.mode
+                                    caption: modeButton.modelData.caption
+                                    key: modeButton.modelData.key
+                                    on: viewRow.tab && viewRow.tab.viewMode === modeButton.modelData.mode
+                                    Accessible.checkable: true
+                                    Accessible.checked: on
+                                    onClicked: if (viewRow.tab) viewRow.tab.viewMode = modeButton.modelData.mode
+                                }
+                            }
                         }
                     }
 
-                    Chip {
-                        quiet: true
-                        label: "name" + viewRow.sortMark("name")
-                        caption: "Sort by name"
-                        key: "s"
-                        on: viewRow.tab && viewRow.tab.sortRole === "name"
-                        onClicked: viewRow.tab.pickSortRole("name")
-                    }
-                    Chip {
-                        quiet: true
-                        label: "tags" + viewRow.sortMark("tags")
-                        caption: "Sort by tag, untagged last"
-                        key: "s"
-                        on: viewRow.tab && viewRow.tab.sortRole === "tags"
-                        onClicked: viewRow.tab.pickSortRole("tags")
-                    }
-                    Chip {
-                        quiet: true
-                        label: "type" + viewRow.sortMark("type")
-                        caption: "Sort by type"
-                        key: "s"
-                        on: viewRow.tab && viewRow.tab.sortRole === "type"
-                        onClicked: viewRow.tab.pickSortRole("type")
-                    }
-                    Chip {
-                        quiet: true
-                        label: "size" + viewRow.sortMark("size")
-                        caption: "Sort by size"
-                        key: "s"
-                        on: viewRow.tab && viewRow.tab.sortRole === "size"
-                        onClicked: viewRow.tab.pickSortRole("size")
-                    }
-                    Chip {
-                        quiet: true
-                        label: "modified" + viewRow.sortMark("mtime")
-                        caption: "Sort by modified"
-                        key: "s"
-                        on: viewRow.tab && viewRow.tab.sortRole === "mtime"
-                        onClicked: viewRow.tab.pickSortRole("mtime")
+                    // The sort: the key does what `s` does, the arrow what `S`
+                    // does. Details view sorts by its column headings instead.
+                    Row {
+                        objectName: "sortControl"
+                        visible: viewRow.tab && viewRow.tab.viewMode !== "details"
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        Chip {
+                            objectName: "sortKey"
+                            quiet: true
+                            label: viewRow.tab ? win.columnLabel(viewRow.tab.sortRole) : ""
+                            caption: "Sort by the next key"
+                            key: "s"
+                            onClicked: viewRow.tab.cycleSortRole()
+                        }
+                        Chip {
+                            objectName: "sortDirection"
+                            quiet: true
+                            label: viewRow.tab && !viewRow.tab.sortAscending ? "↓" : "↑"
+                            caption: "Flip the sort direction"
+                            key: "S"
+                            onClicked: viewRow.tab.toggleSortDirection()
+                        }
                     }
                 }
             }
