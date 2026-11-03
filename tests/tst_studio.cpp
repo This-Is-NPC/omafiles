@@ -590,6 +590,7 @@ private slots:
     void resizesTheSplitWithCtrlComma();
     void fitsTheSplitInANarrowWindow();
     void runsTheCommandLineForWhatTheRowMenuChanges();
+    void namesTheHighlightedTagAfterAReload();
     void actsOnTheMarkedSetOnlyFromInsideIt();
     void copiesWhatTheRowIsToTheClipboard();
     void walksToTheFolderHoldingATaggedFile();
@@ -5299,6 +5300,44 @@ void TestStudio::runsTheCommandLineForWhatTheRowMenuChanges()
     // And the receipt lands on the one line the window has for saying things.
     QVERIFY2(m_index->notice().contains(tag),
              qPrintable(QStringLiteral("the status bar said %1").arg(m_index->notice())));
+}
+
+// A reload that puts another tag on the cursor's row changes the tag the row
+// menu names: it is the one highlighted, and not the one that was there before.
+void TestStudio::namesTheHighlightedTagAfterAReload()
+{
+    QObject *root = m_engine->rootObjects().first();
+    key('t');
+    key(Qt::Key_Home);
+    const QString before = m_index->tagAt(0);
+    QVERIFY(!before.isEmpty());
+
+    QTemporaryDir outside;
+    QVERIFY(outside.isValid());
+    const QString elsewhere = QDir(outside.path()).filePath(QStringLiteral("first.txt"));
+    {
+        QFile file(elsewhere);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+    }
+    const auto restore = qScopeGuard([&] { writeIndex(); m_index->reload(); settle(); });
+    const QString first = QStringLiteral("0-first");
+    putIndexRow(elsewhere, {first});
+    m_index->reload();
+    settle();
+    QCOMPARE(m_index->tagAt(0), first);
+
+    auto *tags = qvariant_cast<QObject *>(root->property("activeTagsList"));
+    QVERIFY(tags);
+    const QString highlighted = m_index->tagAt(tags->property("currentIndex").toInt());
+    QVERIFY(highlighted != before);
+    key(Qt::Key_Escape);
+    focusRow(QStringLiteral("plain.txt"));
+    key('m');
+    const QStringList labels = menuLabels(QStringLiteral("fileMenu"));
+    key(Qt::Key_Escape);
+    QVERIFY2(labels.contains(QStringLiteral("Apply tag %1").arg(highlighted))
+                 || labels.contains(QStringLiteral("Remove tag %1").arg(highlighted)),
+             qPrintable(labels.join(QLatin1String(" | "))));
 }
 
 // The rule that keeps a delete of one file from taking forty: a command chosen
