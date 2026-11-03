@@ -1,4 +1,5 @@
 #include "UndoJournal.h"
+#include "BlockingJob.h"
 
 #include "Paths.h"
 #include "Store.h"
@@ -13,7 +14,6 @@
 #include <QJsonDocument>
 #include <QPointer>
 #include <QStorageInfo>
-#include <QtConcurrentRun>
 
 #include <algorithm>
 #include <memory>
@@ -33,7 +33,7 @@ void background(QObject *owner, Work work, Done done)
         watcher->deleteLater();
         done(result);
     });
-    watcher->setFuture(QtConcurrent::run(std::move(work)));
+    watcher->setFuture(runBlocking(std::move(work)));
 }
 
 bool inside(const QString &path, const QStringList &scope)
@@ -117,7 +117,7 @@ UndoJournal::~UndoJournal()
 {
     const QVector<Step> saved = m_saved;
     if (!saved.isEmpty())
-        (void)QtConcurrent::run([saved] { discard(saved); });
+        (void)runBlocking([saved] { discard(saved); });
 }
 
 void UndoJournal::discard(const QVector<Step> &steps)
@@ -449,7 +449,7 @@ void UndoJournal::append(Entry entry)
                 return saved.to == step.to;
             }), m_saved.end());
         }
-        (void)QtConcurrent::run([expired] { discard(expired.steps); });
+        (void)runBlocking([expired] { discard(expired.steps); });
     }
     emit changed();
 }

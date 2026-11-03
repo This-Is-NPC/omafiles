@@ -353,6 +353,8 @@ private slots:
     void navigatesArchiveControls();
     void browsesAndRestoresTrashByKeyboardAndPointer();
     void cancelsStaleTrashScans();
+    void restoresTrashEntryDuringRefresh();
+    void listsFolderWhileUndoCaptureBlocks();
     void keepsTrashCursorOnReloadAndRestore();
     void reversesFreshControlGroups_data();
     void reversesFreshControlGroups();
@@ -15217,6 +15219,90 @@ void TestStudio::cancelsStaleTrashScans()
     pool->waitForDone();
     QCoreApplication::processEvents();
     QCOMPARE(model->count(), 0);
+}
+
+void TestStudio::restoresTrashEntryDuringRefresh()
+{
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const QByteArray oldData = qgetenv("XDG_DATA_HOME");
+    qputenv("XDG_DATA_HOME", (fixture.path() + "/data").toUtf8());
+    const QString mount = fixture.path() + "/mount";
+    const QString location = mount + "/.Trash-" + QString::number(::getuid());
+    QVERIFY(writeLooknfeel(location + "/files/listed", "payload"));
+    QVERIFY(writeLooknfeel(location + "/info/listed.trashinfo",
+        "[Trash Info]\nPath=listed\nDeletionDate=2026-10-11T13:14:15\n"));
+    QSemaphore entered, release;
+    std::atomic_bool hold = false;
+    auto releaseWorker = qScopeGuard([&] { release.release(); });
+    Trash::setMountProvider([&] {
+        if (hold.exchange(false)) {
+            entered.release();
+            release.acquire();
+        }
+        return QStringList{mount};
+    });
+    auto restore = qScopeGuard([&] {
+        Trash::setMountProvider([] { return QStringList{}; });
+        qputenv("XDG_DATA_HOME", oldData);
+    });
+    auto model = std::make_unique<TrashModel>();
+    QTRY_COMPARE(model->count(), 1);
+    QTRY_VERIFY(!model->loading());
+    hold = true;
+    model->reload();
+    QTRY_VERIFY(entered.available() > 0);
+    entered.acquire();
+    QVERIFY(model->loading());
+    model->restore(0);
+    QTRY_VERIFY(!model->busy() && !model->loading());
+    QVERIFY(QFileInfo::exists(mount + "/listed"));
+    QCOMPARE(model->count(), 0);
+    release.release();
+    QThreadPool::globalInstance()->waitForDone();
+    QCoreApplication::processEvents();
+    QCOMPARE(model->count(), 0);
+}
+
+void TestStudio::listsFolderWhileUndoCaptureBlocks()
+{
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const QDir dir(fixture.path());
+    const QString doomed = dir.filePath("doomed.txt");
+    QVERIFY(writeLooknfeel(doomed, "payload"));
+    QVERIFY(writeLooknfeel(dir.filePath("kept.txt"), "payload"));
+    auto *pool = QThreadPool::globalInstance();
+    const int oldThreads = pool->maxThreadCount();
+    pool->setMaxThreadCount(1);
+    auto restoreThreads = qScopeGuard([&] { pool->setMaxThreadCount(oldThreads); });
+    QSemaphore entered, release;
+    auto releaseWorker = qScopeGuard([&] { release.release(); pool->waitForDone(); });
+    Trash::setMountProvider([&] {
+        entered.release();
+        release.acquire();
+        return QStringList{};
+    });
+    auto restoreMounts = qScopeGuard([] { Trash::setMountProvider([] { return QStringList{}; }); });
+    JournalDriver driver;
+    const auto previous = setVerbRunner([](const QStringList &, VerbReceipt done) {
+        done(false, {}, QStringLiteral("not run"));
+    });
+    auto restoreRunner = qScopeGuard([&] { setVerbRunner(previous); });
+    driver.run({{QStringLiteral("trash"), QStringLiteral("--"), doomed}});
+    QTRY_VERIFY(entered.available() > 0);
+    entered.acquire();
+    TabState state("files");
+    state.setCwd(dir.path());
+    FolderModel model;
+    model.setTab(&state);
+    QTRY_VERIFY(!model.loading());
+    QCOMPARE(model.rowCount(), 3);
+    QCOMPARE(model.pathAt(2), dir.filePath("kept.txt"));
+    QVERIFY(!driver.finished);
+    Trash::setMountProvider([] { return QStringList{}; });
+    release.release();
+    QTRY_VERIFY(driver.finished);
 }
 
 void TestStudio::keepsTrashCursorOnReloadAndRestore()

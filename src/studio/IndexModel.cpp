@@ -1,7 +1,7 @@
 #include "DefaultManager.h"
+#include "BlockingJob.h"
 #include <QCoreApplication>
 #include <QFutureWatcher>
-#include <QtConcurrentRun>
 #include "IndexModel.h"
 
 #include "Open.h"
@@ -229,7 +229,7 @@ void IndexModel::reload()
             emit loadingChanged();
         }
     });
-    watcher->setFuture(QtConcurrent::run([records, cancelled] { return countPresence(records, cancelled); }));
+    watcher->setFuture(runBlocking([records, cancelled] { return countPresence(records, cancelled); }));
     emit loadingChanged();
 }
 
@@ -306,8 +306,9 @@ void IndexModel::makeDefaultFileManager()
                             : QStringLiteral("Default file manager selection incomplete"));
         emit defaultManagerFinished(result.ok, result.text);
     });
-    watcher->setFuture(QtConcurrent::run(omafiles::makeDefaultFileManager,
-                                        QCoreApplication::applicationFilePath()));
+    watcher->setFuture(runBlocking([executable = QCoreApplication::applicationFilePath()] {
+        return omafiles::makeDefaultFileManager(executable);
+    }));
 }
 
 void IndexModel::openTerminalIn(const QString &directory)
@@ -563,7 +564,7 @@ void IndexModel::publishArchive(const QStringList &paths, const QString &directo
                 });
         });
     });
-    watcher->setFuture(QtConcurrent::run([paths, directory, tags] {
+    watcher->setFuture(runBlocking([paths, directory, tags] {
         const int fd = openDirectoryNoFollow(directory);
         if (fd < 0) return QStringLiteral("Destination must be an existing directory without symbolic links: %1").arg(systemReason(errno));
         ::close(fd);
@@ -580,7 +581,7 @@ void IndexModel::finishArchive(bool ok, const QString &message, const QString &s
         const QString error = watcher->result(); watcher->deleteLater();
         m_archive->complete(ok && error.isEmpty(), error.isEmpty() ? message : message + QStringLiteral("; ") + error);
     });
-    watcher->setFuture(QtConcurrent::run([stage] {
+    watcher->setFuture(runBlocking([stage] {
         Store store(defaultIndexPath()); QString error;
         if (!store.lockAndLoad(&error)) return error;
         for (const Record &row : store.recordSnapshot())
@@ -848,7 +849,7 @@ void IndexModel::linkInto(const QStringList &paths, const QString &directory)
         receive(watcher->result());
         watcher->deleteLater();
     });
-    watcher->setFuture(QtConcurrent::run([paths, directory] {
+    watcher->setFuture(runBlocking([paths, directory] {
         int made = 0;
         QString error;
         for (const QString &path : paths) {
