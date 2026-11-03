@@ -13,6 +13,7 @@ SUBDIRS = \
     src/cli \
     src/studio \
     src/preview \
+    src/preview-codecs \
     src/archive \
     src/devices
 

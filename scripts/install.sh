@@ -43,6 +43,7 @@ install_file() {
 install_file 755 build/bin/omafiles        "$prefix/bin/omafiles"
 install_file 755 build/bin/omafiles-studio "$prefix/bin/omafiles-studio"
 install_file 755 build/bin/omafiles-preview "$prefix/bin/omafiles-preview"
+install_file 755 build/bin/omafiles-preview-codecs "$prefix/bin/omafiles-preview-codecs"
 install_file 755 build/bin/omafiles-archive "$prefix/bin/omafiles-archive"
 install_file 755 build/bin/omafiles-devices "$prefix/bin/omafiles-devices"
 install_file 644 LICENSE                   "$prefix/share/licenses/omafiles/LICENSE"
