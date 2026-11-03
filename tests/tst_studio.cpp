@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <vector>
 #include <cerrno>
 #include <QChildEvent>
@@ -732,6 +733,11 @@ private:
     /// Writes `path`'s row into the index in place of the one it had: a second
     /// line for one path is a malformed index.
     void putIndexRow(const QString &path, const QStringList &tags);
+    /// More tags than a row's tag strip has room for.
+    static QStringList manyTags();
+    /// `manytags.txt` in the tree, tagged with `manyTags()`. The guard removes
+    /// the file and puts the fixture index back.
+    [[nodiscard]] QScopeGuard<std::function<void()>> putManyTagsFile();
     /// `a-target.txt`, `link` to it and `plain.txt` in `dir`, open in the tab
     /// with `link` and `plain.txt` marked and the cursor on `link`.
     void markALinkAndAFile(const QDir &dir);
@@ -1185,6 +1191,32 @@ void TestStudio::putIndexRow(const QString &path, const QStringList &tags)
                           {QStringLiteral("tags"), QJsonArray::fromStringList(tags)}};
     QVERIFY(index.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text));
     index.write(kept + QJsonDocument(row).toJson(QJsonDocument::Compact) + '\n');
+}
+
+QStringList TestStudio::manyTags()
+{
+    QStringList tags;
+    for (int i = 0; i < 16; ++i)
+        tags << QString(QChar('a' + i));
+    return tags;
+}
+
+QScopeGuard<std::function<void()>> TestStudio::putManyTagsFile()
+{
+    const QString path = QDir(m_tree.path()).filePath(QStringLiteral("manytags.txt"));
+    QScopeGuard<std::function<void()>> restore([this, path] {
+        QFile::remove(path); writeIndex(); m_index->reload(); settle();
+    });
+    [&] {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("x");
+    }();
+    putIndexRow(path, manyTags());
+    m_index->reload();
+    settle();
+    settle();
+    return restore;
 }
 
 void TestStudio::tagDirectory(const QString &path, const QString &tag, bool reload)
@@ -5008,21 +5040,8 @@ void TestStudio::pickSortRoleTogglesOnSameRole()
 // count matches what opacity hid, with space reserved for the chip itself.
 void TestStudio::tagStripSaysHowManyTagsDoNotFit()
 {
-    const QString path = QDir(m_tree.path()).filePath(QStringLiteral("manytags.txt"));
-    {
-        QFile file(path);
-        QVERIFY(file.open(QIODevice::WriteOnly));
-        file.write("x");
-    }
-
-    QStringList tags;
-    for (int i = 0; i < 16; ++i)
-        tags << QString(QChar('a' + i));
-
-    putIndexRow(path, tags);
-    m_index->reload();
-    settle();
-    settle();
+    const QStringList tags = manyTags();
+    const auto restore = putManyTagsFile();
 
     tab()->setViewMode(QStringLiteral("details"));
     settle();
@@ -5123,19 +5142,8 @@ void TestStudio::namesTheMenuRowTheOverflowAndTheTabClose()
     key(Qt::Key_Escape);
     settle();
 
-    const QString path = QDir(m_tree.path()).filePath(QStringLiteral("manytags.txt"));
-    {
-        QFile file(path);
-        QVERIFY(file.open(QIODevice::WriteOnly));
-        file.write("x");
-    }
-    QStringList tags;
-    for (int i = 0; i < 16; ++i)
-        tags << QString(QChar('a' + i));
-    putIndexRow(path, tags);
-    m_index->reload();
-    settle();
-    settle();
+    const QStringList tags = manyTags();
+    const auto restore = putManyTagsFile();
     tab()->setViewMode(QStringLiteral("details"));
     settle();
     focusRow(QStringLiteral("manytags.txt"));
