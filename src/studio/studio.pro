@@ -19,7 +19,7 @@ DESTDIR = $$OUT_PWD/../../bin
 
 INCLUDEPATH += $$PWD/../core
 
-HEADERS += PointerActivity.h
+HEADERS += PointerActivity.h BlockingJob.h
 
 HEADERS += DirectoryListing.h  DefaultManager.h FileManager.h FileMetadata.h Theme.h IndexModel.h Workspace.h GraphItem.h FolderModel.h EntryWatcher.h Clipboard.h FileTransfer.h Verb.h Views.h
 SOURCES += DirectoryListing.cpp  DefaultManager.cpp FileManager.cpp main.cpp Theme.cpp IndexModel.cpp Workspace.cpp GraphItem.cpp FolderModel.cpp EntryWatcher.cpp \

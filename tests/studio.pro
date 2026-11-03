@@ -21,7 +21,7 @@ include($$PWD/../qmake/qmltypes.pri)
 
 INCLUDEPATH += $$PWD/../src/core $$PWD/../src/studio
 
-HEADERS += ../src/studio/PointerActivity.h
+HEADERS += ../src/studio/PointerActivity.h ../src/studio/BlockingJob.h
 
 SOURCES += \
     tst_studio.cpp \
