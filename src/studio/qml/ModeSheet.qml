@@ -102,7 +102,7 @@ Rectangle {
 
                 OverlayPanel {
                     preferredWidth: 420
-                    preferredHeight: column.implicitHeight + 28
+                    preferredHeight: column.implicitHeight + 2 * Theme.inset
 
                     Accessible.role: Accessible.Dialog
                     Accessible.name: heading.text
@@ -117,17 +117,18 @@ Rectangle {
                         Keys.onTabPressed: function (event) { Focus.move(event, bits.editable ? bits.firstControl : cancelButton, cancelButton) }
                         Keys.onBacktabPressed: function (event) { Focus.move(event, cancelButton) }
                         anchors.fill: parent
-                        anchors.margins: 14
+                        anchors.margins: Theme.inset
                         contentHeight: column.implicitHeight
                     Column {
                         id: column
                         width: parent.width
-                        spacing: 10
+                        spacing: Theme.spacingM
 
                         Label {
                             id: heading
                             width: parent.width
                             font.bold: true
+                            font.pixelSize: Theme.fontTitle
                             text: sheet.paths.length === 1
                                   ? "permissions of " + String(sheet.paths[0]).split("/").pop()
                                   : "permissions of " + sheet.paths.length + " files"
@@ -135,7 +136,7 @@ Rectangle {
 
                         Flow {
                             width: parent.width
-                            spacing: 12
+                            spacing: Theme.spacingM
                             Label {
                                 quiet: true
                                 text: "owner · group · others"
@@ -163,7 +164,7 @@ Rectangle {
 
                         Flow {
                             width: parent.width
-                            spacing: 8
+                            spacing: Theme.spacingS
                             Chip {
                                 id: applyButton
                                 objectName: "modeApply"

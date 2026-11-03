@@ -60,7 +60,8 @@ Rectangle {
 
             OverlayPanel {
                 preferredWidth: 520
-                preferredHeight: Math.min(380, 68 + list.contentHeight)
+                preferredHeight: Math.min(380, 2 * Theme.inset + Theme.controlHeight + Theme.spacingS
+                                              + list.contentHeight)
 
                 Accessible.role: Accessible.Dialog
                 Accessible.name: "Commands"
@@ -72,12 +73,12 @@ Rectangle {
 
                 Column {
                     anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 8
+                    anchors.margins: Theme.inset
+                    spacing: Theme.spacingS
 
                     Rectangle {
                         width: parent.width
-                        height: 28
+                        height: Theme.controlHeight
                         radius: Theme.rounding
                         color: Theme.sunken
                         border.width: 1
@@ -86,25 +87,25 @@ Rectangle {
                         Text {
                             id: lead
                             anchors.left: parent.left
-                            anchors.leftMargin: 9
+                            anchors.leftMargin: Theme.spacingS
                             anchors.verticalCenter: parent.verticalCenter
                             text: ":"
                             color: Theme.accent
                             font.family: Theme.fontFamily
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.fontBody
                             renderType: Text.NativeRendering
                             Accessible.ignored: true
                         }
 
                         Text {
                             anchors.left: lead.right
-                            anchors.leftMargin: 6
+                            anchors.leftMargin: Theme.spacingS
                             anchors.verticalCenter: parent.verticalCenter
                             visible: query.text === ""
                             text: "run a command"
                             color: Theme.dim
                             font.family: Theme.fontFamily
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.fontBody
                             renderType: Text.NativeRendering
                             Accessible.ignored: true
                         }
@@ -114,14 +115,14 @@ Rectangle {
                         persistentSelection: true
                         objectName: "paletteQuery"
                         anchors.fill: parent
-                        anchors.leftMargin: lead.width + 15
-                        anchors.rightMargin: 9
+                        anchors.leftMargin: lead.width + 2 * Theme.spacingS
+                        anchors.rightMargin: Theme.spacingS
                         verticalAlignment: TextInput.AlignVCenter
                         color: Theme.foreground
                         selectionColor: Theme.fill(Theme.accent, 0.35)
                         selectedTextColor: Theme.foreground
                         font.family: Theme.fontFamily
-                        font.pixelSize: 13
+                        font.pixelSize: Theme.fontBody
                         renderType: Text.NativeRendering
                         clip: true
                         Accessible.name: "command query"
@@ -162,7 +163,7 @@ Rectangle {
                         reuseItems: true
                         id: list
                         width: parent.width
-                        height: parent.height - 36
+                        height: parent.height - Theme.controlHeight - parent.spacing
                         clip: true
                         model: sheet.visible ? sheet.shown : []
                         currentIndex: 0
@@ -174,7 +175,7 @@ Rectangle {
                             required property var modelData
                             required property int index
                             width: ListView.view.width
-                            height: 28
+                            height: Theme.rowHeight
                             radius: Theme.rounding
                             color: list.currentIndex === entryRow.index
                                    ? Theme.fill(Theme.accent, 0.18) : "transparent"
@@ -182,16 +183,16 @@ Rectangle {
                             Label {
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.left: parent.left
-                                anchors.leftMargin: 9
+                                anchors.leftMargin: Theme.spacingS
                                 anchors.right: shortcut.left
-                                anchors.rightMargin: 8
+                                anchors.rightMargin: Theme.spacingS
                                 text: entryRow.modelData.label
                             }
                             KeyCap {
                                 id: shortcut
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.right: parent.right
-                                anchors.rightMargin: 8
+                                anchors.rightMargin: Theme.spacingS
                                 visible: (entryRow.modelData.key || "") !== ""
                                 key: entryRow.modelData.key || ""
                             }

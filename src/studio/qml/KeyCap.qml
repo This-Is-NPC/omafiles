@@ -9,8 +9,8 @@ Rectangle {
     id: cap
     property string key: ""
 
-    width: capText.implicitWidth + 9
-    height: 15
+    width: capText.implicitWidth + Theme.spacingS
+    height: Theme.chipHeight
     radius: Math.max(2, Theme.rounding - 2)
     color: Theme.fill(Theme.foreground, 0.10)
     border.width: 1
@@ -23,7 +23,7 @@ Rectangle {
         color: Theme.foreground
         opacity: 0.8
         font.family: Theme.fontFamily
-        font.pixelSize: 10
+        font.pixelSize: Theme.fontSmall
         renderType: Text.NativeRendering
     }
 }

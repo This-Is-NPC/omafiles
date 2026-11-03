@@ -102,11 +102,11 @@ Window {
             objectName: "propertiesDialog"
             parent: win.contentItem
             anchors.centerIn: parent
-            width: Math.min(700, Math.max(0, win.width - 16))
-            height: Math.min(480, Math.max(0, win.height - 16))
+            width: Math.min(700, Math.max(0, win.width - 2 * Theme.spacingS))
+            height: Math.min(480, Math.max(0, win.height - 2 * Theme.spacingS))
             title: "Properties"
             font.family: Theme.fontFamily
-            font.pixelSize: 12
+            font.pixelSize: Theme.fontBody
             palette.window: Theme.panel
             palette.windowText: Theme.foreground
             palette.text: Theme.foreground
@@ -123,14 +123,13 @@ Window {
                 destroy()
             }
             footer: Item {
-                implicitHeight: 64
+                implicitHeight: Theme.controlHeight + 2 * Theme.inset
                 Chip {
                     objectName: "receiptClose"
                     anchors.right: parent.right
-                    anchors.rightMargin: 12
+                    anchors.rightMargin: Theme.inset
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.max(100, implicitWidth)
-                    height: 40
                     label: "Close"
                     onClicked: receiptDialog.close()
                 }
@@ -1818,15 +1817,15 @@ Window {
             Rectangle {
                 id: header
                 width: parent.width
-                height: 38
+                height: Theme.barHeight
                 color: Theme.panel
 
                 Row {
                     id: navRow
                     anchors.left: parent.left
-                    anchors.leftMargin: 8
+                    anchors.leftMargin: Theme.inset
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
+                    spacing: Theme.spacingXs
 
                     ToolButton {
                         anchors.verticalCenter: parent.verticalCenter
@@ -1867,11 +1866,11 @@ Window {
                 Item {
                     id: pathArea
                     anchors.left: navRow.right
-                    anchors.leftMargin: 12
+                    anchors.leftMargin: Theme.spacingM
                     anchors.right: counts.left
-                    anchors.rightMargin: 16
+                    anchors.rightMargin: Theme.spacingL
                     anchors.verticalCenter: parent.verticalCenter
-                    height: 26
+                    height: Theme.controlHeight
 
                     Row {
                         id: crumbs
@@ -1934,7 +1933,7 @@ Window {
                             text: crumbs.stem
                             color: Theme.dim
                             font.family: Theme.fontFamily
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fontBody
                             elide: Text.ElideLeft
                             renderType: Text.NativeRendering
                         }
@@ -1944,7 +1943,7 @@ Window {
                             text: crumbs.leaf
                             color: Theme.foreground
                             font.family: Theme.fontFamily
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.fontBody
                             renderType: Text.NativeRendering
                         }
                     }
@@ -1971,7 +1970,7 @@ Window {
                 Label {
                     id: counts
                     anchors.right: parent.right
-                    anchors.rightMargin: 12
+                    anchors.rightMargin: Theme.inset
                     anchors.verticalCenter: parent.verticalCenter
                     quiet: true
                     text: IndexModel.tagCount + " tags · " + IndexModel.fileCount + " tagged"
@@ -2021,7 +2020,7 @@ Window {
                 objectName: "criteriaBar"
                 width: parent.width
                 criteria: win.onFiles ? win.activeTab.criteria : ({})
-                height: held.length > 0 ? 30 : 0
+                height: held.length > 0 ? Theme.stripHeight : 0
                 visible: height > 0
                 onRemoved: function (key, value) { win.activeTab.toggleCriterion(key, value) }
                 onCleared: win.narrow("clear-criteria")
@@ -2032,7 +2031,7 @@ Window {
                 id: filterBar
                 readonly property Item focusTarget: filterField.focusTarget
                 width: parent.width
-                height: win.filtering || win.prompt !== "" ? 34 : 0
+                height: win.filtering || win.prompt !== "" ? Theme.barHeight : 0
                 visible: height > 0
                 clip: true
 
@@ -2048,8 +2047,8 @@ Window {
                     objectName: "filterEntry"
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    anchors.leftMargin: 10
-                    anchors.rightMargin: 10
+                    anchors.leftMargin: Theme.inset
+                    anchors.rightMargin: Theme.inset
                     anchors.verticalCenter: parent.verticalCenter
                     lead: win.prompt !== "" ? "" : "/"
                     placeholder: win.naming ? "name this view"
@@ -2898,14 +2897,14 @@ Window {
             Rectangle {
                 id: strip
                 Layout.fillWidth: true
-                Layout.preferredHeight: 28
+                Layout.preferredHeight: Theme.stripHeight
                 color: Workspace.focusedPane === paneRoot.paneIndex ? Theme.panel : Theme.sunken
                 clip: true
 
                 Row {
                     id: tabRow
                     anchors.left: parent.left
-                    anchors.leftMargin: 4
+                    anchors.leftMargin: Theme.spacingXs
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     spacing: 0
@@ -2960,7 +2959,7 @@ Window {
                         }
                     }
 
-                    Item { width: 6; height: 1 }
+                    Item { width: Theme.spacingXs; height: 1 }
 
                     Chip {
                         anchors.verticalCenter: parent.verticalCenter
@@ -2992,7 +2991,7 @@ Window {
                     visible: viewRow.tab && viewRow.tab.kind === "files"
                              && strip.width - tabRow.width > implicitWidth + 28
                     anchors.right: parent.right
-                    anchors.rightMargin: 8
+                    anchors.rightMargin: Theme.spacingS
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 1
 
@@ -3022,8 +3021,8 @@ Window {
                     }
 
                     Item {
-                        width: 15
-                        height: 14
+                        width: Theme.iconSize
+                        height: Theme.iconSize
                         anchors.verticalCenter: parent.verticalCenter
                         Rule {
                             vertical: true
@@ -3268,7 +3267,10 @@ Window {
             // The details table's geometry, in one place. A heading and the
             // cells under it that each work out their own width are a heading
             // and a column that do not line up.
-            readonly property real nameIndent: 54
+            readonly property real nameIndent: Theme.inset + markColumn + Theme.spacingS + Theme.iconSize
+                                               + Theme.iconGap
+            /// The width of the mark dot ahead of a row's icon.
+            readonly property real markColumn: Theme.spacingS
             readonly property real tagsWidth: Math.max(90, Math.min(260, listArea.width * 0.26))
 
             function columnWidth(field) {
@@ -3416,7 +3418,6 @@ Window {
                         model: visible ? folderModel : null
                         boundsBehavior: Flickable.StopAtBounds
                         highlightResizeDuration: 0
-                        readonly property int rowHeight: 30
                         currentIndex: 0
                         keyNavigationEnabled: false
                         highlightMoveDuration: 0
@@ -3428,7 +3429,7 @@ Window {
                         header: Rectangle {
                             id: head
                             width: listing.width
-                            height: filesRoot.viewMode === "details" ? 24 : 0
+                            height: filesRoot.viewMode === "details" ? Theme.controlHeight : 0
                             visible: height > 0
                             color: Theme.sunken
 
@@ -3438,7 +3439,7 @@ Window {
                                 anchors.left: parent.left
                                 anchors.leftMargin: filesRoot.nameIndent
                                 anchors.right: headColumns.left
-                                anchors.rightMargin: 10
+                                anchors.rightMargin: Theme.spacingM
                                 height: parent.height
                                 label: "name"
                                 role: "name"
@@ -3454,9 +3455,9 @@ Window {
                             Row {
                                 id: headColumns
                                 anchors.right: parent.right
-                                anchors.rightMargin: 12
+                                anchors.rightMargin: Theme.inset
                                 height: parent.height
-                                spacing: 10
+                                spacing: Theme.spacingM
 
                                 Repeater {
                                     model: Workspace.columns
@@ -3518,7 +3519,7 @@ Window {
                             readonly property bool onCursor: listing.currentIndex === index
 
                             width: ListView.view.width
-                            height: listing.rowHeight
+                            height: Theme.rowHeight
                             Accessible.role: row.details ? Accessible.Cell : Accessible.ListItem
                             Accessible.name: row.name
                             color: onCursor ? Theme.fill(Theme.accent, 0.16)
@@ -3540,14 +3541,14 @@ Window {
                             Text {
                                 id: markDot
                                 anchors.left: parent.left
-                                anchors.leftMargin: 12
+                                anchors.leftMargin: Theme.inset
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 10
+                                width: filesRoot.markColumn
                                 horizontalAlignment: Text.AlignHCenter
                                 text: row.marked ? "\u2022" : ""
                                 color: Theme.accent
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 14
+                                font.pixelSize: Theme.fontTitle
                                 renderType: Text.NativeRendering
                             }
 
@@ -3562,7 +3563,7 @@ Window {
                                     && row.y < listing.contentY + listing.height
                                 moving: listing.moving
                                 anchors.left: markDot.right
-                                anchors.leftMargin: 8
+                                anchors.leftMargin: Theme.spacingS
                                 anchors.verticalCenter: parent.verticalCenter
                                 kind: row.facet ? "tag"
                                     : (row.kind === "file" ? "file"
@@ -3577,9 +3578,9 @@ Window {
                             Label {
                                 id: rowName
                                 anchors.left: rowIcon.right
-                                anchors.leftMargin: 8
+                                anchors.leftMargin: Theme.iconGap
                                 anchors.right: row.details ? cells.left : tagArea.left
-                                anchors.rightMargin: 10
+                                anchors.rightMargin: Theme.spacingM
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: row.name
                                 opacity: row.onCursor ? 1 : 0.88
@@ -3591,9 +3592,9 @@ Window {
                                 id: cells
                                 visible: row.details
                                 anchors.right: parent.right
-                                anchors.rightMargin: 12
+                                anchors.rightMargin: Theme.inset
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 10
+                                spacing: Theme.spacingM
 
                                 Repeater {
                                     model: row.details ? Workspace.columns : []
@@ -3623,7 +3624,7 @@ Window {
                                             id: textCell
                                             Label {
                                                 quiet: true
-                                                font.pixelSize: 11
+                                                font.pixelSize: Theme.fontBody
                                                 text: {
                                                     switch (columnCell.modelData) {
                                                     case "type": return row.type
@@ -3651,10 +3652,9 @@ Window {
                                 id: facetCount
                                 visible: !row.details && row.facet
                                 anchors.right: parent.right
-                                anchors.rightMargin: 12
+                                anchors.rightMargin: Theme.inset
                                 anchors.verticalCenter: parent.verticalCenter
                                 quiet: true
-                                font.pixelSize: 11
                                 text: row.tally
                             }
 
@@ -3662,7 +3662,7 @@ Window {
                                 id: tagArea
                                 visible: !row.details && !row.facet
                                 anchors.right: parent.right
-                                anchors.rightMargin: 12
+                                anchors.rightMargin: Theme.inset
                                 anchors.verticalCenter: parent.verticalCenter
                                 limit: row.width * 0.4
                                 tags: row.tagList
@@ -3771,7 +3771,7 @@ Window {
                             Rectangle {
                                 id: tile
                                 anchors.fill: parent
-                                anchors.margins: 4
+                                anchors.margins: Theme.spacingXs
                                 radius: Theme.rounding
                                 color: cell.onCursor ? Theme.fill(Theme.accent, 0.16)
                                      : cellHover.hovered ? Theme.fill(Theme.foreground, 0.05)
@@ -3782,8 +3782,8 @@ Window {
                                 Column {
                                     id: tileColumn
                                     anchors.fill: parent
-                                    anchors.margins: 8
-                                    spacing: 6
+                                    anchors.margins: Theme.spacingS
+                                    spacing: Theme.spacingXs
 
                                     FileIcon {
                                         id: cellIcon
@@ -3797,8 +3797,8 @@ Window {
                                             && cell.y < grid.contentY + grid.height
                                         moving: grid.moving
                                         anchors.horizontalCenter: parent.horizontalCenter
-                                        width: 30
-                                        height: 30
+                                        width: 2 * Theme.iconSize
+                                        height: 2 * Theme.iconSize
                                         kind: cell.kind === "tag"
                                               || cell.kind === "untagged" ? "tag"
                                             : (cell.kind === "file" ? "file"
@@ -3809,7 +3809,6 @@ Window {
                                         id: cellName
                                         width: parent.width
                                         text: (cell.marked ? "\u2022 " : "") + cell.name
-                                        font.pixelSize: 11
                                         opacity: cell.onCursor ? 1 : 0.88
                                         horizontalAlignment: Text.AlignHCenter
                                     }
@@ -3842,7 +3841,7 @@ Window {
                     ImmediateWheel {
                         anchors.fill: parent
                         view: filesRoot.view
-                        step: filesRoot.viewMode === "icons" ? grid.cellHeight : listing.rowHeight
+                        step: filesRoot.viewMode === "icons" ? grid.cellHeight : Theme.rowHeight
                     }
 
                     RubberBand {
@@ -3851,7 +3850,7 @@ Window {
                         view: filesRoot.view
                         folder: folderModel
                         cellWidth: filesRoot.view === grid ? grid.cellWidth : listing.width
-                        cellHeight: filesRoot.view === grid ? grid.cellHeight : listing.rowHeight
+                        cellHeight: filesRoot.view === grid ? grid.cellHeight : Theme.rowHeight
                         columns: filesRoot.view === grid
                                  ? Math.max(1, Math.floor(grid.width / grid.cellWidth)) : 1
                         // The pane's catch-all has focused the pane already.
@@ -3932,7 +3931,7 @@ Window {
             Label {
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
-                anchors.margins: 12
+                anchors.margins: Theme.inset
                 quiet: true
                 text: "#tag is a tag · j k walks the map · l opens · m for the menu"
             }

@@ -20,6 +20,7 @@ fi
 python3 "$root/tests/test_incremental_build.py"
 /usr/bin/python3 "$root/tests/test_qmake_warnings.py"
 /usr/bin/python3 "$root/tests/test_portal_install.py"
+/usr/bin/python3 "$root/tests/test_qml_metrics.py"
 
 "$root/scripts/build.sh"
 

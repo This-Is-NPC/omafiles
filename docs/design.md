@@ -50,6 +50,27 @@ The CLI is a command-line tool that invokes core library verbs: `ls`, `tags`, `t
 
 The studio is a Qt Quick window over the core library. It implements folder browsing, tag editing, thumbnail display, preview, trash, undo, desktop file manager integration, file operations with conflict resolution, and the portal file chooser. It runs the CLI and core verbs asynchronously in background tasks. The window can run without the helpers; helpers are started on demand when their features are used. Large folders are loaded in the background with names cached and metadata read on demand. Background jobs run on Qt's global thread pool, which Qt sizes from the CPU affinity mask: one thread on one CPU. A job that makes filesystem calls (folder listing, index presence, Trash scan, restore and empty, drop planning, portal path checks, undo steps, archive stage cleanup, default file manager setup) runs through `runBlocking` in `src/studio/BlockingJob.h`, which gives the job's pool slot back with `QThreadPool::releaseThread()` until it returns, as Qt documents for a runnable that waits. A job stuck in the kernel on an unresponsive mount then never keeps queued jobs waiting; the pool starts another thread for them. Pure CPU work (portal filter patterns) keeps its slot, and the CPU-heavy parts of a folder listing run on the directory worker pool, one worker per allowed CPU. See [browsing.md](browsing.md) for how large folder browsing works, [thumbnails.md](thumbnails.md) for thumbnail caching, [drag-and-drop.md](drag-and-drop.md) for file operations, and [conflicts.md](conflicts.md) for handling conflicting paths during copy and move.
 
+### Studio metrics
+
+The window's colours and sizes come from one QML singleton, `Theme` (`src/studio/Theme.h`). Every type size, margin, spacing, padding and height in `src/studio/qml` reads one of its metrics; only 0 and 1 px (hairlines, rules) are written as numbers. `tests/test_qml_metrics.py`, run by `mise run test`, fails on any other literal. The default size of a window and the cap on a preview image are extents, not metrics, and are listed in that test.
+
+| Group | Metric | Pixels | Used for |
+|---|---|---|---|
+| Spacing, on a 4 px grid | `spacingXs` `spacingS` `spacingM` `spacingL` `spacingXl` | 4 8 12 16 24 | gaps between items and inside rows |
+| | `inset` | 12 | the padding of every panel: dock, sheets, preview, header, footer |
+| Type | `fontSmall` | 10 | headings, counts, captions, keycaps |
+| | `fontBody` | 12 | rows, values, menus, the palette, fields, the chooser |
+| | `fontTitle` | 14 | sheet titles, the chooser heading |
+| Heights | `rowHeight` | 28 | every list row: files, sidebar, devices, menu, palette, chooser, suggestions |
+| | `barHeight` | 36 | the header and the filter bar |
+| | `stripHeight` | 28 | the tab strip, the criteria bar and the footer |
+| | `controlHeight` | 24 | buttons, tabs, chips that act, fields |
+| | `chipHeight` | 18 | tag chips and keycaps |
+| Indent | `iconSize`, `iconGap` | 16, 8 | a row's icon and the gap before its text |
+| Focus | `focusInset` | 2 | how far a focus ring sits inside its control |
+
+`Label` draws `quiet` text at `fontSmall` and other text at `fontBody`. The scale is named the way KDE Kirigami's `Units` names its spacings and icon sizes; as in the GNOME HIG, spacing sits on a fixed grid (4 px here, where GNOME uses 6).
+
 ### Helpers
 
 Three helper processes run separately when needed. Each is a small, focused CLI tool that communicates with the window over stdin/stdout.
@@ -247,7 +268,7 @@ The full gate is run before each commit if hooks are installed (`mise run hooks:
 
 **Store**: Index read/write tests in `tests/tst_store.cpp`, including lock contention and concurrent writes.
 
-**Other Python tests**: Cover the benchmark runner, incremental builds, the link checker itself, portal installation, the test harness, usage-doc generation, and the write-scope script.
+**Other Python tests**: Cover the benchmark runner, incremental builds, the link checker itself, portal installation, the test harness, usage-doc generation, the write-scope script, and the studio metrics (§3).
 
 The test environment is disposable: tests use fresh HOME, XDG directories, private D-Bus, and isolated /tmp. See [docs/testing.md](testing.md) for the complete testing strategy, including how tests isolate thumbnail caches and MIME data, how they handle asynchronous operations, and the resource budgets for helpers.
 

@@ -80,20 +80,20 @@ Rectangle {
                 }
                 OverlayPanel {
                     preferredWidth: 540
-                    preferredHeight: column.implicitHeight + 28
+                    preferredHeight: column.implicitHeight + 2 * Theme.inset
                     Accessible.role: Accessible.Dialog
                     Accessible.name: sheet.extracting ? "Extract archive" : "Compress files"
                     MouseArea { anchors.fill: parent; onClicked: function (mouse) { mouse.accepted = true } }
                     OverlayScroll {
                         id: scroll
                         anchors.fill: parent
-                        anchors.margins: 14
+                        anchors.margins: Theme.inset
                         contentHeight: column.implicitHeight
                         Column {
                             id: column
                             width: parent.width
-                            spacing: 12
-                            Label { width: parent.width; wrapMode: Text.Wrap; font.bold: true; text: sheet.extracting ? "Extract archive" : "Compress " + sheet.paths.length + " selected entries" }
+                            spacing: Theme.spacingM
+                            Label { width: parent.width; wrapMode: Text.Wrap; font.bold: true; font.pixelSize: Theme.fontTitle; text: sheet.extracting ? "Extract archive" : "Compress " + sheet.paths.length + " selected entries" }
                             Label { width: parent.width; wrapMode: Text.Wrap; text: sheet.extracting ? "Existing destination folder" : "Archive path (inside an existing folder)" }
                             Entry {
                                 id: destination
@@ -108,7 +108,7 @@ Rectangle {
                             }
                             Flow {
                                 width: parent.width
-                                spacing: 8
+                                spacing: Theme.spacingS
                                 visible: !sheet.extracting
                                 Chip {
                                     id: zipButton
@@ -145,7 +145,7 @@ Rectangle {
                             }
                             Flow {
                                 width: parent.width
-                                spacing: 8
+                                spacing: Theme.spacingS
                                 Chip {
                                     id: cancelButton
                                     objectName: "archiveCancel"

@@ -12,11 +12,13 @@ C.ToolTip {
     objectName: "controlTooltip"
 
     popupType: C.Popup.Item
-    width: Math.max(0, Math.min(420, ruler.advanceWidth + 14, parent ? parent.width - 12 : 420))
-    height: Math.max(0, Math.min(label.implicitHeight + 14, parent ? parent.height - 12 : 300))
+    width: Math.max(0, Math.min(420, ruler.advanceWidth + 2 * padding,
+                                parent ? parent.width - Theme.spacingM : 420))
+    height: Math.max(0, Math.min(label.implicitHeight + 2 * padding,
+                                 parent ? parent.height - Theme.spacingM : 300))
     onWidthChanged: if (opened) position()
     onHeightChanged: if (opened) position()
-    padding: 7
+    padding: Theme.spacingS
     modal: false
     dim: false
     focus: false
@@ -34,7 +36,7 @@ C.ToolTip {
         id: ruler
         text: tip.text
         font.family: Theme.fontFamily
-        font.pixelSize: 11
+        font.pixelSize: Theme.fontBody
     }
     contentItem: OverlayScroll {
         id: scroll
@@ -56,7 +58,7 @@ C.ToolTip {
             wrapMode: Text.WrapAnywhere
             color: Theme.foreground
             font.family: Theme.fontFamily
-            font.pixelSize: 11
+            font.pixelSize: Theme.fontBody
             renderType: Text.NativeRendering
         }
     }

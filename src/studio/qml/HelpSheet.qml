@@ -65,8 +65,8 @@ Rectangle {
 
                 OverlayPanel {
                     preferredWidth: 1140
-                    preferredHeight: columns.implicitHeight + 66
-                    margin: 24
+                    preferredHeight: columns.implicitHeight + heading.height + 3 * Theme.inset
+                    margin: Theme.spacingXl
 
                     Accessible.role: Accessible.Dialog
                     Accessible.name: heading.text
@@ -79,14 +79,15 @@ Rectangle {
                         id: heading
                         anchors.left: parent.left
                         anchors.top: parent.top
-                        anchors.margins: 18
+                        anchors.margins: Theme.inset
                         text: "keys"
                         font.bold: true
+                        font.pixelSize: Theme.fontTitle
                     }
                     Label {
                         anchors.right: parent.right
                         anchors.top: parent.top
-                        anchors.margins: 18
+                        anchors.margins: Theme.inset
                         quiet: true
                         text: "↑ ↓ PgUp PgDn scroll · Esc closes"
                     }
@@ -97,8 +98,8 @@ Rectangle {
                         Keys.onTabPressed: function (event) { Focus.move(event, scroll, scroll) }
                         Keys.onBacktabPressed: function (event) { Focus.move(event, scroll) }
                         anchors.fill: parent
-                        anchors.margins: 18
-                        anchors.topMargin: heading.height + 26
+                        anchors.margins: Theme.inset
+                        anchors.topMargin: heading.height + 2 * Theme.inset
                         contentHeight: columns.implicitHeight
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
@@ -107,7 +108,7 @@ Rectangle {
                             id: columns
                             readonly property int across: width >= 1000 ? 5 : width >= 700 ? 4 : width >= 500 ? 3 : width >= 300 ? 2 : 1
                             width: parent.width
-                            spacing: 26
+                            spacing: Theme.spacingXl
 
                             Repeater {
                                 model: sheet.visible ? sheet.groups : []
@@ -116,14 +117,14 @@ Rectangle {
                                     id: group
                                     required property var modelData
                                     readonly property var spec: group.modelData
-                                    width: (columns.width - (columns.across - 1) * 26)
+                                    width: (columns.width - (columns.across - 1) * columns.spacing)
                                            / columns.across
-                                    spacing: 6
+                                    spacing: Theme.spacingXs
 
                                     Label {
                                         quiet: true
                                         text: group.spec.title
-                                        bottomPadding: 2
+                                        bottomPadding: Theme.spacingXs
                                     }
 
                                     Repeater {
@@ -134,12 +135,12 @@ Rectangle {
                                             required property var modelData
                                             readonly property var binding: line.modelData
                                             width: group.width
-                                            spacing: 7
+                                            spacing: Theme.spacingS
 
                                             Row {
                                                 id: caps
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                spacing: 3
+                                                spacing: Theme.spacingXs
                                                 Repeater {
                                                     model: line.binding.key.split(" ")
                                                     KeyCap {
@@ -151,9 +152,8 @@ Rectangle {
                                             Label {
                                                 objectName: "helpEntry"
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                width: line.width - caps.width - 7
+                                                width: line.width - caps.width - line.spacing
                                                 text: line.binding.label
-                                                font.pixelSize: 11
                                                 // Reference entries wrap so every binding remains readable.
                                                 elide: Text.ElideNone
                                                 wrapMode: Text.WordWrap
@@ -161,7 +161,7 @@ Rectangle {
                                         }
                                     }
 
-                                    Item { width: 1; height: 6 }
+                                    Item { width: 1; height: Theme.spacingXs }
                                 }
                             }
                         }

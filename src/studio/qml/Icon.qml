@@ -16,8 +16,8 @@ Item {
     property string kind: "file"
     property color ink: Theme.foreground
 
-    implicitWidth: 16
-    implicitHeight: 16
+    implicitWidth: Theme.iconSize
+    implicitHeight: Theme.iconSize
     width: implicitWidth
     height: implicitHeight
 

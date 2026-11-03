@@ -100,7 +100,7 @@ Rectangle {
                 Keys.onEscapePressed: function (event) { sheet.close(); event.accepted = true }
                 OverlayPanel {
                     preferredWidth: 460
-                    preferredHeight: column.implicitHeight + 28
+                    preferredHeight: column.implicitHeight + 2 * Theme.inset
                     Accessible.role: Accessible.Dialog
                     Accessible.name: "Edit tags"
                     MouseArea { anchors.fill: parent; onClicked: function (mouse) { mouse.accepted = true } }
@@ -108,7 +108,7 @@ Rectangle {
                         id: scroll
                         focusOnScroll: true
                         anchors.fill: parent
-                        anchors.margins: 14
+                        anchors.margins: Theme.inset
                         contentHeight: column.implicitHeight
                         Keys.onTabPressed: function (event) { Focus.move(event, modes.controls[0] || null, closeButton) }
                         Keys.onBacktabPressed: function (event) { Focus.move(event, closeButton) }
@@ -116,16 +116,17 @@ Rectangle {
                         Column {
                             id: column
                             width: parent.width
-                            spacing: 10
+                            spacing: Theme.spacingM
                             Label {
                                 width: parent.width
                                 font.bold: true
+                                font.pixelSize: Theme.fontTitle
                                 text: sheet.paths.length === 1
                                     ? "Tags on " + String(sheet.paths[0]).split("/").pop()
                                     : "Tags on " + sheet.paths.length + " selected files"
                             }
                             Row {
-                                spacing: 8
+                                spacing: Theme.spacingS
                                 enabled: !sheet.waiting
                                 Repeater {
                                     id: modes
@@ -191,16 +192,15 @@ Rectangle {
                                 wrapMode: Text.WrapAnywhere
                                 color: sheet.refusal !== "" ? Theme.accent : Theme.dim
                                 font.family: Theme.fontFamily
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.fontBody
                             }
                             Label {
                                 width: parent.width
                                 text: "↑ ↓ choose · Tab completes · Enter applies · Esc closes"
                                 quiet: true
-                                font.pixelSize: 10
                             }
                             Row {
-                                spacing: 8
+                                spacing: Theme.spacingS
                                 Chip {
                                     id: applyButton
                                     objectName: "tagApply"

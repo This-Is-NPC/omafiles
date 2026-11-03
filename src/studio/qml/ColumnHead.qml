@@ -35,7 +35,7 @@ Item {
         opacity: head.active ? 0.9 : (hover.hovered ? 0.9 : 1)
         elide: Text.ElideRight
         font.family: Theme.fontFamily
-        font.pixelSize: 10
+        font.pixelSize: Theme.fontSmall
         renderType: Text.NativeRendering
 
         Behavior on color { ColorAnimation { duration: 90 } }
