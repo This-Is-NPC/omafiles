@@ -174,7 +174,7 @@ Item {
             border.width: 1
             border.color: Theme.fill(Theme.accent, 0.35)
             Accessible.role: Accessible.StaticText
-            Accessible.name: "+" + strip.hiddenCount + " more tags"
+            Accessible.name: "+" + Counted.of(strip.hiddenCount, "more tag")
             TapHandler { onTapped: strip.activated("") }
 
 
@@ -236,7 +236,7 @@ Item {
             border.width: 1
             border.color: Theme.fill(Theme.accent, 0.35)
             Accessible.role: Accessible.StaticText
-            Accessible.name: "+" + strip.hiddenCount + " more tags"
+            Accessible.name: "+" + Counted.of(strip.hiddenCount, "more tag")
             TapHandler { onTapped: strip.activated("") }
 
 

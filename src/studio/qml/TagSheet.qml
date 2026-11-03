@@ -125,7 +125,7 @@ Rectangle {
                                 font.pixelSize: Theme.fontTitle
                                 text: sheet.paths.length === 1
                                     ? "Tags on " + String(sheet.paths[0]).split("/").pop()
-                                    : "Tags on " + sheet.paths.length + " selected files"
+                                    : "Tags on " + Counted.of(sheet.paths.length, "selected file")
                             }
                             Row {
                                 spacing: Theme.spacingS

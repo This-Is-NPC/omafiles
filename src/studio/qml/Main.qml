@@ -1990,7 +1990,7 @@ Window {
                     anchors.rightMargin: Theme.inset
                     anchors.verticalCenter: parent.verticalCenter
                     quiet: true
-                    text: IndexModel.tagCount + " tags · " + IndexModel.fileCount + " tagged"
+                    text: Counted.of(IndexModel.tagCount, "tag") + " · " + IndexModel.fileCount + " tagged"
                 }
             }
 
@@ -2141,8 +2141,8 @@ Window {
                     lead: win.prompt !== "" ? "" : "/"
                     placeholder: win.naming ? "name this view"
                                : win.renaming ? "rename " + win.nameOf(win.promptPath)
-                               : win.renamingSet ? "rename " + win.promptPaths.length
-                                                   + " files: {name} {stem} {ext} {n}"
+                               : win.renamingSet ? "rename " + Counted.of(win.promptPaths.length, "file")
+                                                   + ": {name} {stem} {ext} {n}"
                                : win.makingFolder ? "new folder"
                                : win.matching ? "mark names matching, like *.pdf"
                                : win.finding ? "find names across the roots, like *.pdf"
@@ -2448,9 +2448,9 @@ Window {
             // than one of them. This is what stands in for a confirmation
             // dialog: the entry says `Move 12 files to trash` before it is
             // chosen, rather than asking about it afterwards.
-            function counted(one, many) {
+            function counted(one, many, noun) {
                 return fileMenu.targets.length > 1
-                       ? many.replace("%1", fileMenu.targets.length) : one
+                       ? many.replace("%1", Counted.of(fileMenu.targets.length, noun)) : one
             }
 
             // Groups, in order: open, send, copy, tags, mark, archive, files,
@@ -2474,24 +2474,23 @@ Window {
                 { id: "share", opensGroup: true, label: "Send with LocalSend",
                   when: IndexModel.canShare && fileMenu.hasTarget },
                 { id: "script",
-                  label: fileMenu.counted("Run a script over it…",
-                                          "Run a script over %1 files…"),
+                  label: fileMenu.counted("Run a script over it…", "Run a script over %1…", "file"),
                   when: IndexModel.hasScripts && fileMenu.isRow },
 
-                { id: "copy-path", opensGroup: true, label: fileMenu.counted("Copy path", "Copy %1 paths"),
+                { id: "copy-path", opensGroup: true, label: fileMenu.counted("Copy path", "Copy %1", "path"),
                   when: fileMenu.hasTarget },
                 { id: "copy-name", label: "Copy name", when: fileMenu.hasTarget },
-                { id: "copy-uri", label: fileMenu.counted("Copy as URI", "Copy %1 URIs"),
+                { id: "copy-uri", label: fileMenu.counted("Copy as URI", "Copy %1", "URI"),
                   when: fileMenu.hasTarget },
                 { id: "copy-tags", label: "Copy tags", when: fileMenu.targetTags.length > 0 },
                 { id: "copy-tag-command", label: "Copy tag command", when: fileMenu.hasTarget },
                 { id: "copy-open-command", label: "Copy open command", when: fileMenu.isFile },
 
-                { id: "edit-tag-add", opensGroup: true, label: fileMenu.counted("Add tag…", "Add tag to %1 files…"),
+                { id: "edit-tag-add", opensGroup: true, label: fileMenu.counted("Add tag…", "Add tag to %1…", "file"),
                   when: fileMenu.onRow },
-                { id: "edit-tag-remove", label: fileMenu.counted("Remove tag…", "Remove tag from %1 files…"),
+                { id: "edit-tag-remove", label: fileMenu.counted("Remove tag…", "Remove tag from %1…", "file"),
                   when: fileMenu.onRow },
-                { id: "edit-tag-rename", label: fileMenu.counted("Rename tag…", "Rename tag on %1 files…"),
+                { id: "edit-tag-rename", label: fileMenu.counted("Rename tag…", "Rename tag on %1…", "file"),
                   when: fileMenu.onRow },
                 // Not offered where the row already carries it: applying a
                 // tag a file has is a write that changes nothing, and an entry
@@ -2502,7 +2501,7 @@ Window {
                 { id: "tag-rm", label: "Remove tag " + fileMenu.focusedTag,
                   when: fileMenu.hasTarget && fileMenu.focusedTag !== ""
                         && fileMenu.targetTags.indexOf(fileMenu.focusedTag) >= 0 },
-                { id: "tag-clear", label: fileMenu.counted("Clear tags", "Clear tags on %1 files"),
+                { id: "tag-clear", label: fileMenu.counted("Clear tags", "Clear tags on %1", "file"),
                   when: fileMenu.hasTarget },
                 { id: "tag-cp", label: "Copy tags onto the marked",
                   when: fileMenu.hasTarget && !fileMenu.targetMarked
@@ -2520,24 +2519,24 @@ Window {
                 { id: "mark-same-type", label: "Mark same type", when: fileMenu.onRow },
                 { id: "mark-pattern", label: "Mark by pattern", key: "*", when: win.onFiles },
 
-                { id: "compress", opensGroup: true, label: fileMenu.counted("Compress…", "Compress %1 entries…"), when: fileMenu.onRow && !IndexModel.operationBusy },
+                { id: "compress", opensGroup: true, label: fileMenu.counted("Compress…", "Compress %1…", "entry"), when: fileMenu.onRow && !IndexModel.operationBusy },
                 { id: "extract", label: "Extract archive…", when: fileMenu.isFile && !IndexModel.operationBusy },
 
-                { id: "copy-files", opensGroup: true, label: fileMenu.counted("Copy", "Copy %1 files"),
+                { id: "copy-files", opensGroup: true, label: fileMenu.counted("Copy", "Copy %1", "file"),
                   key: "Ctrl c", when: fileMenu.isRow },
-                { id: "cut-files", label: fileMenu.counted("Cut", "Cut %1 files"),
+                { id: "cut-files", label: fileMenu.counted("Cut", "Cut %1", "file"),
                   key: "Ctrl x", when: fileMenu.isRow },
                 { id: "paste",
                   label: Clipboard.holdsFiles && Clipboard.files().length > 1
-                         ? (Clipboard.cutting() ? "Move %1 files here" : "Paste %1 files")
-                               .replace("%1", Clipboard.files().length)
+                         ? (Clipboard.cutting() ? "Move %1 here" : "Paste %1")
+                               .replace("%1", Counted.of(Clipboard.files().length, "file"))
                          : (Clipboard.cutting() ? "Move here" : "Paste"),
                   key: "Ctrl v", when: win.canPaste },
                 { id: "copy-other",
-                  label: fileMenu.counted("Copy to other pane", "Copy %1 files to other pane"),
+                  label: fileMenu.counted("Copy to other pane", "Copy %1 to other pane", "file"),
                   when: fileMenu.isRow && fileMenu.otherDir !== "" },
                 { id: "move-other",
-                  label: fileMenu.counted("Move to other pane", "Move %1 files to other pane"),
+                  label: fileMenu.counted("Move to other pane", "Move %1 to other pane", "file"),
                   when: fileMenu.isRow && fileMenu.otherDir !== "" },
                 { id: "duplicate", label: "Duplicate",
                   when: fileMenu.isFile && fileMenu.targets.length === 1 },
@@ -2548,19 +2547,19 @@ Window {
                   when: fileMenu.isRow && fileMenu.targets.length === 1 },
                 { id: "link-here",
                   label: Clipboard.holdsFiles && Clipboard.files().length > 1
-                         ? "Link %1 files here".replace("%1", Clipboard.files().length)
+                         ? "Link %1 here".replace("%1", Counted.of(Clipboard.files().length, "file"))
                          : "Link it here",
                   when: win.canPaste },
                 // A set is renamed by a template rather than a name.
                 { id: "rename",
-                  label: fileMenu.counted("Rename", "Rename %1 files by a pattern"),
+                  label: fileMenu.counted("Rename", "Rename %1 by a pattern", "file"),
                   key: "r", when: fileMenu.isRow },
                 { id: "chmod",
-                  label: fileMenu.counted("Permissions…", "Permissions of %1 files…"),
+                  label: fileMenu.counted("Permissions…", "Permissions of %1…", "file"),
                   when: fileMenu.onRow },
                 { id: "new-folder", label: "New folder", key: "n",
                   when: win.standingInFolder },
-                { id: "trash", label: fileMenu.counted("Move to trash", "Move %1 files to trash"),
+                { id: "trash", label: fileMenu.counted("Move to trash", "Move %1 to trash", "file"),
                   when: fileMenu.isRow },
 
                 { id: "filter-tag", opensGroup: true, label: "Filter by " + fileMenu.firstTag,

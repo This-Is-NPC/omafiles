@@ -1,4 +1,5 @@
 #include "FileManager.h"
+#include "Counted.h"
 #include "Paths.h"
 #include "FileMetadata.h"
 #include "Workspace.h"
@@ -88,8 +89,8 @@ QString FileManager::dispatch(const QStringList &uris, const QString &startupId,
         QStringList descriptions;
         for (const auto &location : locations) {
             const QFileInfo info(location.cursor);
-            descriptions.append(QStringLiteral("%1\nSize: %2 bytes\nOwner: %3\nPermissions: %4\nModified: %5")
-                .arg(info.filePath()).arg(info.size()).arg(info.owner())
+            descriptions.append(QStringLiteral("%1\nSize: %2\nOwner: %3\nPermissions: %4\nModified: %5")
+                .arg(info.filePath(), countOf(info.size(), QStringLiteral("byte")), info.owner())
                 .arg(modeOf(info)).arg(info.lastModified().toString(Qt::ISODate)));
         }
         if (!descriptions.isEmpty())
