@@ -2418,8 +2418,8 @@ Window {
                 // last word of the path on screen.
                 if (win.onTags && win.activeTab.facets.length > 0)
                     return win.activeTab.facets[win.activeTab.facets.length - 1]
-                return win.activeTagsList
-                       ? IndexModel.tagAt(win.activeTagsList.currentIndex) : ""
+                return win.activeTagsList && win.activeTagsList.currentItem
+                       ? win.activeTagsList.currentItem.tag : ""
             }
             // The folder a `here` entry means: the folder pointed at, the
             // folder holding the file pointed at, or the one on screen. Read
