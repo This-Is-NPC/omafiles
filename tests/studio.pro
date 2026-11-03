@@ -9,7 +9,6 @@ include($$PWD/../qmake/layout.pri)
 
 QT       += core gui qml quick qmltest testlib dbus concurrent
 CONFIG   += qtquickcompiler testcase c++17 console
-include($$PWD/../qmake/qmltypes.pri)
 
 # The same module name and version the studio registers, or the test binary and
 # the shipped one would disagree about what `import omafiles` means.
@@ -18,6 +17,7 @@ QML_IMPORT_MAJOR_VERSION = 1
 CONFIG   -= app_bundle
 TEMPLATE  = app
 TARGET    = tst_studio
+include($$PWD/../qmake/qmltypes.pri)
 
 INCLUDEPATH += $$PWD/../src/core $$PWD/../src/studio
 
