@@ -5888,11 +5888,17 @@ void TestStudio::choosesARowMenuEntryWithTheMouse()
     QVERIFY2(popup, "no row menu popup on screen");
     QQuickItem *list = findAccessibleItem(popup, QAccessible::List);
     QVERIFY(list);
-    QQuickItem *entry = viewItemAt(list, at);
-    QVERIFY2(entry, "the entry to click has not been built");
+    // The list builds its rows when the window next polishes, not when the
+    // menu opens.
+    QQuickItem *entry = nullptr;
+    QTRY_VERIFY2((entry = viewItemAt(list, at)), "the entry to click has not been built");
 
     const QPointF centre = entry->mapToScene(QPointF(entry->width() / 2, entry->height() / 2));
     m_clipboard->copy(QString());
+    // A pointer travels to the entry: the menu sees it move outside the panel
+    // first, and the move onto the entry is then a move, not a pointer the
+    // menu opened under.
+    QTest::mouseMove(window(), QPoint(window()->width() - 17, window()->height() - 17));
     QTest::mouseMove(window(), centre.toPoint());
     settle();
     // Hovering moves the highlight, which is the whole of what a pointer
@@ -5924,8 +5930,8 @@ void TestStudio::choosesARowMenuEntryWithTheMouse()
     const int second =
         menuLabels(QStringLiteral("fileMenu")).indexOf(QStringLiteral("Copy name"));
     QVERIFY(second >= 0);
-    QQuickItem *pick = viewItemAt(rows, second);
-    QVERIFY2(pick, "the entry to click has not been built");
+    QQuickItem *pick = nullptr;
+    QTRY_VERIFY2((pick = viewItemAt(rows, second)), "the entry to click has not been built");
     const QPointF spot = pick->mapToScene(QPointF(pick->width() / 2, pick->height() / 2));
     m_clipboard->copy(QString());
     QTest::mouseMove(window(), spot.toPoint());
