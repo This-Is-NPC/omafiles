@@ -83,8 +83,10 @@ Item {
     }
 
     readonly property Tooltip tooltip: tooltipLoader.item as Tooltip
-    readonly property bool tooltipHovered: hover.hovered && control.Window.window !== null
-        && control.Window.window.PointerActivity.observed
+    // Reads the window's PointerActivity before hover, so it watches the pointer
+    // from the moment the control is in a window, including the move that enters.
+    readonly property bool tooltipHovered: control.Window.window !== null
+        && control.Window.window.PointerActivity.observed && hover.hovered
     onTooltipHoveredChanged: {
         if (tooltipHovered && tooltipCaption !== "") {
             tooltipLoader.active = true
