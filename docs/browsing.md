@@ -36,7 +36,9 @@ pool. Each chunk contains at least 32,768 entries; small queries and a one-worke
 budget execute the same processing directly without extra tasks or merge
 buffers. Adjacent chunks that are already ordered need only a boundary comparison.
 Each scanning worker accumulates on its own stack and publishes its chunk once,
-avoiding shared counters and vector headers in the hot loop.
+avoiding shared counters and vector headers in the hot loop. A scan reads names
+ahead of the row it tests, since rows in name order point at names stored in the
+directory's own order; see [directory filtering](benchmark.md#directory-filtering).
 Sorted chunks merge with the same folders-first, case-insensitive
 comparison. Filter results join in source order, preserving parent rows,
 descending groups, tags and progressive narrowing of completed queries. Only a
