@@ -353,6 +353,7 @@ private slots:
     void navigatesArchiveControls_data();
     void navigatesArchiveControls();
     void browsesAndRestoresTrashByKeyboardAndPointer();
+    void showsTheWholeEmptyTrashConfirmation();
     void showsTrashReceiptBesideAnUnsearchableMount();
     void cancelsStaleTrashScans();
     void operatesOnTrashDuringRefresh_data();
@@ -16555,6 +16556,58 @@ void TestStudio::browsesAndRestoresTrashByKeyboardAndPointer()
     QVERIFY(writeLooknfeel(dir.filePath("Trash/info/third.trashinfo"),
         "[Trash Info]\nPath=" + dir.filePath("third") + "\nDeletionDate=2026-10-11T13:14:15\n"));
     QTRY_COMPARE(model->count(), 1);
+}
+
+void TestStudio::showsTheWholeEmptyTrashConfirmation()
+{
+    QTemporaryDir fixture;
+    QVERIFY(fixture.isValid());
+    const QByteArray oldData = qgetenv("XDG_DATA_HOME");
+    const QSize oldSize = window()->size();
+    qputenv("XDG_DATA_HOME", fixture.path().toUtf8());
+    auto cleanup = qScopeGuard([&] {
+        if (tab()->kind() == "trash") m_workspace->closeCurrentTab();
+        qputenv("XDG_DATA_HOME", oldData);
+        window()->resize(oldSize);
+    });
+    const QDir dir(fixture.path());
+    QVERIFY(QDir().mkpath(dir.filePath("Trash/files")));
+    QVERIFY(QDir().mkpath(dir.filePath("Trash/info")));
+    QVERIFY(writeLooknfeel(dir.filePath("Trash/files/gone.txt"), "payload"));
+    QVERIFY(writeLooknfeel(dir.filePath("Trash/info/gone.txt.trashinfo"),
+        "[Trash Info]\nPath=" + dir.filePath("gone.txt") + "\nDeletionDate=2026-10-11T13:14:15\n"));
+    key(':');
+    for (char ch : QByteArray("open trash")) key(ch);
+    key(Qt::Key_Return);
+    QTRY_COMPARE(tab()->kind(), QStringLiteral("trash"));
+    QTRY_VERIFY(!itemsNamed("trashView").isEmpty());
+    auto *model = itemsNamed("trashView").first()->property("model").value<TrashModel *>();
+    QVERIFY(model);
+    QTRY_VERIFY(!model->loading());
+    QCOMPARE(model->count(), 1);
+    auto *confirm = itemsNamed("trashEmptyMenu").first();
+    for (const QSize size : {QSize(1180, 720), QSize(420, 300)}) {
+        window()->resize(size);
+        itemsNamed("trashList").first()->forceActiveFocus();
+        key('e');
+        QTRY_VERIFY(confirm->isVisible());
+        auto *list = qvariant_cast<QQuickItem *>(confirm->property("focusTarget"));
+        QTRY_COMPARE(list->property("count").toInt(), 2);
+        window()->grabWindow();
+        int labels = 0;
+        for (QQuickItem *item : itemsNamed(QStringLiteral("menuLabel"))) {
+            if (!list->isAncestorOf(item)) continue;
+            const QString text = item->property("text").toString();
+            ++labels;
+            QVERIFY2(!item->property("truncated").toBool(),
+                     qPrintable(QStringLiteral("%1x%2 cuts off `%3`")
+                                    .arg(size.width()).arg(size.height()).arg(text)));
+        }
+        QCOMPARE(labels, 2);
+        key(Qt::Key_Escape);
+        QTRY_VERIFY(!confirm->isVisible());
+    }
+    QCOMPARE(model->count(), 1);
 }
 
 void TestStudio::cancelsStaleTrashScans()
