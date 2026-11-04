@@ -207,7 +207,6 @@ Window {
         return "list"
     }
     property bool pendingG: false
-    property var paneItems: ({})
     /// Where the last menu was opened, so a second page of one lands on it.
     property real menuX: 0
     property real menuY: 0
@@ -1475,8 +1474,8 @@ Window {
     function resizeFocusedPane(delta) {
         const focused = Workspace.focusedPane
         const last = Workspace.paneCount - 1
-        const pane = paneItems[focused === last ? focused - 1 : focused]
-        const fill = paneItems[last]
+        const pane = paneRepeater.itemAt(focused === last ? focused - 1 : focused) as Pane
+        const fill = paneRepeater.itemAt(last) as Pane
         if (!pane || !fill || pane === fill)
             return false
         const step = focused === last ? -delta : delta
@@ -2079,11 +2078,12 @@ Window {
                     }
 
                     Repeater {
+                        id: paneRepeater
                         model: Workspace.panes
                         delegate: Pane {
-                            required property var modelData
+                            required property var paneState
                             required property int index
-                            pane: modelData
+                            pane: paneState
                             paneIndex: index
                             narrowest: split.narrowest
                         }
@@ -2952,12 +2952,19 @@ Window {
         property var pane
         property int paneIndex
         required property real narrowest
+        readonly property real share: win.width / Math.max(1, Workspace.paneCount)
         C.SplitView.minimumWidth: narrowest
-        C.SplitView.preferredWidth: win.width / Math.max(1, Workspace.paneCount)
+        C.SplitView.preferredWidth: share
 
         function resize(width) { C.SplitView.preferredWidth = width }
 
-        Component.onCompleted: win.paneItems[paneIndex] = paneRoot
+        // A split or a close gives every pane an equal share again, also one
+        // resized by a key or a drag.
+        Connections {
+            target: Workspace
+            function onPanesChanged() { paneRoot.shareAgain() }
+        }
+        function shareAgain() { C.SplitView.preferredWidth = Qt.binding(() => paneRoot.share) }
 
         // Any press anywhere in this pane makes it the focused one.
         //

@@ -438,27 +438,38 @@ void Workspace::moveColumn(const QString &field, int delta)
     setColumns(next);
 }
 
+PaneList::PaneList(const QVector<PaneState *> &panes, QObject *parent)
+    : QAbstractListModel(parent)
+    , m_panes(panes)
+{
+}
+
+int PaneList::rowCount(const QModelIndex &parent) const
+{
+    return parent.isValid() ? 0 : int(m_panes.size());
+}
+
+QVariant PaneList::data(const QModelIndex &index, int role) const
+{
+    if (role != Qt::UserRole || !checkIndex(index, CheckIndexOption::IndexIsValid))
+        return {};
+    return QVariant::fromValue(m_panes.at(index.row()));
+}
+
+QHash<int, QByteArray> PaneList::roleNames() const
+{
+    return {{Qt::UserRole, QByteArrayLiteral("paneState")}};
+}
+
 // Every pane reports its current tab upward, so `currentTab` is correct no
 // matter which pane changed and which one holds the focus.
 void Workspace::adopt(PaneState *pane, int at)
 {
     connect(pane, &PaneState::currentChanged, this, &Workspace::currentTabChanged);
-    m_panes.insert(qBound(0, at, m_panes.size()), pane);
-}
-
-QQmlListProperty<PaneState> Workspace::panes()
-{
-    return {this, this, &Workspace::paneCountFn, &Workspace::paneAt};
-}
-
-qsizetype Workspace::paneCountFn(QQmlListProperty<PaneState> *list)
-{
-    return static_cast<Workspace *>(list->data)->m_panes.size();
-}
-
-PaneState *Workspace::paneAt(QQmlListProperty<PaneState> *list, qsizetype index)
-{
-    return static_cast<Workspace *>(list->data)->m_panes.at(index);
+    const int row = qBound(0, at, int(m_panes.size()));
+    m_paneList->beginInsertRows({}, row, row);
+    m_panes.insert(row, pane);
+    m_paneList->endInsertRows();
 }
 
 PaneState *Workspace::paneAtIndex(int index) const
@@ -641,7 +652,9 @@ void Workspace::closePane(int paneIndex)
         return;
     if (paneIndex < 0 || paneIndex >= m_panes.size())
         return;
+    m_paneList->beginRemoveRows({}, paneIndex, paneIndex);
     PaneState *pane = m_panes.takeAt(paneIndex);
+    m_paneList->endRemoveRows();
     pane->deleteLater();
     if (m_focused >= m_panes.size())
         m_focused = m_panes.size() - 1;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QAbstractListModel>
 #include <QObject>
 #include <QQmlListProperty>
 #include <QSet>
@@ -208,6 +209,27 @@ private:
     int m_current = 0;
 };
 
+// The panes, as rows: a split inserts one and a close removes one, so a
+// Repeater over it makes or drops that pane's view and leaves the others.
+class PaneList : public QAbstractListModel
+{
+    Q_OBJECT
+    QML_ELEMENT
+    QML_UNCREATABLE("comes from Workspace")
+
+public:
+    explicit PaneList(const QVector<PaneState *> &panes, QObject *parent);
+
+    int rowCount(const QModelIndex &parent = {}) const override;
+    QVariant data(const QModelIndex &index, int role) const override;
+    QHash<int, QByteArray> roleNames() const override;
+
+private:
+    friend class Workspace;
+
+    const QVector<PaneState *> &m_panes;
+};
+
 class Workspace : public QObject
 {
     Q_OBJECT
@@ -218,7 +240,7 @@ class Workspace : public QObject
     // for in the context chain.
     QML_ELEMENT
     QML_SINGLETON
-    Q_PROPERTY(QQmlListProperty<omafiles::PaneState> panes READ panes NOTIFY panesChanged)
+    Q_PROPERTY(omafiles::PaneList *panes READ panes CONSTANT)
     Q_PROPERTY(int paneCount READ paneCount NOTIFY panesChanged)
     Q_PROPERTY(int focusedPane READ focusedPane WRITE setFocusedPane NOTIFY focusedPaneChanged)
     Q_PROPERTY(omafiles::TabState *currentTab READ currentTab NOTIFY currentTabChanged)
@@ -237,7 +259,7 @@ public:
     /// Moves a shown column `delta` places, clamped to the ends.
     Q_INVOKABLE void moveColumn(const QString &field, int delta);
 
-    QQmlListProperty<PaneState> panes();
+    PaneList *panes() const { return m_paneList; }
     int paneCount() const { return m_panes.size(); }
     int focusedPane() const { return m_focused; }
     void setFocusedPane(int index);
@@ -282,13 +304,11 @@ signals:
     void presentationRequested(const QString &startupId);
 
 private:
-    static qsizetype paneCountFn(QQmlListProperty<PaneState> *list);
-    static PaneState *paneAt(QQmlListProperty<PaneState> *list, qsizetype index);
-
     void adopt(PaneState *pane, int at);
     void setColumns(const QStringList &columns);
 
     QVector<PaneState *> m_panes;
+    PaneList *m_paneList = new PaneList(m_panes, this);
     int m_focused = 0;
     QStringList m_columns;
 };
