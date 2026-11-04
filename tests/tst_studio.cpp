@@ -730,6 +730,7 @@ private slots:
     void barDoesNotCoverRows();
     void scrollJumpButtonsMatchHomeEnd();
     void sectionHeadingsAreNotTabStops();
+    void paletteFocusesTheDevices();
     void emptyStateTextWraps();
     void footerHintsHaveNoFillAtRest();
     void cursorRowCarriesTheOnlyRing();
@@ -9352,6 +9353,24 @@ void TestStudio::sectionHeadingsAreNotTabStops()
         key(walk);
         QVERIFY2(list->hasActiveFocus(), qPrintable(QString(QLatin1Char(walk))));
     }
+    key(Qt::Key_Escape);
+}
+
+// The palette's Devices does what `d` does: it shows the section, hidden while
+// no device is connected, and focuses it.
+void TestStudio::paletteFocusesTheDevices()
+{
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    QVERIFY(sidebar);
+    auto *heading = sidebar->findChild<QQuickItem *>(QStringLiteral("devicesHeading"));
+    QVERIFY(heading);
+    QCOMPARE(sidebar->property("devicesList").value<QQuickItem *>()->property("count").toInt(), 0);
+    QVERIFY(!heading->isVisible());
+    QVERIFY(QMetaObject::invokeMethod(itemsNamed(QStringLiteral("commandPalette")).first(),
+        "chosen", Q_ARG(QString, QStringLiteral("devices"))));
+    QTRY_COMPARE(window()->property("focusRegion").toString(), QStringLiteral("devices"));
+    QVERIFY(heading->isVisible());
+    QVERIFY(heading->hasActiveFocus());
     key(Qt::Key_Escape);
 }
 
