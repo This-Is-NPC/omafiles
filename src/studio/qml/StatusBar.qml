@@ -68,15 +68,35 @@ Rectangle {
     Accessible.description: bar.spoken
     Row {
         id: facts
+        objectName: "statusFacts"
+        readonly property real room: bar.editing ? 0 : Math.max(0, bar.width * 0.35 - Theme.spacingXl)
+        // The facts that are drawn: from the first, those that fit whole in
+        // the room. The first is always drawn, and elides where it does not.
+        readonly property var drawn: {
+            const out = []
+            let used = 0
+            for (const fact of [position, note, marks, paste, chosenTag, filterText]) {
+                if (!fact.wanted)
+                    continue
+                used += (out.length > 0 ? spacing : 0) + fact.implicitWidth
+                if (out.length > 0 && used > room)
+                    break
+                out.push(fact)
+            }
+            return out
+        }
         anchors.left: parent.left
         anchors.leftMargin: Theme.inset
         anchors.verticalCenter: parent.verticalCenter
         spacing: Theme.spacingM
         visible: !bar.editing
-        width: bar.editing ? 0 : Math.min(implicitWidth, Math.max(0, bar.width * 0.35 - Theme.spacingXl))
-        clip: true
+        width: Math.min(implicitWidth, room)
 
         Label {
+            id: position
+            readonly property bool wanted: true
+            visible: facts.drawn.indexOf(position) >= 0
+            width: Math.min(implicitWidth, facts.room)
             quiet: true
             font.pixelSize: Theme.fontSmall
             text: bar.total === 0 || bar.cursor < 0
@@ -87,31 +107,42 @@ Rectangle {
         // "11 tagged" above a list where nothing is tagged reads as a promise
         // about that list.
         Label {
+            id: note
             objectName: "statusNote"
+            readonly property bool wanted: true
+            visible: facts.drawn.indexOf(note) >= 0
             quiet: true
             font.pixelSize: Theme.fontSmall
             text: bar.note !== "" ? bar.note : bar.tagged + " tagged here"
         }
         Label {
-            visible: bar.marked > 0
+            id: marks
+            readonly property bool wanted: bar.marked > 0
+            visible: facts.drawn.indexOf(marks) >= 0
             color: Theme.accent
             font.pixelSize: Theme.fontSmall
             text: bar.marked + " marked"
         }
         Label {
-            visible: bar.pastable > 0
+            id: paste
+            readonly property bool wanted: bar.pastable > 0
+            visible: facts.drawn.indexOf(paste) >= 0
             color: Theme.accent
             font.pixelSize: Theme.fontSmall
             text: bar.pastable + (bar.cutting ? " to move" : " to paste")
         }
         Label {
-            visible: bar.tag !== ""
+            id: chosenTag
+            readonly property bool wanted: bar.tag !== ""
+            visible: facts.drawn.indexOf(chosenTag) >= 0
             color: Theme.accent
             font.pixelSize: Theme.fontSmall
             text: "tag " + bar.tag
         }
         Label {
-            visible: bar.filter !== ""
+            id: filterText
+            readonly property bool wanted: bar.filter !== ""
+            visible: facts.drawn.indexOf(filterText) >= 0
             font.pixelSize: Theme.fontSmall
             text: "/" + bar.filter
         }
