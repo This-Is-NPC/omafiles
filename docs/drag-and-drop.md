@@ -6,6 +6,21 @@ exports local file URLs, so applications such as file managers, browsers and
 editors can receive them. The receiving application decides what to do with an
 outgoing drag.
 
+While the button is held on the icon or name, the pointer is a closed hand. The
+drag carries one image, drawn by the compositor beside the pointer, 8 pixels
+below and to the right of it:
+
+- a card with the file's icon and name. The icon is the thumbnail the list
+  shows, or the list's icon when it shows none;
+- under a line, a square in the colour of each of the file's first three tags,
+  then the number of its tags, for example "16 tags";
+- for more than one file, two cards stacked behind it and the number of files
+  in an accent badge at its top right.
+
+The card shows the row you pressed, even when it carries the marked set.
+During the drag, the pointer follows the action: on Wayland the compositor
+chooses it; on X11 it is Qt's copy, move or link cursor.
+
 Drop local files from another application or this window onto a folder row,
 its parent row, a folder tab, or the open folder in either pane. The destination
 is outlined in the accent colour for an offered file-URL drag; release validates the URLs and

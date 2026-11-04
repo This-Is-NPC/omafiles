@@ -436,6 +436,10 @@ private slots:
     void editsTagsFromThePaletteMenuAndPointer();
     void editsTagsWithTouchAndPen();
     void exportsNativeFileDragsWithoutDeletingSources();
+    void dragCarriesFileImage();
+    void dragOfMarkedSetShowsCount();
+    void dragImageShowsTagColours();
+    void dragGripShowsClosedHand();
     void receivesLocalFileDropsWithConventionalActions();
     void copiesDropsThatOfferOnlyCopying();
     void dropsIntoFolderRowsTabsAndOtherPanes();
@@ -732,6 +736,8 @@ private slots:
 private:
     QQuickWindow *window() const;
     QList<QQuickItem *> itemsNamed(const QString &name) const;
+    QQuickItem *gripOf(const QString &path) const;
+    QDrag *dragOf(const QString &path, QPixmap *pixmap, QPoint *hotSpot);
     QQuickItem *itemNamedWithin(QQuickItem *parent, const QString &name) const;
     TabState *tab() const;
     QObject *filesRoot() const;
@@ -10565,13 +10571,7 @@ void TestStudio::exportsNativeFileDragsWithoutDeletingSources()
     for (const QString &mode : {QStringLiteral("list"), QStringLiteral("details"), QStringLiteral("icons")}) {
         tab()->setViewMode(mode);
         settle();
-        QQuickItem *grip = nullptr;
-        for (auto *item : itemsNamed("grip")) {
-            if (item->isVisible() && item->property("path").toString() == one) {
-                grip = item;
-                break;
-            }
-        }
+        QQuickItem *grip = gripOf(one);
         QVERIFY(grip);
         const QPointF start = grip->mapToScene(QPointF(grip->width() / 2, grip->height() / 2));
         static auto *touch = QTest::createTouchDevice();
@@ -10624,11 +10624,197 @@ void TestStudio::exportsNativeFileDragsWithoutDeletingSources()
     }
     FileTransfer transfer;
     const QString special = m_tree.filePath("space # percent %.txt");
-    transfer.startDrag(qobject_cast<QQuickItem *>(filesRoot()), {special});
+    transfer.startDrag(qobject_cast<QQuickItem *>(filesRoot()), {special}, nullptr, special, {});
     QCOMPARE(urls, QList<QUrl>{QUrl::fromLocalFile(special)});
     QVERIFY(encoded.contains("space%20%23%20percent%20%25.txt"));
     folder->clearMarks();
     tab()->setViewMode("list");
+}
+
+// The visible drag grip of the row for `path`.
+QQuickItem *TestStudio::gripOf(const QString &path) const
+{
+    for (auto *item : itemsNamed("grip")) {
+        if (item->isVisible() && item->property("path").toString() == path)
+            return item;
+    }
+    return nullptr;
+}
+
+// Drags the row for `path` by its grip and keeps the image the drag carried.
+// Returns null when no grip or no drag.
+QDrag *TestStudio::dragOf(const QString &path, QPixmap *pixmap, QPoint *hotSpot)
+{
+    QDrag *started = nullptr;
+    const auto previous = setFileDragRunner([&](QDrag *drag) {
+        started = drag;
+        *pixmap = drag->pixmap();
+        *hotSpot = drag->hotSpot();
+        return Qt::IgnoreAction;
+    });
+    const auto restore = qScopeGuard([&] { setFileDragRunner(previous); });
+    QQuickItem *grip = gripOf(path);
+    if (!grip)
+        return nullptr;
+    const QPointF start = grip->mapToScene(QPointF(grip->width() / 2, grip->height() / 2));
+    pressAndDrag(window(), start, start + QPointF(60, 15));
+    const bool dragged = QTest::qWaitFor([&] { return started != nullptr; }, asyncTimeout);
+    sendLeft(window(), QEvent::MouseButtonRelease, start + QPointF(60, 15));
+    return dragged ? started : nullptr;
+}
+
+// The card's logical size, its icon slot and its first tag square, as
+// FileTransfer paints them.
+static constexpr QSize dragCard(160, 64);
+static constexpr QPoint dragIconCentre(12 + 8, 12 + 8);
+static constexpr QPoint dragTagCentre(12 + 4, 40 + 4);
+
+// Pixels compared as 32-bit ARGB: a theme colour and an image's pixel can
+// name one colour in different QColor specs.
+static QRgb pixelAt(const QPixmap &pixmap, QPoint logical)
+{
+    return pixmap.toImage().pixel(logical * pixmap.devicePixelRatio());
+}
+
+// A file whose thumbnail is shown drags its thumbnail on an opaque card at the
+// window's pixel ratio; a file without one drags the glyph the list draws.
+void TestStudio::dragCarriesFileImage()
+{
+    const QString folder = m_tree.filePath("drag-pictures");
+    QVERIFY(QDir().mkpath(folder));
+    const auto remove = qScopeGuard([&] { tab()->setCwd(m_tree.path()); settle(); QDir(folder).removeRecursively(); });
+    QImage picture(256, 256, QImage::Format_ARGB32);
+    picture.fill(Qt::magenta);
+    const QString shown = QDir(folder).filePath("shown.png");
+    QVERIFY(picture.save(shown));
+    QFile plain(QDir(folder).filePath("plain.txt"));
+    QVERIFY(plain.open(QIODevice::WriteOnly));
+    plain.write("x");
+    plain.close();
+    tab()->setCwd(folder);
+    settle();
+    const auto thumbnailShown = [&] {
+        const auto items = itemsNamed("thumbnail");
+        return std::any_of(items.cbegin(), items.cend(), [&](QQuickItem *item) {
+            auto *thumbnail = qobject_cast<Thumbnail *>(item);
+            return thumbnail && thumbnail->path() == shown && thumbnail->ready();
+        });
+    };
+    QTRY_VERIFY(thumbnailShown());
+    const qreal ratio = window()->effectiveDevicePixelRatio();
+    QPixmap pixmap;
+    QPoint hotSpot;
+    QVERIFY(dragOf(shown, &pixmap, &hotSpot));
+    QVERIFY(!pixmap.isNull());
+    QCOMPARE(pixmap.devicePixelRatio(), ratio);
+    QCOMPARE(pixmap.size(), dragCard * ratio);
+    QCOMPARE(pixelAt(pixmap, dragIconCentre), QColor(Qt::magenta).rgba());
+    QCOMPARE(pixelAt(pixmap, QPoint(dragCard.width() - 2, dragCard.height() / 2)), m_theme->raised().rgba());
+    QCOMPARE(pixelAt(pixmap, QPoint(dragCard.width() - 1, dragCard.height() / 2)), m_theme->line().rgba());
+
+    QVERIFY(dragOf(plain.fileName(), &pixmap, &hotSpot));
+    const QImage image = pixmap.toImage();
+    int glyph = 0;
+    for (int y = 12 * ratio; y < 28 * ratio; ++y)
+        for (int x = 12 * ratio; x < 28 * ratio; ++x)
+            glyph += image.pixel(x, y) != m_theme->raised().rgba();
+    QVERIFY2(glyph > 0, "the slot holds the list's glyph");
+}
+
+// Three marked files drag one image: cards behind it and an accent badge at
+// its top right, with the pointer 8 px inside its top left.
+void TestStudio::dragOfMarkedSetShowsCount()
+{
+    auto *folder = qobject_cast<FolderModel *>(filesRoot()->property("folder").value<QObject *>());
+    const auto clear = qScopeGuard([&] { folder->clearMarks(); });
+    for (const QString &name : {QStringLiteral("one.txt"), QStringLiteral("two.md"), QStringLiteral("three.ods")}) {
+        focusRow(name);
+        key(Qt::Key_Space);
+    }
+    QCOMPARE(folder->markedPaths().size(), 3);
+    QPixmap pixmap;
+    QPoint hotSpot;
+    QVERIFY(dragOf(m_tree.filePath("one.txt"), &pixmap, &hotSpot));
+    QCOMPARE(hotSpot, QPoint(8, 8));
+    const int top = 12;
+    QCOMPARE(pixmap.deviceIndependentSize().toSize(), dragCard + QSize(top, top));
+    const qreal ratio = pixmap.devicePixelRatio();
+    const QImage image = pixmap.toImage();
+    int accent = 0;
+    for (int y = 0; y < 24 * ratio; ++y)
+        for (int x = (dragCard.width() - 12) * ratio; x < image.width(); ++x)
+            accent += image.pixel(x, y) == m_theme->accent().rgba();
+    QVERIFY2(accent > 0, "the count badge is drawn in the accent colour");
+    QCOMPARE(pixelAt(pixmap, QPoint(dragCard.width() + 4, top + 18)), m_theme->raised().rgba());
+
+    folder->clearMarks();
+    QVERIFY(dragOf(m_tree.filePath("one.txt"), &pixmap, &hotSpot));
+    QCOMPARE(pixmap.deviceIndependentSize().toSize(), dragCard);
+}
+
+// The image carries a square in the colour of each of the file's first three
+// tags, then the count of its tags.
+void TestStudio::dragImageShowsTagColours()
+{
+    const auto restore = putManyTagsFile();
+    const QString many = m_tree.filePath("manytags.txt");
+    auto *folder = qobject_cast<FolderModel *>(filesRoot()->property("folder").value<QObject *>());
+    const QStringList tags = folder->tagsFor(many);
+    QCOMPARE(tags.size(), manyTags().size());
+    QPixmap pixmap;
+    QPoint hotSpot;
+    QVERIFY(dragOf(many, &pixmap, &hotSpot));
+    for (int i = 0; i < 3; ++i)
+        QCOMPARE(pixelAt(pixmap, dragTagCentre + QPoint(i * 12, 0)), m_theme->tagColour(tags.at(i)).rgba());
+    const QImage image = pixmap.toImage();
+    const qreal ratio = pixmap.devicePixelRatio();
+    const QRect captionBox(QPoint(48, 40) * ratio, QSize(dragCard.width() - 12 - 48, 8) * ratio);
+    int caption = 0;
+    for (int y = captionBox.top(); y <= captionBox.bottom(); ++y)
+        for (int x = captionBox.left(); x <= captionBox.right(); ++x) {
+            const QRgb colour = image.pixel(x, y);
+            caption += colour != m_theme->raised().rgba();
+            QVERIFY2(colour != m_theme->tagColour(tags.at(3)).rgba(), "no fourth square");
+        }
+    QVERIFY2(caption > 0, "the tag count follows the squares");
+
+    // The caption reads "16 tags", drawn as a caption in the dim colour.
+    QImage expected(captionBox.size(), image.format());
+    expected.setDevicePixelRatio(ratio);
+    expected.fill(m_theme->raised().rgba());
+    QPainter painter(&expected);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QFont font(m_theme->fontFamily());
+    font.setPixelSize(m_theme->fontCaption());
+    painter.setFont(font);
+    painter.setPen(m_theme->dim());
+    painter.drawText(QRectF(QPointF(), QSizeF(captionBox.size()) / ratio),
+                     Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("16 tags"));
+    painter.end();
+    QImage drawn = image.copy(captionBox);
+    drawn.setDevicePixelRatio(ratio);
+    QCOMPARE(drawn, expected);
+}
+
+// The grip asks for a closed hand while its handler is active, before the
+// drag. The offscreen window's cursor does not follow handlers, so the handler's
+// own shape is what is checked.
+void TestStudio::dragGripShowsClosedHand()
+{
+    focusRow("one.txt");
+    QQuickItem *grip = gripOf(m_tree.filePath("one.txt"));
+    QVERIFY(grip);
+    QObject *handler = nullptr;
+    for (QObject *child : grip->children())
+        if (child->inherits("QQuickDragHandler"))
+            handler = child;
+    QVERIFY(handler);
+    const QPointF start = grip->mapToScene(QPointF(grip->width() / 2, grip->height() / 2));
+    const QPointF end = start + QPointF(20, 0);
+    const auto release = qScopeGuard([&] { sendLeft(window(), QEvent::MouseButtonRelease, end); });
+    pressAndDrag(window(), start, end);
+    QTRY_VERIFY(handler->property("active").toBool());
+    QCOMPARE(handler->property("cursorShape").value<Qt::CursorShape>(), Qt::ClosedHandCursor);
 }
 
 static QList<QUrl> invalidFileTransferUrls()
