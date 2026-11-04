@@ -4801,6 +4801,12 @@ void TestStudio::writesTheDocumentationShots()
     // their own and the only options are to queue or to give up.
     QVERIFY2(held.tryLock(120000),
              "another run has held the documentation fixture for two minutes");
+    // Removed under the lock, whatever the outcome: the pictures are written to
+    // OMAFILES_SHOTS, and nothing reads the fixture after the run.
+    const auto removeFixture = qScopeGuard([&fixture] {
+        QDir(fixture).removeRecursively();
+        QVERIFY2(!QFileInfo::exists(fixture), "the documentation fixture outlives its run");
+    });
 
     const QString root = fixture + QStringLiteral("/workshop");
     QDir(fixture).removeRecursively();
