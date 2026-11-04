@@ -83,11 +83,15 @@ QHash<QString, QString> readFlatToml(const QString &path)
     return values;
 }
 
+// The colour under `key`, opaque: an alpha in the file is dropped.
 QColor colourOr(const QHash<QString, QString> &values, const QString &key,
                 const QColor &fallback)
 {
-    const QColor parsed(values.value(key));
-    return parsed.isValid() ? parsed : fallback;
+    QColor parsed(values.value(key));
+    if (!parsed.isValid())
+        return fallback;
+    parsed.setAlpha(255);
+    return parsed;
 }
 
 QColor mix(const QColor &from, const QColor &toward, qreal amount)
@@ -191,11 +195,9 @@ void Theme::reload()
     m_accent = colourOr(values, QStringLiteral("accent"), m_accent);
     m_urgent = colourOr(values, QStringLiteral("red"), m_urgent);
     for (std::size_t slot = 0; slot < paletteKeys.size(); ++slot) {
-        QColor colour = colourOr(values, QLatin1String(paletteKeys[slot].number),
-                                 colourOr(values, QLatin1String(paletteKeys[slot].name),
-                                          m_tagPalette[slot]));
-        colour.setAlpha(255);
-        m_tagPalette[slot] = colour;
+        m_tagPalette[slot] = colourOr(values, QLatin1String(paletteKeys[slot].number),
+                                      colourOr(values, QLatin1String(paletteKeys[slot].name),
+                                               m_tagPalette[slot]));
     }
     emit changed();
 }

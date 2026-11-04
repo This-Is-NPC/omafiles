@@ -8992,6 +8992,11 @@ static void addThemeRows()
         "accent = \"#205ea6\"\n"
         "muted = \"#b7b5ac\"\n"
         "red = \"#d14d41\"\n");
+    QTest::newRow("translucent") << QByteArrayLiteral(
+        "background = \"#8016161e\"\n"
+        "foreground = \"#80c0caf5\"\n"
+        "accent = \"#807aa2f7\"\n"
+        "red = \"#80f7768e\"\n");
 }
 
 // A Theme read from `colours` as the current omarchy theme; none is the
