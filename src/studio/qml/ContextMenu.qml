@@ -60,7 +60,7 @@ Item {
         }
         const keys = keyRuler.implicitWidth
         return Math.max(200, Math.ceil(widest + (keys > 0 ? keys + Theme.spacingL : 0))
-                             + 2 * (Theme.spacingXs + Theme.spacingS))
+                             + 2 * (Theme.spacingXs + Theme.spacingS) + Theme.scrollBarWidth)
     }
 
     function openAt(x, y) {
@@ -205,7 +205,7 @@ Item {
                         id: itemRow
                         required property var modelData
                         required property int index
-                        width: ListView.view.width
+                        width: list.rowWidth
                         height: Theme.rowHeight
                         radius: Theme.rounding
                         color: list.currentIndex === itemRow.index

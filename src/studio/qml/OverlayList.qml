@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls.Basic as C
+import QtQuick.Templates as T
 import omafiles
 
 ListView {
@@ -15,6 +15,8 @@ ListView {
     highlightFollowsCurrentItem: false
 
     property bool refreshing: false
+    /// A row's width: the list less the strip the scroll bar keeps.
+    readonly property real rowWidth: width - Theme.scrollBarWidth
     // The height of as many whole rows as fit in the extent, up to every row.
     function wholeRows(extent) {
         return Math.max(0, Math.min(count, Math.floor(extent / Theme.rowHeight))) * Theme.rowHeight
@@ -68,5 +70,5 @@ ListView {
     onCountChanged: if (visible) Qt.callLater(revealCurrent)
     onVisibleChanged: if (visible) Qt.callLater(revealCurrent)
     ImmediateWheel { anchors.fill: parent; view: list; step: Theme.rowHeight }
-    C.ScrollBar.vertical: C.ScrollBar {}
+    T.ScrollBar.vertical: ScrollBar {}
 }

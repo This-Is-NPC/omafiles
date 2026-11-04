@@ -180,7 +180,7 @@ Rectangle {
                             id: entryRow
                             required property var modelData
                             required property int index
-                            width: ListView.view.width
+                            width: list.rowWidth
                             height: Theme.rowHeight
                             radius: Theme.rounding
                             color: list.currentIndex === entryRow.index

@@ -2963,6 +2963,28 @@ Window {
         }
     }
 
+    // A chevron at one end of a file view's scroll bar, pointing to the first
+    // row or, with `last`, the last. Not a Tab stop: Home and End are its keys.
+    component ScrollJump: Item {
+        id: jump
+        property bool last: false
+        signal activated
+        width: parent.width
+        height: Theme.chipHeight
+        Accessible.role: Accessible.Button
+        Accessible.name: jump.last ? "Last row" : "First row"
+        HoverHandler { id: jumpHover }
+        TapHandler { onTapped: jump.activated() }
+        Icon {
+            anchors.centerIn: parent
+            width: jump.width
+            height: jump.width
+            kind: "chevron"
+            rotation: jump.last ? 180 : 0
+            ink: jumpHover.hovered ? Theme.foreground : Theme.dim
+        }
+    }
+
     // ------------------------------------------------------------------ pane
     component Pane: Rectangle {
         id: paneRoot
@@ -3252,6 +3274,13 @@ Window {
                 filesRoot.setCursor(row)
                 win.takeFocus()
             }
+            // The buttons at either end of the scroll bar: Home and End, in
+            // this pane.
+            function jumpToEnd(last) {
+                Workspace.focusedPane = filesRoot.paneIndex
+                win.takeFocus()
+                win.moveToEnd(last)
+            }
             function rowMenu(row, path, kind, source, position) {
                 selectRow(row, 0)
                 const at = source.mapToItem(root, position.x, position.y)
@@ -3294,7 +3323,7 @@ Window {
             // The name has priority: it keeps at least `nameMinimum`, and the
             // chosen columns that do not fit beside it are dropped in
             // `dropOrder`. Past `nameMaximum` the extra goes to the tags.
-            readonly property real nameMinimum: Math.min(160, listArea.width * 0.4)
+            readonly property real nameMinimum: Math.min(160, listing.width * 0.4)
             readonly property real nameMaximum: 420
             readonly property var dropOrder: ["mode", "owner", "mtime", "type", "size", "tags"]
             readonly property var shownColumns: {
@@ -3312,7 +3341,7 @@ Window {
 
             function baseWidth(field) {
                 switch (field) {
-                case "tags": return Math.max(90, Math.min(260, listArea.width * 0.26))
+                case "tags": return Math.max(90, Math.min(260, listing.width * 0.26))
                 case "type": return 62
                 case "size": return 74
                 case "mtime": return 128
@@ -3326,7 +3355,7 @@ Window {
             // with the gap ahead of it.
             function nameWidthBeside(columns) {
                 return columns.reduce((room, field) => room - filesRoot.baseWidth(field) - Theme.spacingM,
-                                      listArea.width - filesRoot.nameIndent - Theme.inset)
+                                      listing.width - filesRoot.nameIndent - Theme.inset)
             }
 
             function columnWidth(field) {
@@ -3460,8 +3489,12 @@ Window {
                         reuseItems: !folderModel.loading
                         cacheBuffer: 0
                         onContentYChanged: filesRoot.deferThumbnails()
-                        anchors.fill: parent
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.right: scrollColumn.left
                         visible: filesRoot.viewMode !== "icons"
+                        T.ScrollBar.vertical: listBar
                         clip: true
                         model: visible ? folderModel : null
                         boundsBehavior: Flickable.StopAtBounds
@@ -3767,8 +3800,12 @@ Window {
                         reuseItems: !folderModel.loading
                         cacheBuffer: 0
                         onContentYChanged: filesRoot.deferThumbnails()
-                        anchors.fill: parent
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.right: scrollColumn.left
                         visible: filesRoot.viewMode === "icons"
+                        T.ScrollBar.vertical: gridBar
                         clip: true
                         model: visible ? folderModel : null
                         cellWidth: 112
@@ -3913,6 +3950,42 @@ Window {
                                  ? Math.max(1, Math.floor(grid.width / grid.cellWidth)) : 1
                         // The pane's catch-all has focused the pane already.
                         onStarted: win.takeFocus()
+                    }
+
+                    // The strip the views leave at their right: a jump to the
+                    // first row, the scroll bar of whichever view is shown, and a
+                    // jump to the last. A view without its model has nothing to
+                    // scroll, so the other view's bar hides itself.
+                    Item {
+                        id: scrollColumn
+                        readonly property bool scrolls: listBar.visible || gridBar.visible
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.right: parent.right
+                        width: Theme.scrollBarWidth
+
+                        ScrollJump {
+                            id: toStart
+                            objectName: "scrollToStart"
+                            anchors.top: parent.top
+                            visible: scrollColumn.scrolls
+                            onActivated: filesRoot.jumpToEnd(false)
+                        }
+                        Item {
+                            anchors.top: toStart.bottom
+                            anchors.bottom: toEnd.top
+                            anchors.right: parent.right
+                            ScrollBar { id: listBar; anchors.right: parent.right; height: parent.height }
+                            ScrollBar { id: gridBar; anchors.right: parent.right; height: parent.height }
+                        }
+                        ScrollJump {
+                            id: toEnd
+                            objectName: "scrollToEnd"
+                            last: true
+                            anchors.bottom: parent.bottom
+                            visible: scrollColumn.scrolls
+                            onActivated: filesRoot.jumpToEnd(true)
+                        }
                     }
 
                     FocusRing {

@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Templates as T
 import omafiles
 
 // The left-hand panel: where to go. Saved views, removable devices and tags,
@@ -74,7 +75,7 @@ Rectangle {
         // the heading and its rows touch, the heading being a row tall.
         Column {
             id: column
-            width: scroll.width
+            width: scroll.contentWidth
             spacing: Theme.spacingS
 
             // Where you keep coming back to.
@@ -108,6 +109,7 @@ Rectangle {
                     highlightResizeDuration: 0
                     reuseItems: true
                     id: viewsListView
+                    T.ScrollBar.vertical: ScrollBar {}
                     objectName: "sidebarViews"
                     activeFocusOnTab: count > 0
                     Keys.onPressed: function (event) { sidebar.keyRequested(event) }
@@ -148,7 +150,7 @@ Rectangle {
                         readonly property bool onCursor: sidebar.walkingViews
                                                          && viewsListView.currentIndex === index
 
-                        width: ListView.view.width
+                        width: ListView.view.width - Theme.scrollBarWidth
                         Accessible.role: Accessible.ListItem
                         Accessible.name: viewRow.name
                         Accessible.description: viewRow.asks
@@ -226,6 +228,7 @@ Rectangle {
                     highlightResizeDuration: 0
                     reuseItems: true
                     id: tagsListView
+                    T.ScrollBar.vertical: ScrollBar {}
                     // No off-screen delegates built ahead: one still being built when
                     // a reload shrinks the vocabulary is cancelled by a stale index.
                     cacheBuffer: 0
@@ -264,7 +267,7 @@ Rectangle {
                         readonly property bool chosen: sidebar.tab && sidebar.tab.selectedTag === tag
                         readonly property bool onCursor: sidebar.walking && tagsListView.currentIndex === index
 
-                        width: ListView.view.width
+                        width: ListView.view.width - Theme.scrollBarWidth
                         Accessible.role: Accessible.ListItem
                         Accessible.name: tagRow.tag
                         washed: chosen || onCursor || hovered

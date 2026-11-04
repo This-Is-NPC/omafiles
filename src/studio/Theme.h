@@ -62,6 +62,8 @@ class Theme : public QObject
     Q_PROPERTY(int iconSize READ iconSize CONSTANT)
     Q_PROPERTY(int iconGap READ iconGap CONSTANT)
     Q_PROPERTY(int focusRing READ focusRing CONSTANT)
+    Q_PROPERTY(int scrollBarWidth READ scrollBarWidth CONSTANT)
+    Q_PROPERTY(int scrollBarHover READ scrollBarHover CONSTANT)
 
 public:
     explicit Theme(QObject *parent = nullptr);
@@ -124,6 +126,10 @@ public:
     static constexpr int iconGap() { return spacingS(); }
     // The width of the focus ring, drawn just outside the box it marks.
     static constexpr int focusRing() { return 2; }
+    // A scroll bar's width at rest, which its view reserves, and under the
+    // pointer.
+    static constexpr int scrollBarWidth() { return 8; }
+    static constexpr int scrollBarHover() { return 12; }
 
 signals:
     void changed();

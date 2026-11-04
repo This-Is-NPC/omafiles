@@ -47,7 +47,7 @@ Rectangle {
 
         Column {
             id: column
-            width: scroll.width
+            width: scroll.contentWidth
 
             SectionHeading { width: parent.width; usable: false; text: "details" }
 

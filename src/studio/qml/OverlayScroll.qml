@@ -1,9 +1,9 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Templates as T
 import QtQuick.Window
 import omafiles
-import QtQuick.Controls.Basic as C
 
 Flickable {
     id: viewport
@@ -14,8 +14,9 @@ Flickable {
     property real gutter: Theme.focusRing
     clip: true
     leftMargin: gutter
-    rightMargin: gutter
-    contentWidth: width - 2 * gutter
+    // The gutter, then the strip the scroll bar keeps.
+    rightMargin: gutter + Theme.scrollBarWidth
+    contentWidth: width - 2 * gutter - Theme.scrollBarWidth
     boundsBehavior: Flickable.StopAtBounds
 
     function revealItem(item) {
@@ -96,5 +97,5 @@ Flickable {
         focused: viewport.activeFocus
         inset: Theme.focusRing
     }
-    C.ScrollBar.vertical: C.ScrollBar {}
+    T.ScrollBar.vertical: ScrollBar {}
 }

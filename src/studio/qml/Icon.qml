@@ -114,6 +114,12 @@ Item {
                 ctx.lineTo(8, 3.2)
                 ctx.lineTo(11.8, 7)
                 ctx.stroke()
+            } else if (k === "chevron") {
+                ctx.beginPath()
+                ctx.moveTo(3.5, 10.5)
+                ctx.lineTo(8, 6)
+                ctx.lineTo(12.5, 10.5)
+                ctx.stroke()
             } else if (k === "graph") {
                 ctx.beginPath()
                 ctx.arc(4.2, 11.6, 1.6, 0, Math.PI * 2)
