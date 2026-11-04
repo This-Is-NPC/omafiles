@@ -212,7 +212,7 @@ Window {
         return "list"
     }
     property bool pendingG: false
-    /// Whether the details panel is shown where it fits; the Details toggle and
+    /// Whether the details dock is shown on a list tab; the Details toggle and
     /// `I` flip it.
     property bool detailsShown: true
     /// Where the last menu was opened, so a second page of one lands on it.
@@ -422,7 +422,7 @@ Window {
             { key: "2", label: "details" },
             { key: "3", label: "icons" },
             { key: ". / Ctrl h", label: "hidden files" },
-            { key: "I", label: "details panel" },
+            { key: "I", label: "details dock" },
             { key: "s", label: "name, tags, type, size, modified, each the way it reads" },
             { key: "S", label: "flip the direction" } ] },
         { title: "edit", keys: [
@@ -1156,10 +1156,14 @@ Window {
     }
 
     function toggleTagAt(row) {
-        if (!activeTab || row < 0)
+        if (row < 0)
             return
-        const name = IndexModel.tagAt(row)
-        if (name === "")
+        toggleTag(IndexModel.tagAt(row))
+    }
+
+    // What a click on a tag does: the focused tab lists the tag, or leaves it.
+    function toggleTag(name) {
+        if (!activeTab || name === "")
             return
         activeTab.selectedTag = activeTab.selectedTag === name ? "" : name
     }
@@ -2099,9 +2103,11 @@ Window {
                 readonly property var tab: win.activeTab
                 /// A folder listing: what the view mode and the sort belong to.
                 readonly property bool onFolder: win.onFiles && toolbar.tab.kind === "files"
-                /// What the controls at the right take without the filter.
-                readonly property real fixedRight: (sortButton.visible ? sortButton.width + controls.spacing : 0)
+                /// What the sort and the view mode take at the right.
+                readonly property real modesRight: (sortButton.visible ? sortButton.width + controls.spacing : 0)
                                                    + (viewModes.visible ? viewModes.width + controls.spacing : 0)
+                /// What the controls at the right take without the filter.
+                readonly property real fixedRight: modesRight
                                                    + (detailsToggle.visible ? detailsToggle.width + controls.spacing : 0)
                 /// The path keeps at least this much before the filter shows.
                 readonly property int pathRoom: 240
@@ -2352,7 +2358,10 @@ Window {
                     Chip {
                         id: detailsToggle
                         objectName: "detailsToggle"
-                        visible: details.fits
+                        // Dropped after the filter where the path would lose
+                        // its room; `I` still works.
+                        visible: toolbar.width - 2 * Theme.inset - navRow.width - 2 * Theme.spacingM
+                                 - toolbar.modesRight - toolbar.pathRoom >= width
                         label: "Details"
                         caption: details.visible ? "Hide details" : "Show details"
                         key: "I"
@@ -2367,8 +2376,8 @@ Window {
             Rule {}
 
             // ------------------------------------------------------- content
-            // Where to go on the left, the panes in the middle, what the
-            // focused pane's row is on the right: one of each panel for the
+            // Where to go on the left, the panes on the right, and under them
+            // what the focused pane's row is: one of each panel for the
             // window, both acting on the focused pane.
             RowLayout {
                 width: parent.width
@@ -2413,8 +2422,7 @@ Window {
                     onTagMenuRequested: function (row, x, y) { win.openTagMenuAt(row, x, y) }
                     onTagActivated: function (name) {
                         win.takeFocus()
-                        if (sidebar.tab)
-                            sidebar.tab.selectedTag = sidebar.tab.selectedTag === name ? "" : name
+                        win.toggleTag(name)
                     }
                 }
 
@@ -2425,57 +2433,86 @@ Window {
                     Layout.preferredWidth: 1
                 }
 
-                C.SplitView {
-                    id: split
+                // The panes, and under them the details dock across their
+                // whole width; the sidebar keeps the full height beside both.
+                ColumnLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    orientation: Qt.Horizontal
+                    spacing: 0
 
-                    readonly property int handleWidth: 3
-                    // A pane's least width, unless the split cannot hold every
-                    // pane at it: then they share the width and none passes the edge.
-                    readonly property real narrowest: Math.min(280,
-                        (width - handleWidth * (Workspace.paneCount - 1)) / Math.max(1, Workspace.paneCount))
+                    C.SplitView {
+                        id: split
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        orientation: Qt.Horizontal
 
-                    handle: Rectangle {
-                        implicitWidth: split.handleWidth
-                        color: C.SplitHandle.pressed || C.SplitHandle.hovered
-                               ? Theme.accent : Theme.line
-                    }
+                        readonly property int handleWidth: 3
+                        // A pane's least width, unless the split cannot hold every
+                        // pane at it: then they share the width and none passes the edge.
+                        readonly property real narrowest: Math.min(280,
+                            (width - handleWidth * (Workspace.paneCount - 1)) / Math.max(1, Workspace.paneCount))
 
-                    Repeater {
-                        id: paneRepeater
-                        model: Workspace.panes
-                        delegate: Pane {
-                            required property var paneState
-                            required property int index
-                            pane: paneState
-                            paneIndex: index
-                            narrowest: split.narrowest
+                        handle: Rectangle {
+                            implicitWidth: split.handleWidth
+                            color: C.SplitHandle.pressed || C.SplitHandle.hovered
+                                   ? Theme.accent : Theme.line
+                        }
+
+                        Repeater {
+                            id: paneRepeater
+                            model: Workspace.panes
+                            delegate: Pane {
+                                required property var paneState
+                                required property int index
+                                pane: paneState
+                                paneIndex: index
+                                narrowest: split.narrowest
+                            }
                         }
                     }
-                }
 
-                Rule {
-                    vertical: true
-                    visible: details.visible
-                    Layout.fillHeight: true
-                    Layout.preferredWidth: 1
-                }
+                    Rule {
+                        visible: details.visible
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
+                    }
 
-                Details {
-                    id: details
-                    objectName: "detailsPanel"
-                    Layout.fillHeight: true
-                    Layout.preferredWidth: 264
-                    // Dropped whole in a pane too narrow to hold it and a list
-                    // at the same time: splitting the window is asking for two
-                    // lists, not for less of each. Where it fits, the Details
-                    // toggle shows or hides it.
-                    readonly property bool fits: sidebar.holdsTags && win.paneShare >= 640
-                    visible: fits && win.detailsShown
-                    entry: win.activeFilesRoot ? win.activeFilesRoot.entry : ({})
-                    onTagActivated: function (tag) { win.startTagEdit("remove", details.entry.path, tag) }
+                    Details {
+                        id: details
+                        objectName: "detailsPanel"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: implicitHeight
+                        // On a list tab, while the panes above keep
+                        // `listLeast`; the Details toggle and `I` say whether
+                        // it is wanted.
+                        readonly property bool fits: sidebar.holdsTags
+                            && parent.height - implicitHeight - 1 >= Theme.listLeast
+                        visible: fits && win.detailsShown
+                        entry: win.activeFilesRoot ? win.activeFilesRoot.entry : ({})
+                        addTagKey: "t a"
+                        openKey: "l"
+                        renameKey: "r"
+                        onTagOpened: function (tag) {
+                            win.takeFocus()
+                            win.toggleTag(tag)
+                        }
+                        onTagRemoved: function (tag) {
+                            if (win.activeFolder)
+                                IndexModel.tagRemove(win.activeFolder.targetPaths(details.entry.path), tag)
+                        }
+                        onTagAddRequested: win.startTagEdit("add", details.entry.path)
+                        onOpenRequested: {
+                            if (win.activeFolder && win.activeListing)
+                                win.activeFolder.activateRow(win.activeListing.currentIndex)
+                        }
+                        onOpenWithRequested: function (button) {
+                            const below = button.mapToItem(root, 0, button.height)
+                            win.menuX = below.x
+                            win.menuY = below.y
+                            win.openOpenWithMenu(details.entry.path)
+                        }
+                        onRenameRequested: win.startRename(details.entry.path)
+                    }
                 }
             }
 

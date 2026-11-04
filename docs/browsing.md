@@ -27,7 +27,7 @@ and the explicit dismissal of completed notifications in
 and [libadwaita toasts](https://gnome.pages.gitlab.gnome.org/libadwaita/doc/1-latest/method.Toast.dismiss.html).
 
 Names and directory types are kept in a compact snapshot. File details are read
-when a visible row or the details panel needs them, with a bounded cache. Sorting
+when a visible row or the details dock needs them, with a bounded cache. Sorting
 by metadata or applying metadata criteria examines matching files in the
 background, since those operations need information beyond their names.
 
@@ -170,7 +170,7 @@ Every editable permission bit is a separate **Tab / Shift Tab** stop, in
 owner, group, others order, with read, write, execute within each group.
 **Enter / Space** flips the focused bit. In the Permissions sheet these are
 draft changes: focus **Apply** to save or **Cancel** to discard. **h / l** and
-the left/right arrows move between bits. The details panel applies a bit
+the left/right arrows move between bits. The details dock applies a bit
 change immediately, just as clicking it does; links and non-owned rows have
 disabled bits and are skipped.
 

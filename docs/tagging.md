@@ -8,9 +8,11 @@ file list.
 
 The command palette (`:` or Ctrl p) offers Add tag, Remove tag and Rename tag.
 The row menu offers the same actions. The `+` beside the tag vocabulary opens
-Add tag. Clicking or tapping a tag chip in a row or the details panel opens the
-editor with that tag selected for removal; choose Rename to replace it instead.
-No chip click changes tags until you apply the edit.
+Add tag. Clicking or tapping a tag chip in a row opens the editor with that tag
+selected for removal; choose Rename to replace it instead. No row chip click
+changes tags until you apply the edit. In the details dock under the panes, a
+chip's body lists the files with its tag, and its `×`, or Delete while the chip
+has the keyboard, removes the tag at once; the dock's `+ Tag` opens Add tag.
 
 An edit opened over a marked row acts on the marked set. An edit over an
 unmarked row acts on that row alone. The `..` row is not a file, so an edit
@@ -71,7 +73,7 @@ touch drags scroll its text. Esc closes the dialog and returns to the files.
 The sidebar scrolls as a whole, so its tag heading and `+` stay reachable in
 short windows. Entering tag or saved-view navigation reveals that section's
 heading and selected row. Moving the selection or resizing the window keeps them
-visible. The details panel on the right scrolls on its own, so walking the tags
+visible. The tags column of the details dock scrolls on its own, so walking the tags
 never moves the facts about the file you are tagging. Wheel and touch can browse
 the details without changing the selected file.
 
