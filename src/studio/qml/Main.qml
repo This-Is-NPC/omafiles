@@ -4207,7 +4207,7 @@ Window {
                 // `Theme`, the singleton type, not a context property called
                 // `theme` -- which is what `GraphItem`'s own property of that
                 // name is called, so `theme: theme` would bind it to itself and
-                // leave the graph drawing in hardcoded colours.
+                // leave the graph undrawn.
                 theme: Theme
                 selectedId: graphRoot.tab ? graphRoot.tab.selectedNode : ""
                 onSelectedIdChanged: if (graphRoot.tab) graphRoot.tab.selectedNode = selectedId
