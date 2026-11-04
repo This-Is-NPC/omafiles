@@ -153,7 +153,7 @@ FocusScope {
                 required property string problem
                 required property bool marked
                 x: Theme.focusRing
-                width: list.width - 2 * Theme.focusRing
+                width: list.rowWidth - 2 * Theme.focusRing
                 height: rowLabels.implicitHeight + 2 * Theme.spacingS
                 radius: Theme.rounding
                 color: row.ListView.isCurrentItem ? Theme.cursor

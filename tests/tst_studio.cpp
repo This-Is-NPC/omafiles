@@ -718,6 +718,12 @@ private slots:
     void tagColoursUseThePalette_data();
     void tagColoursUseThePalette();
     void chipShowsTagColour();
+    void everyScrollingViewHasAVisibleBar();
+    void scrollBarDragReachesEnd();
+    void troughClickPages();
+    void troughMiddleOrShiftClickJumps();
+    void barDoesNotCoverRows();
+    void scrollJumpButtonsMatchHomeEnd();
 
 private:
     QQuickWindow *window() const;
@@ -765,6 +771,9 @@ private:
     /// `a-target.txt`, `link` to it and `plain.txt` in `dir`, open in the tab
     /// with `link` and `plain.txt` marked and the cursor on `link`.
     void markALinkAndAFile(const QDir &dir);
+    /// `rows` empty files in `directory`, open in the tab, in a window short
+    /// enough that the list scrolls.
+    bool openLongFolder(const QTemporaryDir &directory, int rows);
 
     QTemporaryDir m_home;
     QTemporaryDir m_state;
@@ -10898,6 +10907,296 @@ void TestStudio::scrollsLongOverlayListsWithPointerAndKeyboard()
     QMetaObject::invokeMethod(window(), "takeFocus");
 }
 
+// Every visible Flickable in `window` whose content is taller than it, each
+// with the scroll bar that drives it: the one inside it, or the one its parent
+// holds beside it. The names of the views are added to `checked`.
+static QString missingScrollBars(QQuickWindow *window, QStringList *checked)
+{
+    // The visual tree: a view a Loader made is not a QObject child of the window.
+    QList<QQuickItem *> items, bars;
+    for (QList<QQuickItem *> next{window->contentItem()}; !next.isEmpty();) {
+        auto *item = next.takeLast();
+        items.append(item);
+        if (item->objectName() == QLatin1String("scrollBar"))
+            bars.append(item);
+        next.append(item->childItems());
+    }
+    for (auto *view : std::as_const(items)) {
+        if (!view->inherits("QQuickFlickable") || !view->isVisible() || view->height() <= 0
+            || view->property("contentHeight").toReal() <= view->height() + 0.5)
+            continue;
+        const qreal ratio = view->property("visibleArea").value<QObject *>()->property("heightRatio").toReal();
+        QQuickItem *found = nullptr;
+        for (auto *bar : bars) {
+            if ((bar->parentItem() == view || view->parentItem()->isAncestorOf(bar))
+                && qAbs(bar->property("size").toReal() - ratio) < 0.01)
+                found = bar;
+        }
+        // A view with no name goes by its C++ class, without the suffix QML
+        // gives the type a view's own declarations make.
+        const QString name = view->objectName().isEmpty()
+            ? QString::fromLatin1(view->metaObject()->className()).section(QStringLiteral("_QML"), 0, 0)
+            : view->objectName();
+        checked->append(name);
+        if (!found || !found->isVisible() || found->width() <= 0 || found->height() <= 0)
+            return name + QStringLiteral(" scrolls without a visible bar");
+    }
+    return QString();
+}
+
+// The scroll bar of the file view that is shown: each view has its own.
+static QQuickItem *shownFileBar(QObject *filesRoot)
+{
+    for (auto *bar : filesRoot->findChildren<QQuickItem *>(QStringLiteral("scrollBar")))
+        if (bar->isVisible())
+            return bar;
+    return nullptr;
+}
+
+bool TestStudio::openLongFolder(const QTemporaryDir &directory, int rows)
+{
+    for (int i = 0; i < rows; ++i) {
+        QFile file(directory.filePath(QString("row-%1.txt").arg(i, 3, 10, QLatin1Char('0'))));
+        if (!file.open(QIODevice::WriteOnly))
+            return false;
+    }
+    window()->resize(880, 480);
+    tab()->setCwd(directory.path());
+    auto *folder = filesRoot()->property("folder").value<QObject *>();
+    if (!QTest::qWaitFor([&] { return folder->property("count").toInt() > rows; }, asyncTimeout))
+        return false;
+    QMetaObject::invokeMethod(window(), "takeFocus");
+    settle();
+    return true;
+}
+
+void TestStudio::everyScrollingViewHasAVisibleBar()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    QTemporaryDir directory;
+    QVERIFY(openLongFolder(directory, 500));
+    // Enough tags on the cursor's file that the details panel scrolls too.
+    const auto restoreIndex = qScopeGuard([&] { writeIndex(); m_index->reload(); settle(); });
+    putIndexRow(directory.filePath(QStringLiteral("row-000.txt")), manyTags());
+    m_index->reload();
+    window()->resize(1180, 240);
+    settle();
+    focusRow(QStringLiteral("row-000.txt"));
+    QStringList checked;
+    for (const QString &mode : {QStringLiteral("list"), QStringLiteral("details"), QStringLiteral("icons")}) {
+        tab()->setViewMode(mode);
+        settle();
+        const QString missing = missingScrollBars(window(), &checked);
+        QVERIFY2(missing.isEmpty(), qPrintable(mode + ": " + missing));
+    }
+    QVERIFY2(checked.contains(QStringLiteral("QQuickListView")), qPrintable(checked.join(' ')));
+    QVERIFY2(checked.contains(QStringLiteral("QQuickGridView")), qPrintable(checked.join(' ')));
+    QVERIFY2(checked.contains(QStringLiteral("sidebarScroll")), qPrintable(checked.join(' ')));
+    QVERIFY2(checked.contains(QStringLiteral("detailsScroll")), qPrintable(checked.join(' ')));
+    tab()->setViewMode(QStringLiteral("list"));
+    settle();
+
+    // Each overlay that scrolls, opened over the same short window.
+    // `expected` names the overlay's own view, which has to be among them.
+    const auto overlay = [&](const QString &expected, const std::function<void()> &open,
+                             const std::function<void()> &close) {
+        open();
+        settle();
+        QStringList seen;
+        const QString missing = missingScrollBars(window(), &seen);
+        close();
+        settle();
+        QVERIFY2(missing.isEmpty(), qPrintable(missing));
+        QVERIFY2(seen.contains(expected), qPrintable(expected + " did not scroll: " + seen.join(' ')));
+    };
+    overlay(QStringLiteral("overlayScroll"), [&] { key('?'); }, [&] { key(Qt::Key_Escape); });
+    overlay(QStringLiteral("overlayList"), [&] { key(':'); }, [&] { key(Qt::Key_Escape); });
+    overlay(QStringLiteral("overlayList"), [&] { key(Qt::Key_Menu); }, [&] { key(Qt::Key_Escape); });
+    overlay(QStringLiteral("overlayScroll"), [&] {
+        QVERIFY(QMetaObject::invokeMethod(window(), "showReceipt", Q_ARG(QVariant, QStringLiteral("Test")),
+            Q_ARG(QVariant, QString("A property with a detailed value.\n").repeated(200))));
+    }, [&] { QMetaObject::invokeMethod(window()->findChild<QObject *>("propertiesDialog"), "close"); });
+    overlay(QStringLiteral("tagSuggestions"), [&] {
+        // Six suggestions, the most it offers, in a window too short for them.
+        window()->resize(320, 180);
+        key('t'); key('a');
+        QVERIFY(itemsNamed("tagSheet").first()->isVisible());
+        auto *source = itemsNamed("tagSource").first();
+        source->setProperty("candidates", QStringList{"t1", "t2", "t3", "t4", "t5", "t6"});
+        QMetaObject::invokeMethod(source, "focusEntry");
+        key('t');
+        QTRY_COMPARE(itemsNamed("tagSuggestions").first()->property("count").toInt(), 6);
+    }, [&] { key(Qt::Key_Escape); window()->resize(1180, 240); });
+    QVERIFY(!itemsNamed("tagSheet").first()->isVisible());
+
+    QTemporaryDir data;
+    QVERIFY(data.isValid());
+    const QByteArray oldData = qgetenv("XDG_DATA_HOME");
+    qputenv("XDG_DATA_HOME", data.path().toUtf8());
+    const auto leaveTrash = qScopeGuard([&] {
+        if (tab()->kind() == "trash") m_workspace->closeCurrentTab();
+        qputenv("XDG_DATA_HOME", oldData);
+    });
+    const QDir trash(data.path());
+    for (int i = 0; i < 30; ++i) {
+        const QString name = QString("gone-%1.txt").arg(i);
+        QVERIFY(writeLooknfeel(trash.filePath("Trash/files/" + name), "x"));
+        QVERIFY(writeLooknfeel(trash.filePath("Trash/info/" + name + ".trashinfo"),
+            "[Trash Info]\nPath=" + trash.filePath(name) + "\nDeletionDate=2026-10-11T13:14:15\n"));
+    }
+    key(':');
+    for (char ch : QByteArray("open trash")) key(ch);
+    key(Qt::Key_Return);
+    QTRY_COMPARE(tab()->kind(), QStringLiteral("trash"));
+    QTRY_VERIFY(!itemsNamed("trashView").isEmpty());
+    auto *model = itemsNamed("trashView").first()->property("model").value<TrashModel *>();
+    QVERIFY(model);
+    QTRY_COMPARE_WITH_TIMEOUT(model->count(), 30, asyncTimeout);
+    settle();
+    QStringList seen;
+    const QString missing = missingScrollBars(window(), &seen);
+    QVERIFY2(missing.isEmpty(), qPrintable(missing));
+    QVERIFY(seen.contains(QStringLiteral("trashList")));
+}
+
+void TestStudio::scrollBarDragReachesEnd()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    QTemporaryDir directory;
+    QVERIFY(openLongFolder(directory, 500));
+    QQuickItem *bar = nullptr;
+    QTRY_VERIFY((bar = shownFileBar(filesRoot())));
+    auto *listing = filesRoot()->property("view").value<QQuickItem *>();
+    QVERIFY(!listing->property("atYEnd").toBool());
+    auto *thumb = bar->property("contentItem").value<QQuickItem *>();
+    QVERIFY(thumb && thumb->height() >= m_theme->rowHeight());
+    const QPoint from = thumb->mapToScene(QPointF(thumb->width() / 2, thumb->height() / 2)).toPoint();
+    const QPoint to = bar->mapToScene(QPointF(bar->width() / 2, bar->height() + thumb->height())).toPoint();
+    QTest::mousePress(window(), Qt::LeftButton, Qt::NoModifier, from);
+    for (int step = 1; step <= 8; ++step)
+        QTest::mouseMove(window(), from + (to - from) * step / 8);
+    QTest::mouseRelease(window(), Qt::LeftButton, Qt::NoModifier, to);
+    QTRY_VERIFY2(listing->property("atYEnd").toBool(), qPrintable(QString("position %1 contentY %2")
+        .arg(bar->property("position").toReal()).arg(listing->property("contentY").toReal())));
+}
+
+void TestStudio::troughClickPages()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    QTemporaryDir directory;
+    QVERIFY(openLongFolder(directory, 500));
+    QQuickItem *bar = nullptr;
+    QTRY_VERIFY((bar = shownFileBar(filesRoot())));
+    auto *listing = filesRoot()->property("view").value<QQuickItem *>();
+    const qreal top = listing->property("contentY").toReal();
+    const QPoint low = bar->mapToScene(QPointF(bar->width() / 2, bar->height() * 0.9)).toPoint();
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier, low);
+    QTRY_COMPARE(qRound(listing->property("contentY").toReal() - top), qRound(listing->height()));
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier, low);
+    QTRY_COMPARE(qRound(listing->property("contentY").toReal() - top), qRound(2 * listing->height()));
+    const QPoint high = bar->mapToScene(QPointF(bar->width() / 2, 1)).toPoint();
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier, high);
+    QTRY_COMPARE(qRound(listing->property("contentY").toReal() - top), qRound(listing->height()));
+}
+
+void TestStudio::troughMiddleOrShiftClickJumps()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    QTemporaryDir directory;
+    QVERIFY(openLongFolder(directory, 500));
+    QQuickItem *bar = nullptr;
+    QTRY_VERIFY((bar = shownFileBar(filesRoot())));
+    const qreal size = bar->property("size").toReal();
+    const auto centre = [&] { return bar->property("position").toReal() + size / 2; };
+    QTest::mouseClick(window(), Qt::MiddleButton, Qt::NoModifier,
+        bar->mapToScene(QPointF(bar->width() / 2, bar->height() * 0.75)).toPoint());
+    QTRY_VERIFY(qAbs(centre() - 0.75) < 0.01);
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::ShiftModifier,
+        bar->mapToScene(QPointF(bar->width() / 2, bar->height() * 0.25)).toPoint());
+    QTRY_VERIFY(qAbs(centre() - 0.25) < 0.01);
+}
+
+void TestStudio::barDoesNotCoverRows()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    const auto manyTags = putManyTagsFile();
+    window()->resize(880, 240);
+    settle();
+    focusRow(QStringLiteral("manytags.txt"));
+    QQuickItem *bar = nullptr;
+    QTRY_VERIFY((bar = shownFileBar(filesRoot())));
+    // At rest: under the pointer the bar widens over the rows' end inset.
+    QTest::mouseMove(window(), QPoint(2, 2));
+    QTRY_COMPARE(qRound(bar->width()), m_theme->scrollBarWidth());
+    const auto left = [&] { return bar->mapToScene(QPointF()).x(); };
+    auto *listing = filesRoot()->property("view").value<QQuickItem *>();
+    const auto chipsEnd = [&] {
+        qreal end = 0;
+        for (auto *chip : itemsNamed(QStringLiteral("tagChip")))
+            if (listing->isAncestorOf(chip) && chip->isVisible() && chip->width() > 0)
+                end = qMax(end, chip->mapToScene(QPointF(chip->width(), 0)).x());
+        return end;
+    };
+    int rows = 0;
+    for (auto *row : itemsNamed(QStringLiteral("fileRow"))) {
+        if (!listing->isAncestorOf(row) || !row->isVisible() || row->property("pooled").toBool())
+            continue;
+        ++rows;
+        QVERIFY2(row->mapToScene(QPointF(row->width(), 0)).x() <= left() + 0.5, qPrintable(row->property("name").toString()));
+    }
+    QVERIFY(rows > 0);
+    QVERIFY(chipsEnd() > 0);
+    QVERIFY(chipsEnd() <= left() + 0.5);
+    QTest::mouseMove(window(), bar->mapToScene(QPointF(bar->width() / 2, bar->height() / 2)).toPoint());
+    QTRY_COMPARE(qRound(bar->width()), m_theme->scrollBarHover());
+    QVERIFY(chipsEnd() <= left() + 0.5);
+    QTest::mouseMove(window(), QPoint(2, 2));
+}
+
+void TestStudio::scrollJumpButtonsMatchHomeEnd()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    QTemporaryDir directory;
+    QVERIFY(openLongFolder(directory, 500));
+    auto *listing = filesRoot()->property("view").value<QQuickItem *>();
+    auto *toStart = itemNamedWithin(qobject_cast<QQuickItem *>(filesRoot()), QStringLiteral("scrollToStart"));
+    auto *toEnd = itemNamedWithin(qobject_cast<QQuickItem *>(filesRoot()), QStringLiteral("scrollToEnd"));
+    QVERIFY(toStart && toEnd);
+    QTRY_VERIFY(toStart->isVisible() && toEnd->isVisible());
+    const auto click = [&](QQuickItem *button) {
+        QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier,
+            button->mapToScene(QPointF(button->width() / 2, button->height() / 2)).toPoint());
+    };
+    const auto state = [&] {
+        return QPair<int, int>(cursor(), qRound(listing->property("contentY").toReal()));
+    };
+    key(Qt::Key_End);
+    QTRY_VERIFY(listing->property("atYEnd").toBool());
+    const auto end = state();
+    key(Qt::Key_Home);
+    const auto home = state();
+    QCOMPARE(home.first, 0);
+    QVERIFY(end.first > 0);
+    // From the tag panel, so the buttons are seen to act on the files and not
+    // on whatever list holds the keys.
+    key('t');
+    QCOMPARE(window()->property("focusRegion").toString(), QStringLiteral("tags"));
+    auto *tags = window()->property("activeTagsList").value<QQuickItem *>();
+    const int tagCursor = tags->property("currentIndex").toInt();
+    click(toEnd);
+    QTRY_COMPARE(state(), end);
+    QCOMPARE(window()->property("focusRegion").toString(), QStringLiteral("list"));
+    QCOMPARE(tags->property("currentIndex").toInt(), tagCursor);
+    click(toStart);
+    QTRY_COMPARE(state(), home);
+}
+
 void TestStudio::keepsTagEditorFocusAndSuggestionsVisible()
 {
     const QSize original = window()->size();
@@ -16241,9 +16540,10 @@ void TestStudio::givesTheNameColumnPriority()
     QVERIFY(chosen.contains("tags") && chosen.contains("size") && chosen.contains("mtime"));
     QList<qreal> lists;
     // Window widths and pane counts that give lists from 160 to 1340 px; the
-    // sidebar and the details panel take 474 px beside a single pane.
-    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(1022, 1), qMakePair(1180, 1),
-                                         qMakePair(1593, 1), qMakePair(1814, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
+    // sidebar and the details panel take 474 px beside a single pane, and the
+    // list's scroll bar 8.
+    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(1030, 1), qMakePair(1180, 1),
+                                         qMakePair(1593, 1), qMakePair(1822, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
         window()->resize(layout.first, 600);
         if (layout.second == 2 && m_workspace->paneCount() == 1) key(Qt::Key_Backslash, Qt::ControlModifier);
         QCOMPARE(m_workspace->paneCount(), layout.second);

@@ -49,5 +49,6 @@
         <file>qml/Tooltip.qml</file>
         <file>qml/RubberBand.qml</file>
         <file>qml/ImmediateWheel.qml</file>
+        <file>qml/ScrollBar.qml</file>
     </qresource>
 </RCC>

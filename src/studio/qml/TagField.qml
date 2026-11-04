@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Templates as T
 import "Focus.js" as Focus
 import omafiles
 
@@ -128,11 +129,12 @@ Column {
         onCurrentIndexChanged: Qt.callLater(field.revealSelection)
         highlightMoveDuration: 0
         highlightResizeDuration: 0
+        T.ScrollBar.vertical: ScrollBar {}
         delegate: FocusableControl {
             id: suggestion
             required property string modelData
             required property int index
-            width: ListView.view.width
+            width: ListView.view.width - Theme.scrollBarWidth
             height: Theme.rowHeight
             tabFocusable: false
             hasChrome: choices.currentIndex === index

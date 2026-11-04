@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 import QtQuick.Controls.Basic as C
+import QtQuick.Templates as T
 import omafiles
 
 Window {
@@ -318,7 +319,7 @@ Window {
                         required property bool marked
                         readonly property bool matches: !chooser.request || kind !== "file" || (chooser.request.selectedFilter < 0 || chooser.request.matches(name))
                         x: Theme.focusRing
-                        width: files.width - 2 * Theme.focusRing
+                        width: files.width - 2 * Theme.focusRing - Theme.scrollBarWidth
                         height: Theme.rowHeight
                         color: files.currentIndex === index ? Theme.cursor : Theme.base
                         Text {
@@ -345,7 +346,7 @@ Window {
                         view: files
                         step: Theme.rowHeight
                     }
-                    C.ScrollBar.vertical: C.ScrollBar {}
+                    T.ScrollBar.vertical: ScrollBar {}
                     FocusRing {
                         parent: files
                         focused: files.activeFocus

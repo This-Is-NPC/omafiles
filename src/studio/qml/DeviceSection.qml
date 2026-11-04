@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Templates as T
 import omafiles
 
 Column {
@@ -51,6 +52,7 @@ Column {
 
     ListView {
         id: devices
+        T.ScrollBar.vertical: ScrollBar {}
         objectName: "sidebarDevices"
         width: parent.width
         height: Math.min(contentHeight + topMargin + bottomMargin, deviceSection.maximumHeight)
@@ -103,7 +105,7 @@ Column {
             objectName: "deviceRow"
             required property var modelData
             required property int index
-            width: ListView.view.width
+            width: ListView.view.width - Theme.scrollBarWidth
             readonly property bool onCursor: devices.activeFocus && devices.currentIndex === index
             washed: onCursor || hovered
             color: onCursor ? Theme.cursor : Theme.hoverChrome
