@@ -403,6 +403,7 @@ private slots:
     void alignsPanelRowsOnOneEdgeAndOneCentre();
     void keepsNavigationStillWhileTheCursorMoves();
     void dropsEachPanelInItsOwnNarrowPane();
+    void keepsTheOtherPanesWhenSplittingAndClosing();
     void scrollsActualSheetsWithPageKeys();
     void scrollsLongOverlayListsWithPointerAndKeyboard();
     void keepsTagEditorFocusAndSuggestionsVisible();
@@ -11942,6 +11943,58 @@ void TestStudio::dropsEachPanelInItsOwnNarrowPane()
         settle();
         QCOMPARE(sidebar->property("tab").value<QObject *>(), static_cast<QObject *>(m_workspace->currentTab()));
     }
+}
+
+// A split makes only the new pane and a close takes only the closed one: the
+// pane beside it keeps its items and how far its list was scrolled.
+void TestStudio::keepsTheOtherPanesWhenSplittingAndClosing()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] {
+        while (m_workspace->paneCount() > 1)
+            m_workspace->closePane(m_workspace->paneCount() - 1);
+        window()->resize(original);
+    });
+    window()->resize(1180, 240);
+    settle();
+    focusRow(QStringLiteral("one.txt"));
+    key(Qt::Key_End);
+    QPointer<QQuickItem> pane = itemsNamed(QStringLiteral("pane")).value(0);
+    QPointer<QQuickItem> list = window()->property("activeListing").value<QQuickItem *>();
+    QVERIFY(pane && list);
+    QTRY_VERIFY(list->property("contentY").toReal() > 0);
+    const qreal scrolled = list->property("contentY").toReal();
+
+    key(Qt::Key_Backslash, Qt::ControlModifier);
+    QTRY_COMPARE(itemsNamed(QStringLiteral("pane")).size(), 2);
+    QVERIFY2(pane && list, "the split destroyed the pane beside it");
+    QCOMPARE(itemsNamed(QStringLiteral("pane")).value(0), pane.data());
+    QCOMPARE(list->property("contentY").toReal(), scrolled);
+
+    m_workspace->closePane(1);
+    QTRY_COMPARE(itemsNamed(QStringLiteral("pane")).size(), 1);
+    QVERIFY2(pane && list, "the close destroyed the pane that stays");
+    QCOMPARE(itemsNamed(QStringLiteral("pane")).value(0), pane.data());
+    QCOMPARE(list->property("contentY").toReal(), scrolled);
+
+    // A pane widened by a key gets an equal share again at the next split.
+    key(Qt::Key_Backslash, Qt::ControlModifier);
+    QTRY_COMPARE(itemsNamed(QStringLiteral("pane")).size(), 2);
+    key(Qt::Key_Left, Qt::AltModifier);
+    const qreal share = pane->width();
+    key(Qt::Key_Period, Qt::ControlModifier);
+    QTRY_VERIFY(pane->width() > share);
+    key(Qt::Key_Backslash, Qt::ControlModifier);
+    QTRY_COMPARE(itemsNamed(QStringLiteral("pane")).size(), 3);
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    // The last pane fills what the others and the handles leave.
+    QList<QQuickItem *> panes = itemsNamed(QStringLiteral("pane"));
+    std::sort(panes.begin(), panes.end(), [](QQuickItem *a, QQuickItem *b) {
+        return a->mapToScene(QPointF()).x() < b->mapToScene(QPointF()).x();
+    });
+    QCOMPARE(panes.value(0), pane.data());
+    QVERIFY2(qAbs(panes.at(0)->width() - panes.at(1)->width()) <= 1,
+             qPrintable(QStringLiteral("panes %1 and %2 wide").arg(panes.at(0)->width()).arg(panes.at(1)->width())));
 }
 
 void TestStudio::scrollsActualSheetsWithPageKeys()
