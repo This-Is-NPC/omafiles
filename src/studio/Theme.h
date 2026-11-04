@@ -2,10 +2,13 @@
 
 #include <QColor>
 #include <QFileSystemWatcher>
+#include <array>
 #include <QObject>
 #include <QString>
 #include <QStringList>
 #include <QtQmlIntegration/qqmlintegration.h>
+
+#include <array>
 
 namespace omafiles {
 
@@ -55,6 +58,7 @@ class Theme : public QObject
     Q_PROPERTY(int stripHeight READ stripHeight CONSTANT)
     Q_PROPERTY(int controlHeight READ controlHeight CONSTANT)
     Q_PROPERTY(int chipHeight READ chipHeight CONSTANT)
+    Q_PROPERTY(int tagSwatch READ tagSwatch CONSTANT)
     Q_PROPERTY(int iconSize READ iconSize CONSTANT)
     Q_PROPERTY(int iconGap READ iconGap CONSTANT)
     Q_PROPERTY(int focusRing READ focusRing CONSTANT)
@@ -88,6 +92,10 @@ public:
     QColor dim() const;
     /// The opaque surface behind a sheet or dialog, in place of the window.
     QColor scrim() const;
+    /// The colour of a tag: FNV-1a of its UTF-8 name into the theme's terminal
+    /// colours 1..6 and 9..14. A call is no binding dependency: a QML binding
+    /// also reads a role, which changes with the theme.
+    Q_INVOKABLE QColor tagColour(const QString &tag) const;
 
     QString fontFamily() const { return QStringLiteral("monospace"); }
 
@@ -109,6 +117,8 @@ public:
     static constexpr int stripHeight() { return 28; }
     static constexpr int controlHeight() { return 24; }
     static constexpr int chipHeight() { return 18; }
+    // The side of a tag's colour square.
+    static constexpr int tagSwatch() { return 6; }
     // A row's icon and the gap between it and the row's text.
     static constexpr int iconSize() { return 16; }
     static constexpr int iconGap() { return spacingS(); }
@@ -132,6 +142,11 @@ private:
     QColor m_foreground{"#c0caf5"};
     QColor m_accent{"#7aa2f7"};
     QColor m_urgent{"#f7768e"};
+    /// Red, green, yellow, blue, magenta, cyan, then their bright forms.
+    std::array<QColor, 12> m_tagPalette{
+        QColor{"#f7768e"}, QColor{"#9ece6a"}, QColor{"#e0af68"}, QColor{"#7aa2f7"},
+        QColor{"#ad8ee6"}, QColor{"#449dab"}, QColor{"#ff7a93"}, QColor{"#b9f27c"},
+        QColor{"#ff9e64"}, QColor{"#7da6ff"}, QColor{"#bb9af7"}, QColor{"#0db9d7"}};
 };
 
 } // namespace omafiles

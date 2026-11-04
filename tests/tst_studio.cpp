@@ -11,6 +11,9 @@
 #include <QSemaphore>
 #include <QFutureWatcher>
 #include <QScopeGuard>
+#include <QQmlComponent>
+#include <QSet>
+#include <memory>
 #include <QtConcurrentRun>
 #include <QWheelEvent>
 #include "DefaultManager.h"
@@ -711,6 +714,10 @@ private slots:
     void themeRolesAreOpaque();
     void dimTextHasContrast_data();
     void dimTextHasContrast();
+    void tagColourIsStable();
+    void tagColoursUseThePalette_data();
+    void tagColoursUseThePalette();
+    void chipShowsTagColour();
 
 private:
     QQuickWindow *window() const;
@@ -8983,6 +8990,162 @@ void TestStudio::themeRolesAreOpaque()
                  qPrintable(QStringLiteral("%1 has alpha %2").arg(property.name()).arg(colour.alpha())));
     }
     QVERIFY(roles > 0);
+}
+
+// The twelve colours `paletteFile` writes, red through bright cyan: each one
+// distinct and opaque.
+static QList<QColor> paletteColours()
+{
+    QList<QColor> colours;
+    for (int slot = 0; slot < 12; ++slot)
+        colours.append(QColor(16 + slot * 16, 200 - slot * 8, 40 + slot * 4));
+    return colours;
+}
+
+// A colors.toml carrying paletteColours, under omarchy's terminal colour names
+// or under their numbers, 1..6 and 9..14; translucent, with an alpha of 0x80.
+static QByteArray paletteFile(bool numbered, bool translucent = false)
+{
+    static const char *const names[] = {"red", "green", "yellow", "blue", "magenta", "cyan",
+                                         "bright_red", "bright_green", "bright_yellow",
+                                         "bright_blue", "bright_magenta", "bright_cyan"};
+    const QList<QColor> colours = paletteColours();
+    QByteArray body = "background = \"#16161e\"\n";
+    for (int slot = 0; slot < 12; ++slot) {
+        const QByteArray key = numbered
+            ? "color" + QByteArray::number(slot < 6 ? slot + 1 : slot + 3)
+            : QByteArray(names[slot]);
+        QColor colour = colours[slot];
+        if (translucent)
+            colour.setAlpha(0x80);
+        body += key + " = \"" + colour.name(translucent ? QColor::HexArgb : QColor::HexRgb).toLatin1()
+            + "\"\n";
+    }
+    return body;
+}
+
+// A tag's colour is a hash of its name, so it is the same in every view, in
+// every run and on every machine, and a change to the hash moves known tags.
+void TestStudio::tagColourIsStable()
+{
+    QTemporaryDir state;
+    QVERIFY(state.isValid());
+    const auto theme = themeFrom(state, paletteFile(false));
+    QVERIFY(theme);
+    const auto again = themeFrom(state, paletteFile(false));
+    QVERIFY(again);
+    const QList<QColor> palette = paletteColours();
+    // FNV-1a of the UTF-8 name, modulo twelve.
+    const QList<QPair<QString, int>> known = {{QStringLiteral("work"), 0},
+                                              {QStringLiteral("plain"), 3},
+                                              {QStringLiteral("2024"), 5},
+                                              {QStringLiteral("\u00e9t\u00e9"), 7},
+                                              {QStringLiteral("photos"), 8}};
+    for (const auto &[tag, slot] : known) {
+        QCOMPARE(theme->tagColour(tag), theme->tagColour(tag));
+        QCOMPARE(again->tagColour(tag), theme->tagColour(tag));
+        QCOMPARE(theme->tagColour(tag), palette[slot]);
+    }
+}
+
+void TestStudio::tagColoursUseThePalette_data()
+{
+    QTest::addColumn<bool>("numbered");
+    QTest::addColumn<bool>("translucent");
+    QTest::newRow("named") << false << false;
+    QTest::newRow("numbered") << true << false;
+    QTest::newRow("translucent") << true << true;
+}
+
+// Every tag colour is one of the theme's twelve, all twelve are used, and each
+// is opaque, even where the theme gives an alpha; the built-in default theme has
+// twelve opaque ones too.
+void TestStudio::tagColoursUseThePalette()
+{
+    QFETCH(bool, numbered);
+    QFETCH(bool, translucent);
+    QTemporaryDir state;
+    QVERIFY(state.isValid());
+    const auto theme = themeFrom(state, paletteFile(numbered, translucent));
+    QVERIFY(theme);
+    QTemporaryDir bare;
+    QVERIFY(bare.isValid());
+    const auto fallback = themeFrom(bare, QByteArray());
+    QVERIFY(fallback);
+    const QList<QColor> palette = paletteColours();
+    QSet<QRgb> seen;
+    QSet<QRgb> seenDefault;
+    for (int i = 0; i < 400; ++i) {
+        const QString tag = QStringLiteral("tag-%1").arg(i);
+        const QColor colour = theme->tagColour(tag);
+        QVERIFY2(palette.contains(colour), qPrintable(tag + " is " + colour.name()));
+        seen.insert(colour.rgba());
+        const QColor builtIn = fallback->tagColour(tag);
+        QCOMPARE(builtIn.alpha(), 255);
+        seenDefault.insert(builtIn.rgba());
+    }
+    QCOMPARE(seen.size(), 12);
+    QCOMPARE(seenDefault.size(), 12);
+}
+
+// A tag chip, in a file row and in the details panel, is raised and carries a
+// square in its tag's colour, which follows the theme when it changes.
+void TestStudio::chipShowsTagColour()
+{
+    focusRow("one.txt");
+    const auto swatchOf = [](QQuickItem *chip) {
+        const auto *swatch = chip->findChild<QQuickItem *>(QStringLiteral("tagSwatch"));
+        return swatch ? swatch->property("color").value<QColor>() : QColor();
+    };
+    int rows = 0;
+    for (auto *chip : itemsNamed("tagChip")) {
+        if (!chip->isVisible() || chip->opacity() == 0)
+            continue;
+        const QString tag = chip->property("modelData").toString();
+        QCOMPARE(chip->property("color").value<QColor>(), m_theme->raised());
+        QCOMPARE(swatchOf(chip), m_theme->tagColour(tag));
+        ++rows;
+    }
+    QVERIFY(rows > 0);
+    int details = 0;
+    for (auto *chip : itemsNamed("detailsTagChip")) {
+        if (!chip->isVisible())
+            continue;
+        QCOMPARE(swatchOf(chip), m_theme->tagColour(chip->property("modelData").toString()));
+        ++details;
+    }
+    QVERIFY(details > 0);
+
+    // A theme switch renames a new colors.toml over the old one.
+    QTemporaryDir state;
+    QVERIFY(state.isValid());
+    const QString themeDir = QDir(state.path()).filePath(QStringLiteral("omarchy/current/theme"));
+    QVERIFY(QDir().mkpath(themeDir));
+    const QString colours = QDir(themeDir).filePath(QStringLiteral("colors.toml"));
+    const auto paint = [&colours](const QByteArray &body) {
+        const QString scratch = colours + QStringLiteral(".new");
+        {
+            QFile file(scratch);
+            if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)
+                || file.write(body) != body.size())
+                return false;
+        }
+        return ::rename(QFile::encodeName(scratch).constData(),
+                        QFile::encodeName(colours).constData()) == 0;
+    };
+    QVERIFY(paint(paletteFile(false)));
+    const StateEnv scope(state.path());
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/TagChip.qml")));
+    std::unique_ptr<QObject> made(component.createWithInitialProperties(
+        {{QStringLiteral("tag"), QStringLiteral("work")}}));
+    auto *chip = qobject_cast<QQuickItem *>(made.get());
+    QVERIFY2(chip, qPrintable(component.errorString()));
+    QCOMPARE(swatchOf(chip), paletteColours()[0]);
+    QByteArray switched = paletteFile(false);
+    switched.replace(paletteColours()[0].name().toLatin1(), "#ff00ff");
+    QVERIFY(paint(switched));
+    QTRY_COMPARE(swatchOf(chip), QColor(QStringLiteral("#ff00ff")));
 }
 
 void TestStudio::dimTextHasContrast_data()

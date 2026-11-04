@@ -97,6 +97,20 @@ QColor mix(const QColor &from, const QColor &toward, qreal amount)
                             from.blueF() + (toward.blueF() - from.blueF()) * amount);
 }
 
+// The keys of the tag palette in colors.toml: a terminal colour's number, and
+// the name omarchy writes it under.
+struct PaletteKey
+{
+    const char *number;
+    const char *name;
+};
+constexpr std::array<PaletteKey, 12> paletteKeys{{
+    {"color1", "red"}, {"color2", "green"}, {"color3", "yellow"},
+    {"color4", "blue"}, {"color5", "magenta"}, {"color6", "cyan"},
+    {"color9", "bright_red"}, {"color10", "bright_green"}, {"color11", "bright_yellow"},
+    {"color12", "bright_blue"}, {"color13", "bright_magenta"}, {"color14", "bright_cyan"},
+}};
+
 // WCAG relative luminance of an opaque colour.
 qreal luminance(const QColor &colour)
 {
@@ -176,6 +190,13 @@ void Theme::reload()
     m_foreground = colourOr(values, QStringLiteral("foreground"), m_foreground);
     m_accent = colourOr(values, QStringLiteral("accent"), m_accent);
     m_urgent = colourOr(values, QStringLiteral("red"), m_urgent);
+    for (std::size_t slot = 0; slot < paletteKeys.size(); ++slot) {
+        QColor colour = colourOr(values, QLatin1String(paletteKeys[slot].number),
+                                 colourOr(values, QLatin1String(paletteKeys[slot].name),
+                                          m_tagPalette[slot]));
+        colour.setAlpha(255);
+        m_tagPalette[slot] = colour;
+    }
     emit changed();
 }
 
@@ -230,6 +251,16 @@ QColor Theme::dim() const
             return eased;
     }
     return m_foreground;
+}
+
+QColor Theme::tagColour(const QString &tag) const
+{
+    quint32 hash = 2166136261u;
+    for (const char byte : tag.toUtf8()) {
+        hash ^= static_cast<unsigned char>(byte);
+        hash *= 16777619u;
+    }
+    return m_tagPalette[hash % m_tagPalette.size()];
 }
 
 QColor Theme::scrim() const

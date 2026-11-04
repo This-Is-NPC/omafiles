@@ -38,6 +38,7 @@
         <file>qml/Label.qml</file>
         <file>qml/Rule.qml</file>
         <file>qml/TabHandle.qml</file>
+        <file>qml/TagChip.qml</file>
         <file>qml/TagStrip.qml</file>
         <file>qml/TagSheet.qml</file>
         <file>qml/TagField.qml</file>
