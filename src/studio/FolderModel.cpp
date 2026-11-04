@@ -1,7 +1,7 @@
 #include "FileMetadata.h"
 #include "BlockingJob.h"
 #include "FolderModel.h"
-#include "Counted.h"
+#include "Count.h"
 
 #include "Glob.h"
 #include "Names.h"

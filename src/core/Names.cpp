@@ -1,5 +1,6 @@
 #include "Names.h"
 
+#include "Count.h"
 #include "Paths.h"
 #include "Roots.h"
 #include "Store.h"
@@ -46,10 +47,9 @@ bool writeNames(const QString &rootId, const QStringList &relatives, QVector<Gap
     if (dropped)
         *dropped = lost;
     if (lost > 0) {
-        gaps.append({QString(), QStringLiteral("%1 name(s) hold a newline, which a list of "
-                                               "one path to a line cannot hold; they were "
-                                               "not listed")
-                                    .arg(lost)});
+        gaps.append({QString(), QStringLiteral("left out %1 holding a newline, which a list "
+                                               "of one path to a line cannot hold")
+                                    .arg(countOf(lost, QStringLiteral("name")))});
     }
     // Sorted here rather than trusted from the caller: everything that reads
     // this is allowed to assume the order, and a walk's order is the

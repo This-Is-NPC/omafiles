@@ -1227,7 +1227,8 @@ def check_query_flags(data, workspace):
     recent_only = run(data, "ls", "--tag", "flag-a", "--since", "1h")
     assert str(ods.resolve()) in recent_only.stdout
     assert str(stampless.resolve()) not in recent_only.stdout
-    assert "carry no tagged stamp" in recent_only.stderr
+    assert "left out 1 matching row with no tagged stamp" in recent_only.stderr, \
+        recent_only.stderr
 
     # And the duration is read, not just the flag. Written with a stamp instead
     # of slept for: the comparison is in whole seconds and inclusive, so a test
@@ -2168,7 +2169,7 @@ def check_recent_counts_the_query(data, workspace):
         note = run(data, "recent").stderr
         if "no tagged stamp" not in note:
             return 0
-        return int(note.split("recent: ")[1].split(" row")[0])
+        return int(note.split("recent: left out ")[1].split(" row")[0])
 
     before = skipped()
 
@@ -2291,7 +2292,7 @@ def check_help_and_messages(data, workspace):
     run(data, "tag", "add", "--tag", "counted", "--", str(sub), str(sub / "deep.txt"))
     refused = run(data, "trash", "--", str(sub))
     assert refused.returncode == 1
-    assert "2 index row(s)" in refused.stderr, refused.stderr
+    assert "1 path, 2 index rows" in refused.stderr, refused.stderr
 
     # The one failure every machine can be made to reproduce: no gio that
     # runs. Its message says which.
@@ -2422,7 +2423,7 @@ def check_a_symlink_destination_is_occupied(data, workspace):
 def check_the_prompt_names_the_paths(data, workspace):
     """The question says which paths, not just how many.
 
-    `rm: 1 path(s). Continue?` is the same sentence whether the path is the one
+    `rm: 1 path. Continue?` is the same sentence whether the path is the one
     you typed or the target a symlink led to; `rm -i` names the file --
     `remove regular file 'a.txt'?`. The row count stays beside it, because one
     path can carry a tree of rows."""
@@ -2443,7 +2444,7 @@ def check_the_prompt_names_the_paths(data, workspace):
     (sub / "deep.txt").write_text("d")
     run(data, "tag", "add", "--tag", "asked", "--", str(sub), str(sub / "deep.txt"))
     counted = run(data, "trash", "--", str(sub))
-    assert "2 index row(s)" in counted.stderr, counted.stderr
+    assert "1 path, 2 index rows" in counted.stderr, counted.stderr
     assert str(sub.resolve()) in counted.stderr, counted.stderr
 
     # Capped, so a long argument list cannot scroll the question itself off the
@@ -2453,7 +2454,7 @@ def check_the_prompt_names_the_paths(data, workspace):
         path.write_text("m")
     long = run(data, "rm", "--", *[str(path) for path in many])
     assert long.returncode == 1
-    assert "14 path(s)" in long.stderr, long.stderr
+    assert "14 paths" in long.stderr, long.stderr
     assert "... and 4 more" in long.stderr, long.stderr
     assert str(many[0].resolve()) in long.stderr
     assert str(many[13].resolve()) not in long.stderr, "the cap did not hold"
@@ -3858,7 +3859,7 @@ def check_an_incomplete_answer_is_not_a_success(data, workspace):
                                  "tags": ["incomplete-tag"]}) + "\n")
     judged = run(data, "ls", "--tag", "incomplete-tag", "--since", "1h")
     assert judged.returncode == 0, judged.stderr
-    assert "carry no tagged stamp" in judged.stderr, judged.stderr
+    assert "with no tagged stamp" in judged.stderr, judged.stderr
 
 
 def check_a_usage_line_carries_the_usage(data, workspace):
@@ -6189,7 +6190,7 @@ def check_a_short_list_of_names_says_so(data, workspace):
         assert answered.stdout.splitlines() == [str(tree.resolve() / n)
                                                 for n in ("alias", "pipe", "plain.txt")], \
             answered.stdout
-        assert "the list of names is short: 1 name(s) hold a newline" in answered.stderr, \
+        assert "the list of names is short: left out 1 name holding a newline" in answered.stderr, \
             answered.stderr
         # --quiet takes the note and leaves the status.
         assert run(data, "--quiet", "ls", "--untagged", "--cached",
@@ -7261,10 +7262,10 @@ def check_a_root_is_declared_and_undeclared_truly(data, workspace):
     assert run(home, "roots", "add", "--id", "i", "--", inner).returncode == 0
     assert run(home, "tag", "add", "--tag", "t", "--", inner / "x.txt").returncode == 0
     dry = run(home, "--dry-run", "roots", "rm", "--id", "i")
-    assert dry.stdout == "1 row(s) would be written back under root o\n", dry.stdout
+    assert dry.stdout == "1 row would be written back under root o\n", dry.stdout
     gone = run(home, "roots", "rm", "--id", "i")
     assert gone.returncode == 0, gone.stderr
-    assert gone.stdout == "1 row(s) written back under root o\n", gone.stdout
+    assert gone.stdout == "1 row written back under root o\n", gone.stdout
     exported = json.loads(run(home, "export").stdout)
     assert (exported["root"], exported["path"]) == ("o", "inner/x.txt"), exported
 
@@ -7983,7 +7984,7 @@ def check_a_list_that_will_not_read_is_an_error(data, workspace):
     refused = run(home, "--quiet", "ls", "--untagged", "--cached")
     assert refused.returncode == 1 and "is not a clean path" in refused.stderr, refused
     dropped = run(home, "roots", "rm", "--id", "r")
-    assert dropped.returncode == 0 and dropped.stdout == "0 row(s) written back\n", dropped
+    assert dropped.returncode == 0 and dropped.stdout == "0 rows written back\n", dropped
 
 
 def check_a_cache_it_cannot_make_says_why(data, workspace):
@@ -10222,7 +10223,7 @@ def check_r6_recent_says_each_file_once(data, workspace):
     assert opened.returncode == 1 and opened.stdout == "", opened
     assert opened.stderr.count("Permission denied") == 1, opened.stderr
     assert "lnk" not in opened.stderr and "bad" not in opened.stderr, opened.stderr
-    assert "1 row(s) carry no tagged stamp" in undated.stderr, undated.stderr
+    assert "recent: left out 1 row with no tagged stamp" in undated.stderr, undated.stderr
 
 
 def check_r6m_the_file_verbs_count_in_the_parse(data, workspace):

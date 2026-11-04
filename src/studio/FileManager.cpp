@@ -1,5 +1,5 @@
 #include "FileManager.h"
-#include "Counted.h"
+#include "Count.h"
 #include "Paths.h"
 #include "FileMetadata.h"
 #include "Workspace.h"

@@ -661,7 +661,7 @@ Nothing is rewritten here. The rows under the new root migrate on the next write
 
 Undeclare a root.
 
-The rows stored under it come with it, each rewritten in the form the roots left give it -- its absolute path, or relative to a root declared inside this one -- and it says how many landed each way -- `0 row(s) written back` where none did. That is not a convenience: a row names a declaration, so leaving them behind would leave rows nothing can place and every verb refusing to read the index until the line came back, which is not a state a command should be able to put somebody in.
+The rows stored under it come with it, each rewritten in the form the roots left give it -- its absolute path, or relative to a root declared inside this one -- and it says how many landed each way -- `0 rows written back` where none did. That is not a convenience: a row names a declaration, so leaving them behind would leave rows nothing can place and every verb refusing to read the index until the line came back, which is not a state a command should be able to put somebody in.
 
 The index is committed before the declarations are written, so the half-done case is the harmless one -- rows that no longer name the root, beside a declaration nothing references. A list of names that will not go with it is named with the system's reason, exit 3, after the rows and the declarations are written. `--dry-run` counts the rows and writes neither.
 

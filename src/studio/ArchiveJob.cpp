@@ -1,5 +1,5 @@
 #include "ArchiveJob.h"
-#include "Counted.h"
+#include "Count.h"
 #include "BlockingJob.h"
 #include "../core/Paths.h"
 #include "../core/Open.h"

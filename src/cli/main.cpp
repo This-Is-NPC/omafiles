@@ -1,3 +1,4 @@
+#include "Count.h"
 #include "Glob.h"
 #include "Names.h"
 #include "Open.h"
@@ -2192,10 +2193,10 @@ int cmdLs(const Globals &g, Session &s, const QStringList &ands, const QStringLi
     for (const QString &error : std::as_const(refused))
         fail(QStringLiteral("ls: %1").arg(error));
     if (undated > 0) {
-        warn(g, QStringLiteral("ls: %1 matching row(s) carry no tagged stamp, so "
-                               "--since cannot judge them; they are stamped the next "
-                               "time their tags change")
-                    .arg(undated));
+        warn(g, QStringLiteral("ls: left out %1 with no tagged stamp, which --since "
+                               "cannot judge; a row is stamped the next time its tags "
+                               "change")
+                    .arg(countOf(undated, QStringLiteral("matching row"))));
     }
     // A short list is not the answer that was asked for, and a note on stderr
     // is not enough on its own, because `--quiet` is allowed to take it away.
@@ -2223,8 +2224,9 @@ bool confirmed(const Globals &g, const QString &what, const QStringList &paths, 
         return true;
     const int count = paths.size();
     const QString scale = rows > count
-        ? QStringLiteral("%1 path(s), %2 index row(s)").arg(count).arg(rows)
-        : QStringLiteral("%1 path(s)").arg(count);
+        ? QStringLiteral("%1, %2").arg(countOf(count, QStringLiteral("path")),
+                                       countOf(rows, QStringLiteral("index row")))
+        : countOf(count, QStringLiteral("path"));
     // And it says which. A bare count is the same sentence whether the path is
     // the one you typed or the target a symlink led to. `rm -i` names the file
     // it is about to remove -- `remove regular file 'a.txt'?` -- for the same
@@ -2408,7 +2410,7 @@ int cmdPrune(const Globals &g, Session &s, bool all, const QStringList &position
     // not always a row for a file that is gone, and dropping it throws away
     // tags nothing else on the machine holds. Nothing has left memory yet.
     //
-    // Named by scope, because a prompt saying only "3 path(s)" does not tell
+    // Named by scope, because a prompt saying only "3 paths" does not tell
     // you whether they are the three under your feet or three from a drive you
     // unplugged last year -- and past ten paths the list ends in `... and N
     // more` rather than naming them.
@@ -2584,9 +2586,9 @@ int cmdRecent(const Globals &g, Session &s, bool desktop, const QStringList &pos
     }
 
     if (unknown > 0) {
-        warn(g, QStringLiteral("recent: %1 row(s) carry no tagged stamp and cannot be "
-                               "ordered; they are stamped the next time their tags change")
-                    .arg(unknown));
+        warn(g, QStringLiteral("recent: left out %1 with no tagged stamp, which cannot be "
+                               "ordered; a row is stamped the next time its tags change")
+                    .arg(countOf(unknown, QStringLiteral("row"))));
     }
     for (const QString &error : skipped) {
         warn(g, QStringLiteral("recent: %1; it was not listed").arg(error));
@@ -5497,9 +5499,9 @@ int cmdSweep(const Globals &g, Session &s, bool status, const QStringList &posit
         for (const QString &tree : std::as_const(untouched))
             trees.append(spelled(tree));
         warn(g, QStringLiteral("sweep: another writer holds the index; stepped aside "
-                               "with %1 tree(s) unswept -- %2")
-                    .arg(untouched.size())
-                    .arg(trees.join(QStringLiteral(", "))));
+                               "with %1 unswept -- %2")
+                    .arg(countOf(untouched.size(), QStringLiteral("tree")),
+                         trees.join(QStringLiteral(", "))));
     }
     // A root read in the old case of a name another program re-cased is written
     // as its directory stores it, as its rows were.
@@ -5862,9 +5864,9 @@ int cmdRoots(const Globals &g, Session &s, const QString &sub, const QString &id
             s.store.rewrite();
         const auto said = [&](const QString &verbed) {
             if (landed.isEmpty())
-                out() << "0 row(s) " << verbed << '\n';
+                out() << countOf(0, QStringLiteral("row")) << ' ' << verbed << '\n';
             for (auto where = landed.cbegin(); where != landed.cend(); ++where) {
-                out() << where.value() << " row(s) " << verbed << ' '
+                out() << countOf(where.value(), QStringLiteral("row")) << ' ' << verbed << ' '
                       << (where.key().isEmpty()
                               ? QStringLiteral("as absolute paths")
                               : QStringLiteral("under root %1").arg(where.key()))

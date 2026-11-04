@@ -23,7 +23,7 @@ HEADERS += PointerActivity.h BlockingJob.h
 
 HEADERS += DirectoryListing.h  DefaultManager.h FileManager.h FileMetadata.h Theme.h IndexModel.h Workspace.h GraphItem.h FolderModel.h EntryWatcher.h Clipboard.h FileTransfer.h Verb.h Views.h Counted.h
 SOURCES += DirectoryListing.cpp  DefaultManager.cpp FileManager.cpp main.cpp Theme.cpp IndexModel.cpp Workspace.cpp GraphItem.cpp FolderModel.cpp EntryWatcher.cpp \
-           Clipboard.cpp FileTransfer.cpp Verb.cpp Views.cpp Counted.cpp
+           Clipboard.cpp FileTransfer.cpp Verb.cpp Views.cpp
 RESOURCES += resources.qrc
 
 LIBS           += -L$$OUT_PWD/../core -lomafilescore

@@ -3,7 +3,7 @@
 #include <QCoreApplication>
 #include <QFutureWatcher>
 #include "IndexModel.h"
-#include "Counted.h"
+#include "Count.h"
 
 #include "Open.h"
 #include "Paths.h"
