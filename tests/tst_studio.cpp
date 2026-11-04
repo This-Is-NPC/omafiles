@@ -404,6 +404,8 @@ private slots:
     void keepsNavigationStillWhileTheCursorMoves();
     void dropsEachPanelInItsOwnNarrowPane();
     void keepsTheOtherPanesWhenSplittingAndClosing();
+    void keepsKeyFocusWhenSplittingFromTrash();
+    void movesTheKeysOffTrashToTheFocusedPane();
     void scrollsActualSheetsWithPageKeys();
     void scrollsLongOverlayListsWithPointerAndKeyboard();
     void keepsTagEditorFocusAndSuggestionsVisible();
@@ -11998,6 +12000,84 @@ void TestStudio::keepsTheOtherPanesWhenSplittingAndClosing()
     QCOMPARE(panes.value(0), pane.data());
     QVERIFY2(qAbs(panes.at(0)->width() - panes.at(1)->width()) <= 1,
              qPrintable(QStringLiteral("panes %1 and %2 wide").arg(panes.at(0)->width()).arg(panes.at(1)->width())));
+}
+
+// The keys follow the focused pane: a split from Trash gives them to the new
+// pane's list, and going back gives them to the Trash list again.
+void TestStudio::keepsKeyFocusWhenSplittingFromTrash()
+{
+    const auto restore = qScopeGuard([&] {
+        key(Qt::Key_Escape);
+        while (m_workspace->paneCount() > 1)
+            QMetaObject::invokeMethod(m_workspace, "closePane", Q_ARG(int, 1));
+        if (tab()->kind() == QLatin1String("trash"))
+            m_workspace->closeCurrentTab();
+    });
+    focusRow(QStringLiteral("one.txt"));
+    key('j');
+    QQuickItem *list = this->window()->activeFocusItem();
+    QVERIFY(list);
+    key(':');
+    for (char ch : QByteArray("open trash")) key(ch);
+    key(Qt::Key_Return);
+    QTRY_COMPARE(tab()->kind(), QStringLiteral("trash"));
+    QObject *window = m_engine->rootObjects().first();
+    QQuickItem *trashList = window->property("activeTrash").value<QQuickItem *>()
+                                ->property("focusTarget").value<QQuickItem *>();
+    QTRY_COMPARE(this->window()->activeFocusItem(), trashList);
+
+    key(Qt::Key_Backslash, Qt::ControlModifier);
+    QTRY_COMPARE(m_workspace->paneCount(), 2);
+    QCOMPARE(m_workspace->focusedPane(), 1);
+    QCOMPARE(tab()->kind(), QStringLiteral("files"));
+    QTRY_COMPARE(this->window()->activeFocusItem(), list);
+
+    key(Qt::Key_Left, Qt::AltModifier);
+    QCOMPARE(m_workspace->focusedPane(), 0);
+    QCOMPARE(tab()->kind(), QStringLiteral("trash"));
+    QTRY_COMPARE(this->window()->activeFocusItem(), trashList);
+
+    // Closing the Trash pane takes its list; the keys go to the pane left.
+    key(Qt::Key_W, Qt::ControlModifier | Qt::ShiftModifier);
+    QTRY_COMPARE(m_workspace->paneCount(), 1);
+    QCOMPARE(tab()->kind(), QStringLiteral("files"));
+    QTRY_COMPARE(this->window()->activeFocusItem(), list);
+}
+
+// Leaving a Trash pane for a folder pane takes the keys with it: they reach
+// the folder's list, not the Trash list beside it.
+void TestStudio::movesTheKeysOffTrashToTheFocusedPane()
+{
+    const auto restore = qScopeGuard([&] {
+        key(Qt::Key_Escape);
+        while (m_workspace->paneCount() > 1)
+            QMetaObject::invokeMethod(m_workspace, "closePane", Q_ARG(int, 1));
+        if (tab()->kind() == QLatin1String("trash"))
+            m_workspace->closeCurrentTab();
+    });
+    focusRow(QStringLiteral("one.txt"));
+    key('j');
+    QQuickItem *list = this->window()->activeFocusItem();
+    QVERIFY(list);
+    key(Qt::Key_Backslash, Qt::ControlModifier);
+    QTRY_COMPARE(m_workspace->paneCount(), 2);
+    key(Qt::Key_Left, Qt::AltModifier);
+    QCOMPARE(m_workspace->focusedPane(), 0);
+    key(':');
+    for (char ch : QByteArray("open trash")) key(ch);
+    key(Qt::Key_Return);
+    QTRY_COMPARE(tab()->kind(), QStringLiteral("trash"));
+    QQuickItem *trashList = this->window()->property("activeTrash").value<QQuickItem *>()
+                                ->property("focusTarget").value<QQuickItem *>();
+    QTRY_COMPARE(this->window()->activeFocusItem(), trashList);
+
+    key(Qt::Key_Right, Qt::AltModifier);
+    QCOMPARE(m_workspace->focusedPane(), 1);
+    QCOMPARE(tab()->kind(), QStringLiteral("files"));
+    QTRY_COMPARE(this->window()->activeFocusItem(), list);
+    const int before = cursor();
+    key('j');
+    QCOMPARE(cursor(), before + 1);
 }
 
 void TestStudio::scrollsActualSheetsWithPageKeys()
