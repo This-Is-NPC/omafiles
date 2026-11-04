@@ -644,6 +644,7 @@ private slots:
     void restoresInterruptedOverlays();
     void footerHintsFollowOpenSheet_data();
     void footerHintsFollowOpenSheet();
+    void footerStatusNeverCutsAWord();
     void restoresTheTopOverlayWhenOthersClose();
     void stacksAsynchronousReceipts();
     void preservesFocusInCommandsOpenedByOverlays();
@@ -13468,6 +13469,41 @@ void TestStudio::thumbnailsOnlyVisibleRowsInEveryFileView()
     }
 }
 
+
+void TestStudio::footerStatusNeverCutsAWord()
+{
+    const QSize original = window()->size();
+    auto *folder = qobject_cast<FolderModel *>(filesRoot()->property("folder").value<QObject *>());
+    QVERIFY(folder);
+    const auto restore = qScopeGuard([&] {
+        m_clipboard->clear(); folder->clearMarks(); window()->resize(original);
+    });
+    focusRow("one.txt");
+    folder->clearMarks();
+    key(Qt::Key_Space);
+    QCOMPARE(folder->markedCount(), 1);
+    m_clipboard->copyFiles({m_tree.filePath("one.txt")}, false);
+    auto *facts = itemsNamed("statusFacts").first();
+    // At 120 not even the position fits whole.
+    for (const int width : {420, 120}) {
+        window()->resize(width, 300); settle();
+        int shown = 0;
+        for (QQuickItem *fact : facts->childItems()) {
+            if (!fact->isVisible())
+                continue;
+            ++shown;
+            const QString text = fact->property("text").toString();
+            // A fact is drawn whole, or ends in an ellipsis: the row never cuts it.
+            QVERIFY2(fact->x() + fact->width() <= facts->width() + 0.5, qPrintable(text));
+            QVERIFY2(fact->width() >= fact->implicitWidth() || fact->property("truncated").toBool(),
+                     qPrintable(text));
+        }
+        QVERIFY(shown > 0);
+        if (width == 120)
+            QVERIFY(facts->childItems().first()->property("truncated").toBool());
+    }
+    QVERIFY(itemsNamed("statusBar").first()->property("spoken").toString().contains("1 to paste"));
+}
 
 void TestStudio::restoresInterruptedOverlays_data()
 {
