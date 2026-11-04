@@ -58,8 +58,9 @@ Window {
 
     Connections {
         target: Workspace
-        function onCurrentTabChanged() { win.changeNoticeContext() }
-        function onFocusedPaneChanged() { win.changeNoticeContext() }
+        // After each view's own `syncActive`, so `activeTrash` is the current one.
+        function onCurrentTabChanged() { win.changeNoticeContext(); Qt.callLater(win.followCurrentView) }
+        function onFocusedPaneChanged() { win.changeNoticeContext(); Qt.callLater(win.followCurrentView) }
         function onPropertiesRequested(text: string) {
             win.showReceipt("Properties", text)
         }
@@ -539,6 +540,25 @@ Window {
         if (onTrash) activeTrash.focusTarget.forceActiveFocus()
         else root.forceActiveFocus()
         if (activeSidebar) activeSidebar.expanded = false
+    }
+
+    // The keys follow the focused pane's current view. They move when they
+    // rest where no current view is: fallen out of every item, on `root` while
+    // Trash is current, or in a Trash view that is no longer current. The
+    // sidebar, a field and a control of the current view keep them, and
+    // `takeFocus` gives an open overlay its own back.
+    function followCurrentView() {
+        const item = activeFocusItem
+        if (!item || !item.parent || (item === root && onTrash) || inStaleTrash(item))
+            takeFocus()
+    }
+
+    function inStaleTrash(item) {
+        for (let up = item; up; up = up.parent) {
+            if (up instanceof TrashView)
+                return up !== activeTrash
+        }
+        return false
     }
 
     function openPreview(path) {
