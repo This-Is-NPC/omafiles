@@ -735,6 +735,7 @@ private slots:
     void cursorRowCarriesTheOnlyRing();
     void markedRowHasNoStripe();
     void controlsHaveRestFill();
+    void keepsTheTooltipOfAControlThatTurnsUnusable();
     void placesListsExistingXdgDirs();
     void placesOpenInCurrentTab();
     void placesKeyReachesSection();
@@ -9591,6 +9592,30 @@ void TestStudio::controlsHaveRestFill()
     QTest::mouseMove(window(), QPoint(window()->width() - 2, window()->height() - 2));
     QTRY_VERIFY(!tip->property("opened").toBool());
     focusRow("one.txt");
+}
+
+// A control that turns unusable under the pointer keeps its tooltip, which then
+// says why: "+ Tag" with the cursor moved off the files.
+void TestStudio::keepsTheTooltipOfAControlThatTurnsUnusable()
+{
+    focusRow("one.txt");
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    auto *add = itemNamedWithin(sidebar, QStringLiteral("editTagsButton"));
+    QVERIFY(add); QTRY_VERIFY(add->isEnabled());
+    const auto away = qScopeGuard([&] {
+        QTest::mouseMove(window(), QPoint(window()->width() - 2, window()->height() - 2));
+        focusRow("one.txt");
+    });
+    QTest::mouseMove(window(), add->mapToScene(QPointF(add->width() / 2, add->height() / 2)).toPoint());
+    QTRY_VERIFY(add->findChild<QObject *>(QStringLiteral("controlTooltip")));
+    auto *tip = add->findChild<QObject *>(QStringLiteral("controlTooltip"));
+    QTRY_VERIFY(tip->property("opened").toBool());
+    QVERIFY(tip->property("text").toString().startsWith(QStringLiteral("Add a tag to the row or marked files")));
+    QVERIFY(QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(0))));
+    QTRY_VERIFY(!add->isEnabled());
+    QVERIFY(tip->property("opened").toBool());
+    QTRY_VERIFY(tip->property("text").toString().startsWith(QStringLiteral("Select a file to tag it")));
+    QVERIFY(tip->property("opened").toBool());
 }
 
 // ------------------------------------------------------------- sidebar places
