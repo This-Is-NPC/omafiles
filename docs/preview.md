@@ -71,6 +71,21 @@ preview process, no prefetch and no preview cache. Replacing a request cancels
 the old one before starting another. The GUI receives bounded plain text and
 raw image pixels, and does not decode the source file.
 
+The window starts every helper with `vfork`: the child shares the window's
+memory until it executes the helper, instead of copying the window's page
+tables. Measured with `scripts/bench --fixtures images-2000` (method 4, five
+runs per configuration, Ryzen AI 5 340), the process-tree peak in an image
+folder is the window (about 83 MiB), the devices helper (about 9 MiB) and the
+image preview helper (about 21 MiB; about 29 MiB while it linked Qt PDF, Qt
+Multimedia and libarchive). With `fork`, the child between fork and exec held
+31 to 34 MiB of the window's pages, which the tree sum counted a second time.
+After the codec split that child set the peak in 8 of 10 runs, so the smaller
+helper did not show. Moving the start to `vfork` took the median tree peak from
+123.6 to 113.7 MiB (A) and from 125.0 to 118.1 MiB (B). In one B run the
+sampler caught a child before exec that shared the window's memory and counted
+68.9 MiB twice, a 137.8 MiB peak; [benchmark.md](benchmark.md) says how the
+tree sum counts processes.
+
 The helper inherits the launching thread's CPU affinity and cgroup membership.
 It can use the allowed CPUs when a decoder has parallel work; serial image and
 PDF operations are not made parallel by affinity alone. The kernel's cpuset and
