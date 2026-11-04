@@ -336,6 +336,30 @@ private slots:
         options["files"] = QVariant::fromValue(QList<QByteArray> { QByteArray("../bad\0", 7) });
         QCOMPARE(completed(call("SaveFiles", options)).type(), QDBusMessage::ErrorMessage);
     }
+    void numbersOnlyNamesTheFolderSaysAreTaken()
+    {
+        QTemporaryDir fixture;
+        QFile held(fixture.path() + "/a space.txt");
+        QVERIFY(held.open(QIODevice::WriteOnly));
+        held.close();
+        const bool folds = QFileInfo::exists(fixture.path() + "/A SPACE.txt");
+        Portal portal;
+        QVERIFY(portal.start(server));
+        QVariantMap options { { "files",
+            QVariant::fromValue(QList<QByteArray> { QByteArray("a space.txt\0", 12),
+                QByteArray("A SPACE.txt\0", 12) }) } };
+        auto pending = call("SaveFiles", options);
+        QTRY_VERIFY(portal.current());
+        portal.current()->finish({ fixture.path() });
+        QTRY_VERIFY(!portal.current());
+        const auto uris = qdbus_cast<QVariantMap>(completed(pending).arguments()[1])["uris"].toStringList();
+        QCOMPARE(uris.size(), 2);
+        // The exact name is taken. A name that differs only in case is taken
+        // only where the folder folds case, and then numbered past the pending
+        // `a space (1).txt` too.
+        QCOMPARE(QUrl(uris[0]).fileName(), "a space (1).txt");
+        QCOMPARE(QUrl(uris[1]).fileName(), folds ? "A SPACE (2).txt" : "A SPACE.txt");
+    }
     void cancelsDisconnectedSenders()
     {
         Portal portal;
