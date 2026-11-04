@@ -16,6 +16,9 @@ FocusableControl {
     property string caption: ""
     property string key: ""
     property bool on: false
+    /// Draws the key as caps after the label, for a control whose key is part
+    /// of what it says; otherwise the key is in the tooltip only.
+    property bool showsKey: false
     /// The ink of the label and of a drawn mark.
     readonly property color ink: chip.usable ? Theme.foreground : Theme.dim
     signal clicked
@@ -31,7 +34,7 @@ FocusableControl {
     Accessible.checkable: on
     Accessible.checked: on
 
-    implicitWidth: Math.max(Theme.controlHeight, captionText.implicitWidth + 2 * Theme.spacingS)
+    implicitWidth: Math.max(Theme.controlHeight, face.implicitWidth + 2 * Theme.spacingS)
     implicitHeight: Theme.controlHeight
     width: implicitWidth
     height: implicitHeight
@@ -45,15 +48,25 @@ FocusableControl {
     border.width: 1
     border.color: chip.lit ? Theme.accent : Theme.line
 
-    Text {
-        id: captionText
-        objectName: "chipLabel"
+    Row {
+        id: face
         anchors.centerIn: parent
-        text: chip.label
-        textFormat: Text.PlainText
-        color: chip.ink
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontBody
-        renderType: Text.NativeRendering
+        spacing: Theme.spacingS
+
+        Text {
+            objectName: "chipLabel"
+            anchors.verticalCenter: parent.verticalCenter
+            text: chip.label
+            textFormat: Text.PlainText
+            color: chip.ink
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontBody
+            renderType: Text.NativeRendering
+        }
+        KeyCaps {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: chip.showsKey && chip.key !== ""
+            keys: chip.key
+        }
     }
 }

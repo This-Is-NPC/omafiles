@@ -153,13 +153,53 @@ void TabState::setSelectedNode(const QString &id)
 // every file manager with a selection treats walking into another directory.
 void TabState::setCwd(const QString &path)
 {
+    const QString was = m_cwd;
+    if (!moveTo(path))
+        return;
+    m_back.append(was);
+    m_forward.clear();
+    emit historyChanged();
+}
+
+bool TabState::moveTo(const QString &path)
+{
     const QString next = standingPath(path);
     if (next.isEmpty() || m_cwd == next)
-        return;
+        return false;
     m_cwd = next;
     setMarked({});
     emit cwdChanged();
     emit titleChanged();
+    return true;
+}
+
+void TabState::goBack()
+{
+    step(m_back, m_forward);
+}
+
+void TabState::goForward()
+{
+    step(m_forward, m_back);
+}
+
+// A folder that is gone by now is passed over, so one step always moves.
+void TabState::step(QStringList &from, QStringList &to)
+{
+    if (from.isEmpty())
+        return;
+    setSelectedTag(QString());
+    setPattern(QString());
+    setRecent(false);
+    while (!from.isEmpty()) {
+        const QString was = m_cwd;
+        setCursorPath(was);
+        if (moveTo(from.takeLast())) {
+            to.append(was);
+            break;
+        }
+    }
+    emit historyChanged();
 }
 
 void TabState::toggleMark(const QString &path)

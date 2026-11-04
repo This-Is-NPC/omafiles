@@ -32,6 +32,9 @@ class TabState : public QObject
     /// Resolved as it is set: the kernel's name where it gives one, otherwise
     /// the path as typed, made absolute.
     Q_PROPERTY(QString cwd READ cwd WRITE setCwd NOTIFY cwdChanged)
+    /// Whether `goBack` and `goForward` have a folder to go to.
+    Q_PROPERTY(bool canGoBack READ canGoBack NOTIFY historyChanged)
+    Q_PROPERTY(bool canGoForward READ canGoForward NOTIFY historyChanged)
     /// The tags a `tags` tab has walked into, in the order they were walked.
     ///
     /// A list and not a set, though the question it asks is one: `#work/#draft`
@@ -98,6 +101,15 @@ public:
     void setSelectedNode(const QString &id);
     void setCwd(const QString &path);
     void setLocation(const QString &directory, const QString &cursor);
+
+    /// The folders this tab stood in before and after the current one. Every
+    /// change of `cwd` goes on the back list and empties the forward one; going
+    /// back or forward leaves a tag, a search or the recent list first, so the
+    /// step lands in the folder itself.
+    bool canGoBack() const { return !m_back.isEmpty(); }
+    bool canGoForward() const { return !m_forward.isEmpty(); }
+    Q_INVOKABLE void goBack();
+    Q_INVOKABLE void goForward();
     void setFilter(const QString &text);
     void setViewMode(const QString &mode);
     void setShowHidden(bool show);
@@ -132,6 +144,7 @@ signals:
     void selectedTagChanged();
     void selectedNodeChanged();
     void cwdChanged();
+    void historyChanged();
     void facetsChanged();
     void filterChanged();
     void criteriaChanged();
@@ -147,6 +160,8 @@ private:
     QString m_selectedTag;
     QString m_selectedNode;
     QString m_cwd;
+    QStringList m_back;
+    QStringList m_forward;
     QStringList m_facets;
     bool m_untagged = false;
     QString m_filter;
@@ -159,6 +174,9 @@ private:
     bool m_sortAscending = true;
     QSet<QString> m_marked;
     QString m_cursorPath;
+
+    bool moveTo(const QString &path);
+    void step(QStringList &from, QStringList &to);
 };
 
 class PaneState : public QObject
