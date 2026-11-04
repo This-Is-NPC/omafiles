@@ -13,6 +13,7 @@
 #include <QScopeGuard>
 #include <QQmlComponent>
 #include <QSet>
+#include <QTextLayout>
 #include <memory>
 #include <QtConcurrentRun>
 #include <QWheelEvent>
@@ -752,6 +753,14 @@ private slots:
     void pathSegmentsNavigate();
     void toolbarDetailsToggles();
     void backAndForwardWalkTheHistory();
+
+    // The details dock.
+    void detailsDockTogglesWithKey();
+    void detailsPathBreaksAfterSlash();
+    void detailsTagChipRemoveIsItsOwnTarget();
+    void dockActionsRunTheirCommands();
+    void detailsDockYieldsInShortWindows();
+    void detailsModeRowDropsWhenNarrow();
 
 private:
     QQuickWindow *window() const;
@@ -3261,9 +3270,8 @@ void TestStudio::drawsEveryView()
 {
     QObject *root = m_engine->rootObjects().first();
 
-    // The pane's content area: below the header and tab strip, between the
-    // sidebar and the details, above the status line. Generous margins, so it
-    // holds no chrome.
+    // The pane's content area: below the header and tab strip, right of the
+    // sidebar, above the details dock. Generous margins, so it holds no chrome.
     const auto contentInk = [this] {
         settle();
         QTest::qWait(60);
@@ -3271,7 +3279,7 @@ void TestStudio::drawsEveryView()
         auto *pane = itemsNamed(QStringLiteral("pane")).first();
         const QRect area(int(pane->mapToScene(QPointF()).x()) + 20, 110,
                          qMax(10, int(pane->width()) - 40),
-                         qMax(10, shot.height() - 110 - 60));
+                         qMax(10, int(pane->mapToScene(QPointF(0, pane->height())).y()) - 110 - 20));
         QSet<QRgb> seen;
         int marks = 0;
         const QRgb blank = shot.pixel(area.right() - 2, area.bottom() - 2);
@@ -9844,6 +9852,279 @@ void TestStudio::sidebarRowsHaveNoListRing()
     key(Qt::Key_Escape);
 }
 
+static QRectF sceneRect(QQuickItem *item)
+{
+    return QRectF(item->mapToScene(QPointF()), item->size());
+}
+
+static void clickItem(QQuickWindow *window, QQuickItem *item, QPointF at)
+{
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, item->mapToScene(at).toPoint());
+}
+
+// The details dock sits under the panes across their whole width, beside the
+// sidebar and behind one hairline; `I` hides it and gives the panes the room.
+void TestStudio::detailsDockTogglesWithKey()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] {
+        if (m_workspace->paneCount() > 1)
+            QMetaObject::invokeMethod(m_workspace, "closePane", Q_ARG(int, 1));
+        window()->resize(original);
+        settle();
+    });
+    window()->resize(1180, 720);
+    focusRow(QStringLiteral("one.txt"));
+    auto *dock = itemsNamed(QStringLiteral("detailsPanel")).first();
+    auto *sidebar = itemsNamed(QStringLiteral("sidebar")).first();
+    QTRY_VERIFY(dock->isVisible() && sidebar->isVisible());
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    const auto under = [&] {
+        const QList<QQuickItem *> panes = itemsNamed(QStringLiteral("pane"));
+        const QRectF first = sceneRect(panes.first());
+        const QRectF last = sceneRect(panes.last());
+        const QRectF rect = sceneRect(dock);
+        QCOMPARE(rect.left(), first.left());
+        QCOMPARE(rect.right(), last.right());
+        QCOMPARE(rect.right(), qreal(window()->width()));
+        QCOMPARE(rect.top(), first.bottom() + 1);
+        QVERIFY(rect.left() >= sceneRect(sidebar).right());
+        QCOMPARE(sceneRect(sidebar).bottom(), rect.bottom());
+    };
+    under();
+    if (QTest::currentTestFailed()) return;
+    const qreal listed = itemsNamed(QStringLiteral("pane")).first()->height();
+
+    key('I');
+    QTRY_VERIFY(!dock->isVisible());
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    QCOMPARE(itemsNamed(QStringLiteral("pane")).first()->height(), listed + dock->height() + 1);
+    key('I');
+    QTRY_VERIFY(dock->isVisible());
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    under();
+    if (QTest::currentTestFailed()) return;
+
+    QMetaObject::invokeMethod(m_workspace, "splitRight", Q_ARG(QString, QStringLiteral("files")));
+    settle();
+    QCOMPARE(itemsNamed(QStringLiteral("pane")).size(), 2);
+    QTRY_VERIFY(dock->isVisible());
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    under();
+}
+
+// The path wraps only after a `/`, never inside a name, and a path too long for
+// three lines loses folders from its middle, not its name.
+void TestStudio::detailsPathBreaksAfterSlash()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); settle(); });
+    window()->resize(1180, 720);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const auto linesOf = [&](QQuickItem *text) {
+        QTextLayout layout(text->property("text").toString(), text->property("font").value<QFont>());
+        QTextOption option;
+        option.setWrapMode(QTextOption::WrapMode(text->property("wrapMode").toInt()));
+        layout.setTextOption(option);
+        QStringList lines;
+        layout.beginLayout();
+        for (QTextLine line = layout.createLine(); line.isValid(); line = layout.createLine()) {
+            line.setLineWidth(text->width());
+            lines.append(layout.text().mid(line.textStart(), line.textLength())
+                             .remove(QChar(0x200B)).remove(QChar(0x2060)));
+        }
+        layout.endLayout();
+        return lines;
+    };
+    for (int depth : {3, 12}) {
+        QString folder = directory.path();
+        for (int level = 0; level < depth; ++level)
+            folder += QStringLiteral("/level-%1-of-the-long-folder").arg(level);
+        QVERIFY(QDir().mkpath(folder));
+        QFile file(folder + QStringLiteral("/the-file-at-the-end.txt"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.close();
+        tab()->setCwd(folder);
+        focusRow(QStringLiteral("the-file-at-the-end.txt"));
+        auto *path = itemsNamed(QStringLiteral("detailsPath")).first();
+        QTRY_VERIFY(path->isVisible());
+        const QStringList lines = linesOf(path);
+        QCOMPARE(lines.size(), path->property("lineCount").toInt());
+        QVERIFY2(lines.size() > 1 && lines.size() <= 3, qPrintable(lines.join(QLatin1Char('|'))));
+        for (int line = 0; line + 1 < lines.size(); ++line)
+            QVERIFY2(lines.at(line).endsWith(QLatin1Char('/')), qPrintable(lines.join(QLatin1Char('|'))));
+        QVERIFY(lines.last().endsWith(QStringLiteral("/the-file-at-the-end.txt")));
+        QVERIFY(!path->property("truncated").toBool());
+        const QString shown = lines.join(QString());
+        if (depth == 3) {
+            QCOMPARE(shown, file.fileName());
+        } else {
+            QVERIFY2(shown.contains(QStringLiteral("/…/")), qPrintable(shown));
+            QVERIFY(shown.startsWith(directory.path().section(QLatin1Char('/'), 0, 1)));
+        }
+    }
+}
+
+// The body of a details tag chip opens the tag's view; only its × and Delete
+// remove the tag.
+void TestStudio::detailsTagChipRemoveIsItsOwnTarget()
+{
+    const QString one = m_tree.filePath(QStringLiteral("one.txt"));
+    const auto chipFor = [&]() -> QQuickItem * {
+        focusRow(QStringLiteral("one.txt"));
+        if (!QQuickTest::qWaitForPolish(window(), asyncTimeout)) return nullptr;
+        window()->grabWindow();
+        for (auto *chip : itemsNamed(QStringLiteral("detailsTagChip")))
+            if (chip->isVisible() && chip->property("modelData").toString() == QLatin1String("work"))
+                return chip;
+        return nullptr;
+    };
+    const QStringList removed{QStringLiteral("tag"), QStringLiteral("rm"), QStringLiteral("--tag"),
+                              QStringLiteral("work"), QStringLiteral("--"), one};
+
+    QQuickItem *chip = chipFor();
+    QVERIFY(chip);
+    verbRuns().clear();
+    clickItem(window(), chip, QPointF(Theme::spacingXs() + 2, chip->height() / 2));
+    settle();
+    QCOMPARE(tab()->selectedTag(), QStringLiteral("work"));
+    QVERIFY(verbRuns().isEmpty());
+    tab()->setSelectedTag(QString());
+    settle();
+
+    chip = chipFor();
+    QVERIFY(chip);
+    auto *cross = chip->property("removeTarget").value<QQuickItem *>();
+    QVERIFY(cross && cross->isVisible());
+    clickItem(window(), cross, QPointF(cross->width() / 2, cross->height() / 2));
+    settle();
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(), removed);
+    QCOMPARE(tab()->selectedTag(), QString());
+
+    verbRuns().clear();
+    chip = chipFor();
+    QVERIFY(chip);
+    chip->forceActiveFocus(Qt::TabFocusReason);
+    QTRY_VERIFY(chip->hasActiveFocus());
+    key(Qt::Key_Return);
+    QCOMPARE(tab()->selectedTag(), QStringLiteral("work"));
+    QVERIFY(verbRuns().isEmpty());
+    tab()->setSelectedTag(QString());
+    settle();
+
+    chip = chipFor();
+    QVERIFY(chip);
+    chip->forceActiveFocus(Qt::TabFocusReason);
+    QTRY_VERIFY(chip->hasActiveFocus());
+    key(Qt::Key_Delete);
+    QCOMPARE(verbRuns().size(), 1);
+    QCOMPARE(verbRuns().first(), removed);
+    QCOMPARE(tab()->selectedTag(), QString());
+    QMetaObject::invokeMethod(window(), "takeFocus");
+}
+
+// A window too short to keep `listLeast` of panes above the details dock drops
+// the dock, and it comes back when the window is tall again.
+void TestStudio::detailsDockYieldsInShortWindows()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); settle(); });
+    auto *dock = itemsNamed(QStringLiteral("detailsPanel")).first();
+    const auto sized = [&](int height) {
+        window()->resize(1180, height);
+        settle();
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    };
+    sized(720);
+    QTRY_VERIFY(dock->isVisible());
+    QVERIFY(itemsNamed(QStringLiteral("pane")).first()->height() >= Theme::listLeast());
+    sized(320);
+    QTRY_VERIFY(!dock->isVisible());
+    QVERIFY(itemsNamed(QStringLiteral("pane")).first()->height() >= Theme::listLeast());
+    QVERIFY(window()->property("detailsShown").toBool());
+    sized(720);
+    QTRY_VERIFY(dock->isVisible());
+}
+
+// Where the dock's file column cannot hold the permission bits, their row is
+// dropped whole rather than cut at the window's edge.
+void TestStudio::detailsModeRowDropsWhenNarrow()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { key(Qt::Key_Escape); window()->resize(original); settle(); });
+    window()->resize(1180, 720);
+    focusRow(QStringLiteral("one.txt"));
+    auto *dock = itemsNamed(QStringLiteral("detailsPanel")).first();
+    auto *bits = itemNamedWithin(dock, QStringLiteral("detailsMode"));
+    auto *file = itemNamedWithin(dock, QStringLiteral("detailsFile"));
+    QVERIFY(bits && file);
+    QTRY_VERIFY(bits->isVisible());
+    // Below 480 the sidebar comes back only while `t` walks it, beside a
+    // narrow dock.
+    window()->resize(420, 720);
+    settle();
+    key('t');
+    QVERIFY(itemsNamed(QStringLiteral("sidebar")).first()->isVisible());
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    QVERIFY(dock->isVisible());
+    QTRY_VERIFY(!bits->isVisible());
+    key(Qt::Key_Escape);
+    window()->resize(1180, 720);
+    settle();
+    QTRY_VERIFY(bits->isVisible());
+    QVERIFY(bits->mapToScene(QPointF(bits->width(), 0)).x()
+            <= file->mapToScene(QPointF(file->width(), 0)).x());
+}
+
+// Open, Open with and Rename in the dock run what `l`, the row menu and `r` run.
+void TestStudio::dockActionsRunTheirCommands()
+{
+    const QString two = m_tree.filePath(QStringLiteral("two.md"));
+    focusRow(QStringLiteral("two.md"));
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    window()->grabWindow();
+    const auto button = [&](const QString &name) {
+        auto *found = itemsNamed(name).first();
+        return found && found->isVisible() && found->isEnabled() ? found : nullptr;
+    };
+    const auto press = [&](QQuickItem *item) {
+        clickItem(window(), item, QPointF(item->width() / 2, item->height() / 2));
+        settle();
+    };
+
+    auto *open = button(QStringLiteral("detailsOpen"));
+    QVERIFY(open);
+    QCOMPARE(open->property("key").toString(), QStringLiteral("l"));
+    openRequests().clear();
+    press(open);
+    QCOMPARE(openRequests().size(), 1);
+    QVERIFY(openRequests().first().kind == OpenRequest::Open);
+    QCOMPARE(openRequests().first().path, two);
+
+    auto *rename = button(QStringLiteral("detailsRename"));
+    QVERIFY(rename);
+    QCOMPARE(rename->property("key").toString(), QStringLiteral("r"));
+    press(rename);
+    QCOMPARE(window()->property("prompt").toString(), QStringLiteral("rename"));
+    QCOMPARE(window()->property("promptPath").toString(), two);
+    key(Qt::Key_Escape);
+    QCOMPARE(window()->property("prompt").toString(), QString());
+
+    auto *openWith = itemsNamed(QStringLiteral("detailsOpenWith")).first();
+    QCOMPARE(openWith->isEnabled(), m_index->canOpenWith());
+    if (!m_index->canOpenWith())
+        return;
+    m_index->clearNotice();
+    press(openWith);
+    auto *menu = itemsNamed(QStringLiteral("openWithMenu")).first();
+    QVERIFY2(menu->isVisible() ? menu->property("targetPath").toString() == two
+                               : m_index->notice() == QStringLiteral("no application registered for two.md"),
+             qPrintable(m_index->notice()));
+    key(Qt::Key_Escape);
+}
+
 QTEST_MAIN(TestStudio)
 // A search path entry that is not UTF-8 is skipped, the way the basedir spec
 // ignores an invalid one: decoded, `\xff` names the U+FFFD directory beside it.
@@ -11826,11 +12107,14 @@ void TestStudio::everyScrollingViewHasAVisibleBar()
     const auto restore = qScopeGuard([&] { window()->resize(original); });
     QTemporaryDir directory;
     QVERIFY(openLongFolder(directory, 500));
-    // Enough tags on the cursor's file that the details panel scrolls too.
+    // Enough tags on the cursor's file that the details dock scrolls too.
     const auto restoreIndex = qScopeGuard([&] { writeIndex(); m_index->reload(); settle(); });
     putIndexRow(directory.filePath(QStringLiteral("row-000.txt")), manyTags());
     m_index->reload();
-    window()->resize(1180, 240);
+    // Short enough for the list and the sidebar to scroll, tall enough to leave
+    // the list rows beside the details dock, whose tags column scrolls with
+    // that many tags.
+    window()->resize(1180, 480);
     settle();
     focusRow(QStringLiteral("row-000.txt"));
     QStringList checked;
@@ -12105,8 +12389,10 @@ void TestStudio::routesSidebarKeysByScrollRange_data()
     QTest::addColumn<bool>("overflowing");
     QTest::addColumn<bool>("tooltip");
     QTest::addColumn<int>("navigationKey");
+    // At 920 the details dock keeps its tags column beside a sidebar of up to
+    // 264 px.
     for (bool pendingRefresh : {false, true})
-        for (int width : {1180, 640})
+        for (int width : {1180, 920})
             for (bool overflowing : {false, true})
                 for (bool tooltip : {false, true})
                     for (auto code : {Qt::Key_Up, Qt::Key_Down, Qt::Key_PageUp,
@@ -12126,12 +12412,19 @@ void TestStudio::routesSidebarKeysByScrollRange()
     QFETCH(int, navigationKey);
     const QSize original = window()->size();
     const auto restore = qScopeGuard([&] { window()->resize(original); });
-    window()->resize(width, overflowing ? 240 : 720);
+    window()->resize(width, 720);
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     for (int i = 0; i < 120; ++i) {
         QFile file(directory.filePath(QString("file-%1.txt").arg(i, 3, 10, QLatin1Char('0'))));
         QVERIFY(file.open(QIODevice::WriteOnly));
+    }
+    // The dock's tags column overflows with many tags on the cursor's file. A
+    // tag chip in it is the control there; elsewhere the permission bits, which
+    // sit outside any scroll, are.
+    if (overflowing) {
+        putIndexRow(directory.filePath(QStringLiteral("file-049.txt")), manyTags());
+        m_index->reload();
     }
     tab()->setCwd(directory.path());
     auto *folder = filesRoot()->property("folder").value<QObject *>();
@@ -12142,8 +12435,16 @@ void TestStudio::routesSidebarKeysByScrollRange()
     auto *scroll = details->findChild<QQuickItem *>("detailsScroll");
     auto *bits = details->findChild<QQuickItem *>("detailsMode");
     QVERIFY(scroll && bits);
-    auto *control = bits->property("firstControl").value<QQuickItem *>();
-    QVERIFY(control);
+    // A chip is made again whenever the row's tags are read again.
+    const auto findControl = [&]() -> QQuickItem * {
+        if (!overflowing)
+            return bits->property("firstControl").value<QQuickItem *>();
+        for (auto *chip : itemsNamed(QStringLiteral("detailsTagChip")))
+            if (chip->isVisible() && scroll->isAncestorOf(chip)) return chip;
+        return nullptr;
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(findControl(), asyncTimeout);
+    QQuickItem *control = findControl();
     QTRY_VERIFY_WITH_TIMEOUT(control->isVisible() && control->isEnabled(), asyncTimeout);
     QSignalSpy publication(folder, SIGNAL(loadingChanged()));
     QVERIFY(publication.isValid());
@@ -12156,7 +12457,8 @@ void TestStudio::routesSidebarKeysByScrollRange()
     // A pending publication can disable this control and legitimately move focus.
     settle();
     QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
-    QTRY_VERIFY_WITH_TIMEOUT(control->isVisible() && control->isEnabled(), asyncTimeout);
+    QTRY_VERIFY_WITH_TIMEOUT(findControl() && findControl()->isEnabled(), asyncTimeout);
+    control = findControl();
     if (pendingRefresh) QVERIFY(publication.size() >= 2);
     QCOMPARE(cursor(), 50);
     control->forceActiveFocus();
@@ -12181,10 +12483,12 @@ void TestStudio::routesSidebarKeysByScrollRange()
         if (tip) QMetaObject::invokeMethod(tip, "cancel");
         QTest::mouseMove(window(), QPoint(2, 2));
     });
-    key(Qt::Key_Right);
-    QCOMPARE(window()->activeFocusItem(), bits->property("controls").toList().at(1).value<QQuickItem *>());
-    key(Qt::Key_Left);
-    QVERIFY(control->hasActiveFocus());
+    if (!overflowing) {
+        key(Qt::Key_Right);
+        QCOMPARE(window()->activeFocusItem(), bits->property("controls").toList().at(1).value<QQuickItem *>());
+        key(Qt::Key_Left);
+        QVERIFY(control->hasActiveFocus());
+    }
     const qreal maximum = qMax(0.0, scroll->property("contentHeight").toReal() - scroll->height());
     scroll->setProperty("contentY", maximum / 2);
     const qreal before = scroll->property("contentY").toReal();
@@ -13194,8 +13498,6 @@ void TestStudio::alignsPanelRowsOnOneEdgeAndOneCentre()
     };
     QCOMPARE(headingsIn(sidebar), (QStringList{"Places", "Tags", "Views"}));
     QVERIFY(!QTest::currentTestFailed());
-    QCOMPARE(headingsIn(details), (QStringList{"details"}));
-    QVERIFY(!QTest::currentTestFailed());
     const qreal edge = left(sidebar) + omafiles::Theme::inset();
     const qreal text = edge + omafiles::Theme::iconSize() + omafiles::Theme::iconGap();
 
@@ -13230,18 +13532,20 @@ void TestStudio::alignsPanelRowsOnOneEdgeAndOneCentre()
     auto *icon = itemNamedWithin(details, QStringLiteral("detailsIcon"));
     auto *name = itemNamedWithin(details, QStringLiteral("detailsName"));
     QVERIFY(icon && name);
-    const qreal detailsEdge = left(details) + omafiles::Theme::inset();
-    QCOMPARE(left(icon), detailsEdge);
-    QCOMPARE(left(name), detailsEdge + omafiles::Theme::iconSize() + omafiles::Theme::iconGap());
-    QCOMPARE(middle(name), middle(icon));
-
-    // The permission bits fit inside the panel's inset at its default width.
+    // In the dock, the name starts `spacingL` right of the icon's square, on
+    // its top edge, and the permission bits end inside the file column.
+    auto *square = icon->parentItem();
+    QCOMPARE(left(square), left(details) + omafiles::Theme::spacingL());
+    QCOMPARE(square->width(), qreal(48));
+    QCOMPARE(middle(icon), middle(square));
+    QCOMPARE(left(name), left(square) + square->width() + omafiles::Theme::spacingL());
+    QCOMPARE(name->mapToScene(QPointF()).y(), square->mapToScene(QPointF()).y());
     auto *bits = itemNamedWithin(details, QStringLiteral("detailsMode"));
-    QVERIFY(bits && bits->isVisible());
-    QCOMPARE(details->width(), qreal(264));
-    QVERIFY2(left(bits) + bits->width() <= left(details) + details->width() - omafiles::Theme::inset(),
-             qPrintable(QStringLiteral("mode bits end at %1 in a panel ending at %2")
-                            .arg(left(bits) + bits->width()).arg(left(details) + details->width())));
+    auto *file = itemNamedWithin(details, QStringLiteral("detailsFile"));
+    QVERIFY(bits && bits->isVisible() && file);
+    QVERIFY2(left(bits) + bits->width() <= left(file) + file->width() - omafiles::Theme::spacingL(),
+             qPrintable(QStringLiteral("mode bits end at %1 in a column ending at %2")
+                            .arg(left(bits) + bits->width()).arg(left(file) + file->width())));
 }
 
 // What is selected sits in its own panel, so walking rows of every kind never
@@ -13285,9 +13589,10 @@ void TestStudio::keepsNavigationStillWhileTheCursorMoves()
     }
 }
 
-// The details panel drops below a 640 px pane and the sidebar below 480; the
-// sidebar comes back while its key walks it. A split window has one sidebar,
-// on the left, acting on the focused pane, and Tab meets it before the panes.
+// The sidebar drops below a 480 px pane and comes back while its key walks it;
+// the details dock under the panes stays at any width. A split window has one
+// sidebar, on the left, acting on the focused pane, and Tab meets it before the
+// panes, and the panes before the dock.
 void TestStudio::dropsEachPanelInItsOwnNarrowPane()
 {
     const QSize original = window()->size();
@@ -13307,10 +13612,8 @@ void TestStudio::dropsEachPanelInItsOwnNarrowPane()
     shown(1180);
     QVERIFY(sidebar->isVisible() && details->isVisible());
     QVERIFY(sidebar->mapToScene(QPointF()).x() < itemsNamed(QStringLiteral("pane")).first()->mapToScene(QPointF()).x());
-    shown(639);
-    QVERIFY(sidebar->isVisible());
-    QVERIFY(!details->isVisible());
     shown(479);
+    QVERIFY(details->isVisible());
     QVERIFY(!sidebar->isVisible());
     key('t');
     QVERIFY(sidebar->isVisible());
@@ -13342,7 +13645,7 @@ void TestStudio::dropsEachPanelInItsOwnNarrowPane()
     QCOMPARE(itemsNamed(QStringLiteral("pane")).size(), 2);
     QCOMPARE(itemsNamed(QStringLiteral("sidebar")).size(), 1);
     QVERIFY(sidebar->isVisible());
-    QVERIFY(!details->isVisible());
+    QVERIFY(details->isVisible());
     for (int pane : {1, 0}) {
         m_workspace->setFocusedPane(pane);
         settle();
@@ -16832,9 +17135,10 @@ void TestStudio::traversesSidebarActions()
     if (size.width() < 640) { QMetaObject::invokeMethod(window(), "focusTags"); settle(); }
     auto *details = itemsNamed("detailsMode").first();
     QList<QPair<QString, QString>> controls;
-    // Below a 640 px pane the details panel is dropped, and its controls with it.
-    QCOMPARE(itemsNamed("detailsPanel").first()->isVisible(), size.width() >= 640);
-    if (size.width() >= 640) {
+    // A short window drops the details dock, and its controls with it.
+    const bool docked = size.height() >= 600;
+    QCOMPARE(itemsNamed("detailsPanel").first()->isVisible(), docked);
+    if (docked) {
         for (int bit = 0; bit < 9; ++bit) controls.append(QPair<QString, QString>{"modeBit" + QString::number(bit), ""});
         for (auto *chip : itemsNamed("detailsTagChip")) if (chip->isVisible()) controls.append(QPair<QString, QString>{"detailsTagChip", chip->property("modelData").toString()});
     }
@@ -16884,7 +17188,10 @@ void TestStudio::traversesSidebarActions()
             if (identity.first.startsWith("modeBit")) {
                 QCOMPARE(verbRuns().size(), runs.size() + 1);
                 QCOMPARE(details->property("value").toInt(), value);
-            } else if (identity.first == "detailsTagChip" || identity.first == "editTagsButton") {
+            } else if (identity.first == "detailsTagChip") {
+                QCOMPARE(tab()->selectedTag(), identity.second);
+                tab()->setSelectedTag(""); settle();
+            } else if (identity.first == "editTagsButton") {
                 QVERIFY(itemsNamed("tagSheet").first()->isVisible()); key(Qt::Key_Escape);
             } else if (identity.first == "sidebarTags") {
                 const int index = control->property("currentIndex").toInt();
@@ -17342,10 +17649,9 @@ void TestStudio::givesTheNameColumnPriority()
     QVERIFY(chosen.contains("tags") && chosen.contains("size") && chosen.contains("mtime"));
     QList<qreal> lists;
     // Window widths and pane counts that give lists from 100 to 1340 px; the
-    // sidebar and the details panel take 530 px beside a single pane, and the
-    // list's scroll bar 8.
-    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(1086, 1), qMakePair(1180, 1),
-                                         qMakePair(1593, 1), qMakePair(1878, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
+    // sidebar takes 265 px beside a single pane, and the list's scroll bar 8.
+    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(821, 1), qMakePair(1180, 1),
+                                         qMakePair(1328, 1), qMakePair(1613, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
         window()->resize(layout.first, 600);
         if (layout.second == 2 && m_workspace->paneCount() == 1) key(Qt::Key_Backslash, Qt::ControlModifier);
         QCOMPARE(m_workspace->paneCount(), layout.second);
@@ -17936,9 +18242,10 @@ void TestStudio::mirrorsMenuTraversal()
 void TestStudio::reversesFreshControlGroups_data()
 {
     QTest::addColumn<bool>("permissions"); QTest::addColumn<QSize>("size");
-    // The details panel, and the permission bits in it, show from a 640 px pane.
+    // The details dock shows where the window keeps `listLeast` of list above
+    // it, and its permission bits where its file column holds them.
     for (bool permissions : {false, true})
-        for (const QSize size : {QSize(1200, 800), QSize(permissions ? 640 : 420, 300)})
+        for (const QSize size : {QSize(1200, 800), QSize(permissions ? 760 : 420, permissions ? 480 : 300)})
             QTest::newRow(qPrintable(QString::number(permissions) + QString::number(size.width()))) << permissions << size;
 }
 
@@ -20483,8 +20790,8 @@ void TestStudio::pathSegmentsNavigate()
     QCOMPARE(pathLabels(), QStringList{name});
 }
 
-// The Details toggle and `I` show and hide the details panel where it fits;
-// where it does not, the toggle is not drawn.
+// The Details toggle and `I` show and hide the details dock; a toolbar too
+// narrow for the path drops the toggle, and a short window the dock.
 void TestStudio::toolbarDetailsToggles()
 {
     const QSize original = window()->size();
@@ -20505,7 +20812,7 @@ void TestStudio::toolbarDetailsToggles()
     QVERIFY(toggle->property("on").toBool());
     window()->resize(420, 300);
     settle();
-    QVERIFY(!toggle->isVisible());
+    QVERIFY(!toggle->isVisible() && !panel->isVisible());
 }
 
 // Back and forward walk the folders a tab stood in, with H and L and the

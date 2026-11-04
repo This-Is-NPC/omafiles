@@ -61,6 +61,8 @@ class Theme : public QObject
     Q_PROPERTY(int controlHeight READ controlHeight CONSTANT)
     Q_PROPERTY(int chipHeight READ chipHeight CONSTANT)
     Q_PROPERTY(int tagSwatch READ tagSwatch CONSTANT)
+    Q_PROPERTY(int removeGlyph READ removeGlyph CONSTANT)
+    Q_PROPERTY(int listLeast READ listLeast CONSTANT)
     Q_PROPERTY(int iconSize READ iconSize CONSTANT)
     Q_PROPERTY(int iconGap READ iconGap CONSTANT)
     Q_PROPERTY(int focusRing READ focusRing CONSTANT)
@@ -127,6 +129,11 @@ public:
     static constexpr int chipHeight() { return 18; }
     // The side of a tag's colour square.
     static constexpr int tagSwatch() { return 6; }
+    // The × that removes a tag from a details chip.
+    static constexpr int removeGlyph() { return 12; }
+    // The least height the panes keep above the details dock: a column
+    // heading and four rows.
+    static constexpr int listLeast() { return 136; }
     // A row's icon and the gap between it and the row's text.
     static constexpr int iconSize() { return 16; }
     static constexpr int iconGap() { return spacingS(); }
