@@ -414,12 +414,13 @@ void GraphItem::paint(QPainter *painter)
 
     // The map is drawn in the desktop's colours, like every other panel: tags
     // in the accent, files in the foreground, everything faint in the muted
-    // one. The fallbacks stand for the moment between construction and the
-    // binding that hands this item the theme.
-    const QColor accent = m_theme ? m_theme->accent() : QColor(QStringLiteral("#7aa2f7"));
-    const QColor ink = m_theme ? m_theme->foreground() : QColor(QStringLiteral("#c0caf5"));
-    const QColor faint = m_theme ? m_theme->dim() : QColor(QStringLiteral("#565f89"));
-    const QColor backdrop = m_theme ? m_theme->base() : QColor(QStringLiteral("#16161e"));
+    // one. Without a theme there is nothing to draw it in.
+    if (!m_theme)
+        return;
+    const QColor accent = m_theme->accent();
+    const QColor ink = m_theme->foreground();
+    const QColor faint = m_theme->dim();
+    const QColor backdrop = m_theme->base();
     const auto wash = [](QColor colour, int alpha) {
         colour.setAlpha(alpha);
         return colour;
@@ -529,7 +530,7 @@ void GraphItem::paint(QPainter *painter)
         QColor chipBg = wash(backdrop, live ? 240 : 90);
         QColor chipBorder = live ? accent : faint;
         QColor chipInk = live ? ink : faint;
-        const int rounding = m_theme ? m_theme->rounding() : 0;
+        const int rounding = m_theme->rounding();
         painter->setPen(QPen(chipBorder, 1));
         painter->setBrush(chipBg);
         painter->drawRoundedRect(chip, rounding, rounding);

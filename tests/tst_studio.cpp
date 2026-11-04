@@ -721,6 +721,7 @@ private slots:
     void tagColoursUseThePalette_data();
     void tagColoursUseThePalette();
     void chipShowsTagColour();
+    void graphPaintsOnlyInThemeColours();
     void everyScrollingViewHasAVisibleBar();
     void scrollBarDragReachesEnd();
     void troughClickPages();
@@ -3455,7 +3456,7 @@ void TestStudio::dressesTheGraphInTheDesktopTheme()
     QVERIFY(graph);
 
     QObject *dressed = graph->property("theme").value<QObject *>();
-    QVERIFY2(dressed, "the graph has no theme, so it draws in hardcoded colours");
+    QVERIFY2(dressed, "the graph has no theme, so it draws nothing");
     QCOMPARE(dressed, static_cast<QObject *>(m_theme));
 
     // And it draws in it. Holding the theme and filling every node from a
@@ -9217,6 +9218,31 @@ void TestStudio::dimTextHasContrast()
     QVERIFY(theme);
     const qreal ratio = omafiles::contrast(theme->dim(), theme->chrome());
     QVERIFY2(ratio >= 4.5, qPrintable(QStringLiteral("dim on chrome is %1:1").arg(ratio)));
+}
+
+// The graph draws in the theme's colours and in no others: with no theme it
+// leaves what is under it, and with one its backdrop is that theme's base.
+void TestStudio::graphPaintsOnlyInThemeColours()
+{
+    GraphItem graph;
+    graph.setSize(QSizeF(32, 32));
+    const QColor untouched(1, 2, 3);
+    const auto painted = [&] {
+        QImage image(32, 32, QImage::Format_RGB32);
+        image.fill(untouched);
+        QPainter painter(&image);
+        graph.paint(&painter);
+        painter.end();
+        return image.pixelColor(0, 0);
+    };
+    QCOMPARE(painted(), untouched);
+    QTemporaryDir state;
+    QVERIFY(state.isValid());
+    const auto theme = themeFrom(state, QByteArrayLiteral("background = \"#fffcf0\"\n"));
+    QVERIFY(theme);
+    graph.setTheme(theme.get());
+    QCOMPARE(painted(), theme->base());
+    graph.setTheme(nullptr);
 }
 
 // A section heading is text: Tab passes it by whether or not its section has
