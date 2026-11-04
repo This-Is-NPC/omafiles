@@ -645,6 +645,7 @@ private slots:
     void footerHintsFollowOpenSheet_data();
     void footerHintsFollowOpenSheet();
     void footerStatusNeverCutsAWord();
+    void dimsUnderPropertiesLikeTheSheets();
     void restoresTheTopOverlayWhenOthersClose();
     void stacksAsynchronousReceipts();
     void preservesFocusInCommandsOpenedByOverlays();
@@ -13503,6 +13504,35 @@ void TestStudio::footerStatusNeverCutsAWord()
             QVERIFY(facts->childItems().first()->property("truncated").toBool());
     }
     QVERIFY(itemsNamed("statusBar").first()->property("spoken").toString().contains("1 to paste"));
+}
+
+void TestStudio::dimsUnderPropertiesLikeTheSheets()
+{
+    focusRow("one.txt");
+    auto *sheet = itemsNamed("tagSheet").first();
+    QVERIFY(QMetaObject::invokeMethod(sheet, "openFor",
+        Q_ARG(QVariant, QStringList{m_tree.filePath("one.txt")}),
+        Q_ARG(QVariant, "add"), Q_ARG(QVariant, "")));
+    settle();
+    FileManager manager;
+    manager.setWorkspace(m_workspace);
+    manager.ShowItemProperties({QUrl::fromLocalFile(m_tree.filePath("one.txt")).toString()}, "");
+    settle();
+    auto *text = window()->findChild<QQuickItem *>("propertyText");
+    QVERIFY(text && text->isVisible());
+    QVERIFY(sheet->isVisible());
+    QQuickItem *overlay = text;
+    while (overlay && overlay->parentItem() != window()->contentItem())
+        overlay = overlay->parentItem();
+    QVERIFY(overlay);
+    QList<QQuickItem *> dims;
+    for (QQuickItem *child : overlay->childItems())
+        if (child->isVisible() && !child->isAncestorOf(text))
+            dims.append(child);
+    QCOMPARE(dims.size(), 1);
+    QCOMPARE(dims.first()->property("color").value<QColor>(), sheet->property("color").value<QColor>());
+    key(Qt::Key_Escape);
+    QTRY_VERIFY(!window()->findChild<QObject *>("propertiesDialog"));
 }
 
 void TestStudio::restoresInterruptedOverlays_data()

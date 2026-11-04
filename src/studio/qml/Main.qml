@@ -118,6 +118,7 @@ Window {
             palette.highlight: Theme.accent
             palette.highlightedText: Theme.background
             modal: true
+            C.Overlay.modal: Rectangle { color: Theme.scrim }
             popupType: C.Popup.Item
             onOpened: propertyText.forceActiveFocus()
             onClosed: {
