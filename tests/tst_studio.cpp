@@ -16870,11 +16870,9 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     window()->resize(1180, 300); settle();
     for (int activation = 0; activation < 3; ++activation) {
         auto *button = hint("menu"); QVERIFY(button);
-        window()->update(); QTest::qWait(30);
         const QPoint corner = button->mapToScene(QPointF(1, 1)).toPoint();
-        const QImage frame = window()->grabWindow();
-        QVERIFY(!frame.isNull());
-        QVERIFY2(std::abs(frame.pixelColor(corner).lightnessF() - m_theme->chrome().lightnessF()) < 0.15, "Footer actions keep theme chrome");
+        QTRY_VERIFY2(std::abs(window()->grabWindow().pixelColor(corner).lightnessF()
+                              - m_theme->chrome().lightnessF()) < 0.15, "Footer actions keep theme chrome");
         if (activation == 0) QVERIFY(tapItem(window(), button));
         else { button->forceActiveFocus(); key(activation == 1 ? Qt::Key_Return : Qt::Key_Space); }
         settle(); QVERIFY(menu->isVisible()); key(Qt::Key_Escape);
