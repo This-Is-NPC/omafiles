@@ -25,7 +25,10 @@ class FileTransfer : public QObject
 
 public:
     using QObject::QObject;
-    Q_INVOKABLE void startDrag(QQuickItem *source, const QStringList &paths);
+    /// Drags `paths` with an image of `shown`, the row under the pointer: its
+    /// `icon` item, its name and `tags`, and the count when there is more than one.
+    Q_INVOKABLE void startDrag(QQuickItem *source, const QStringList &paths, QQuickItem *icon,
+                               const QString &shown, const QStringList &tags);
     Q_INVOKABLE bool receive(const QList<QUrl> &urls, const QString &directory,
                             int modifiers, int possibleActions);
 

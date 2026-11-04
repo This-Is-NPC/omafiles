@@ -350,11 +350,13 @@ Picture: No picture yet.
 
 Drag a file from the list, details, or icons view. A marked row carries the marked set; an unmarked row carries that row alone. Drop onto a folder row, folder tab, or another application. The receiving application decides what to do. Dropping into this window: hold **Ctrl** to copy, **Shift** to move, or **Ctrl Shift** to link; without a modifier, files move on the same device and copy across devices. An action the source does not offer copies instead.
 
+While you hold the button on a file's icon or name, the pointer is a closed hand. The drag carries an image that trails the pointer: a card with the file's icon (its thumbnail when the list shows one) and name, the colour squares of its first three tags and the number of its tags. A drag of several files stacks two cards behind it and shows their number in an accent badge at the top right.
+
 Reach it: Click and drag a file.
 
 More: See [Dragging files](drag-and-drop.md).
 
-Picture: No picture yet.
+Picture: Not generated: the compositor draws the drag icon, and the offscreen shots have no compositor.
 
 ## Hidden files
 

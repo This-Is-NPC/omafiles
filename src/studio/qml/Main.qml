@@ -3751,6 +3751,7 @@ Window {
                             FileDragGrip {
                                 folder: filesRoot.folder
                                 path: row.path
+                                icon: rowIcon
                                 enabled: row.kind === "file" || row.kind === "dir"
                                 onStarted: {
                                     Workspace.focusedPane = filesRoot.paneIndex
@@ -3832,6 +3833,7 @@ Window {
                             FileDragGrip {
                                 folder: filesRoot.folder
                                 path: cell.path
+                                icon: cellIcon
                                 enabled: cell.kind === "file" || cell.kind === "dir"
                                 onStarted: {
                                     Workspace.focusedPane = filesRoot.paneIndex
