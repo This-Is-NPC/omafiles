@@ -38,6 +38,7 @@ SOURCES += \
     ../src/studio/FileTransfer.cpp \
     ../src/studio/Verb.cpp \
     ../src/studio/Views.cpp \
+    ../src/studio/Counted.cpp \
     ../src/core/View.cpp \
     ../src/core/Tag.cpp \
     ../src/core/Record.cpp \
@@ -63,7 +64,8 @@ HEADERS += ../src/studio/DirectoryListing.h \
     ../src/studio/Clipboard.h \
     ../src/studio/FileTransfer.h \
     ../src/studio/Verb.h \
-    ../src/studio/Views.h
+    ../src/studio/Views.h \
+    ../src/studio/Counted.h
 
 # The same qrc the studio ships, so the test drives the QML that runs.
 RESOURCES += ../src/studio/resources.qrc

@@ -1,6 +1,7 @@
 #include "FileMetadata.h"
 #include "BlockingJob.h"
 #include "FolderModel.h"
+#include "Counted.h"
 
 #include "Glob.h"
 #include "Names.h"
@@ -1117,9 +1118,8 @@ void FolderModel::listFacets()
     }
 
     if (!declined.isEmpty()) {
-        m_error = QStringLiteral("%1 row(s) not listed; %2")
-                      .arg(declined.size())
-                      .arg(declined.first());
+        m_error = QStringLiteral("%1 not listed; %2")
+                      .arg(countOf(declined.size(), QStringLiteral("row")), declined.first());
     }
 
     applySort(&facets);
@@ -1302,9 +1302,8 @@ void FolderModel::listTag()
     }
 
     if (!declined.isEmpty()) {
-        m_error = QStringLiteral("%1 row(s) not listed; %2")
-                      .arg(declined.size())
-                      .arg(declined.first());
+        m_error = QStringLiteral("%1 not listed; %2")
+                      .arg(countOf(declined.size(), QStringLiteral("row")), declined.first());
     }
     applySort(&rows);
     m_rows = rows;

@@ -1,4 +1,5 @@
 #include "GraphItem.h"
+#include "Counted.h"
 
 #include "IndexModel.h"
 #include "Paths.h"
@@ -401,9 +402,10 @@ QString GraphItem::emptyText() const
     if (rows == 0 || m_index->fileCount() > 0)
         return QStringLiteral("no tagged files yet\nomafiles tag add --tag work -- FILE");
     if (m_index->unknownRows() > 0)
-        return QStringLiteral("%1 tagged rows; none can be reached\nomafiles verify").arg(rows);
-    return QStringLiteral("%1 tagged rows; none of their files are there\nomafiles prune")
-        .arg(rows);
+        return QStringLiteral("%1; none can be reached\nomafiles verify")
+            .arg(countOf(rows, QStringLiteral("tagged row")));
+    return QStringLiteral("%1; none of their files are there\nomafiles prune")
+        .arg(countOf(rows, QStringLiteral("tagged row")));
 }
 
 void GraphItem::paint(QPainter *painter)
@@ -608,9 +610,9 @@ QString GraphItem::summary() const
 {
     const int drawn = m_nodes.size() - m_tagCount;
     const QString files = drawn == m_taggedFiles
-        ? QStringLiteral("%1 files").arg(m_taggedFiles)
-        : QStringLiteral("%1 of %2 files").arg(drawn).arg(m_taggedFiles);
-    return QStringLiteral("%1 tags · %2").arg(m_tagCount).arg(files);
+        ? countOf(m_taggedFiles, QStringLiteral("file"))
+        : QStringLiteral("%1 of %2").arg(drawn).arg(countOf(m_taggedFiles, QStringLiteral("file")));
+    return QStringLiteral("%1 · %2").arg(countOf(m_tagCount, QStringLiteral("tag")), files);
 }
 
 void GraphItem::selectIndex(int index)
