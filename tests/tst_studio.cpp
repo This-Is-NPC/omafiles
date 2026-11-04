@@ -742,12 +742,23 @@ private slots:
     void cursorFileTagsAreBold();
     void sidebarRowsHaveNoListRing();
 
+    // The tab strip and the toolbar.
+    void tabCloseVisibleOnEveryTab();
+    void currentTabIsBaseAndBold();
+    void focusedPaneTabIsBold();
+    void tagTabShowsColour();
+    void viewModeSwitchIsOneTabStop();
+    void pathSegmentsNavigate();
+    void toolbarDetailsToggles();
+    void backAndForwardWalkTheHistory();
+
 private:
     QQuickWindow *window() const;
     QList<QQuickItem *> itemsNamed(const QString &name) const;
     QQuickItem *gripOf(const QString &path) const;
     QDrag *dragOf(const QString &path, QPixmap *pixmap, QPoint *hotSpot);
     QQuickItem *itemNamedWithin(QQuickItem *parent, const QString &name) const;
+    QStringList pathLabels() const;
     TabState *tab() const;
     QObject *filesRoot() const;
     int cursor() const;
@@ -974,6 +985,7 @@ void TestStudio::init()
     window->setProperty("prompt", QString());
     window->setProperty("filtering", false);
     window->setProperty("editingPath", false);
+    window->setProperty("detailsShown", true);
     QVERIFY(!window->property("blocked").toBool());
 
     // A test that leaves a graph tab open would hand the next one a window with
@@ -1052,6 +1064,16 @@ QQuickItem *TestStudio::itemNamedWithin(QQuickItem *parent, const QString &name)
     for (auto *item : itemsNamed(name))
         if (parent->isAncestorOf(item)) return item;
     return nullptr;
+}
+
+// The toolbar's path as its shown buttons read it, stem first.
+QStringList TestStudio::pathLabels() const
+{
+    QStringList labels;
+    for (auto *segment : itemsNamed(QStringLiteral("pathSegment")))
+        if (segment->isVisible())
+            labels.append(segment->property("label").toString());
+    return labels;
 }
 
 TabState *TestStudio::tab() const
@@ -1587,16 +1609,6 @@ static QAccessibleInterface *accessibleOn(QQuickItem *item)
     return item ? QAccessible::queryAccessibleInterface(item) : nullptr;
 }
 
-static bool focusIsInsidePathCrumbs(QQuickWindow *window)
-{
-    QQuickItem *focus = window ? window->activeFocusItem() : nullptr;
-    for (QQuickItem *item = focus; item; item = item->parentItem()) {
-        if (item->objectName() == QLatin1String("pathCrumbs"))
-            return true;
-    }
-    return false;
-}
-
 
 void TestStudio::namesTheRowUnderTheCursorForAssistiveTech()
 {
@@ -1926,9 +1938,7 @@ void TestStudio::listsEveryFileCarryingATagWhereverItIs()
     // And it is named as a tag everywhere it is named, rather than dressed as a
     // folder the window is not standing in.
     QCOMPARE(tab()->title(), QStringLiteral("#work"));
-    const QList<QQuickItem *> crumbs = itemsNamed(QStringLiteral("pathCrumbs"));
-    QCOMPARE(crumbs.size(), 1);
-    QCOMPARE(crumbs.first()->property("full").toString(), QStringLiteral("#work"));
+    QCOMPARE(pathLabels(), QStringList{QStringLiteral("#work")});
 
     // Not a place in the tree: there is nothing above a tag, so the key that
     // walks out of a folder has nothing to do and the tab stays where it is.
@@ -2561,9 +2571,10 @@ void TestStudio::drawsOneFocusRingOutsideWhatHasFocus()
         QVERIFY2(drawn == box.adjusted(-weight, -weight, weight, weight), qPrintable(where));
         if (cursorRow)
             QVERIFY2(drawn == sceneRect(ring->parentItem()), qPrintable(where));
-        // A control's ring is around it.
+        // A control's ring is around it, or on its edge where it fills a
+        // clipped strip, as a tab does.
         if (ring->parentItem()->property("ringInset").isValid())
-            QVERIFY2(inset == 0 && drawn == sceneRect(focus).adjusted(-width, -width, width, width),
+            QVERIFY2(drawn == sceneRect(focus).adjusted(inset - width, inset - width, width - inset, width - inset),
                      qPrintable(where));
         for (QQuickItem *up = ring->parentItem(); up; up = up->parentItem())
             if (up->clip())
@@ -2718,8 +2729,11 @@ void TestStudio::keepsTheFocusRingOnTheViewAcrossTabSwitches()
         QList<QQuickItem *> shown;
         for (auto *ring : itemsNamed(QStringLiteral("focusRing")))
             if (ring->isVisible()) shown.append(ring);
-        QVERIFY2(shown.size() == 1, qPrintable(where + QStringLiteral(": %1 rings").arg(shown.size())));
-        QVERIFY2(view->isAncestorOf(shown.first()), qPrintable(where + QStringLiteral(": ring off the view")));
+        // A graph, like a list, has no ring around it, and no row to carry one.
+        const qsizetype rings = tab()->kind() == QLatin1String("graph") ? 0 : 1;
+        QVERIFY2(shown.size() == rings, qPrintable(where + QStringLiteral(": %1 rings").arg(shown.size())));
+        if (rings)
+            QVERIFY2(view->isAncestorOf(shown.first()), qPrintable(where + QStringLiteral(": ring off the view")));
     };
 
     for (int from = 0; from < kinds.size(); ++from) {
@@ -4516,6 +4530,8 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         {"r", ""},        {"n", ""},       // open a prompt in it
         {"*", ""},        {"f", ""},        {"F", ""},
         {"J", ""},        {"K", ""},
+        {"H", "back"},    {"L", "forward"}, // need a folder to go to
+        {"I", ""},
     };
 
     // The other half of the sheet: the rows spelled as words. The sweep below
@@ -4629,6 +4645,13 @@ void TestStudio::everyDocumentedKeyIsAnswered()
             QMetaObject::invokeMethod(folder, "toggleMarkAt", Q_ARG(int, 2));
         if (setup == QLatin1String("tabs"))
             m_workspace->addTab(QStringLiteral("files"));
+        if (setup == QLatin1String("back") || setup == QLatin1String("forward")) {
+            tab()->setCwd(m_tree.path());
+            tab()->setCwd(sweep);
+        }
+        if (setup == QLatin1String("forward"))
+            tab()->goBack();
+        settle();
         QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(1)));
         settle();
 
@@ -4642,6 +4665,7 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         const int cursorBefore = cursor();
         const int markedBefore = folder->property("markedCount").toInt();
         const int tabBefore = pane->currentIndex();
+        const bool detailsBefore = root->property("detailsShown").toBool();
 
         key(one.key[0]);
         if (setup == QLatin1String("twice"))
@@ -4658,6 +4682,7 @@ void TestStudio::everyDocumentedKeyIsAnswered()
             || root->property("focusRegion").toString() != regionBefore
             || root->property("blocked").toBool() != blockedBefore
             || pane->currentIndex() != tabBefore
+            || root->property("detailsShown").toBool() != detailsBefore
             || (now && now->property("markedCount").toInt() != markedBefore);
 
         QVERIFY2(answered,
@@ -4673,6 +4698,7 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         m_workspace->closeTab(0, pane->tabCount() - 1);
     tab()->setCwd(m_tree.path());
     tab()->setShowHidden(false);
+    root->setProperty("detailsShown", true);
     QMetaObject::invokeMethod(root, "takeFocus");
     settle();
 }
@@ -5297,19 +5323,19 @@ void TestStudio::reachesThePathBarWithTab()
     QObject *root = m_engine->rootObjects().first();
     QQuickItem *before = window()->activeFocusItem();
 
-    bool reachedCrumbs = false;
-    for (int i = 0; i < 24; ++i) {
+    // The current folder's button is the door to the path box.
+    const auto onLeaf = [this] {
+        QQuickItem *focus = window()->activeFocusItem();
+        return focus && focus->objectName() == QLatin1String("pathSegment")
+            && focus->property("on").toBool();
+    };
+    for (int i = 0; i < 24 && !onLeaf(); ++i)
         key(Qt::Key_Tab);
-        if (focusIsInsidePathCrumbs(window())) {
-            reachedCrumbs = true;
-            break;
-        }
-    }
-    QVERIFY2(reachedCrumbs, "Tab did not reach the path crumbs");
+    QVERIFY2(onLeaf(), "Tab did not reach the current folder's path button");
 
     key(Qt::Key_Return);
     QVERIFY2(root->property("editingPath").toBool(),
-             "Return on path crumbs did not start path edit");
+             "Return on the current folder's button did not start path edit");
     key(Qt::Key_Escape);
     QVERIFY2(!root->property("editingPath").toBool(),
              "Escape did not cancel path edit");
@@ -6585,9 +6611,7 @@ void TestStudio::findsByNameAcrossTheRoots()
     QCOMPARE(files(), (QStringList{QStringLiteral("paper.pdf"), QStringLiteral("SLIDES.PDF")}));
     QVERIFY2(folder->property("error").toString().contains(QStringLiteral("as of ")),
              qPrintable(folder->property("error").toString()));
-    QObject *crumbs = root->findChild<QObject *>(QStringLiteral("pathCrumbs"));
-    QVERIFY(crumbs);
-    QCOMPARE(crumbs->property("full").toString(), QStringLiteral("*.pdf"));
+    QCOMPARE(pathLabels(), QStringList{QStringLiteral("*.pdf")});
 
     // A search is nowhere in particular, so nothing is made or pasted in it,
     // and the menu says how to leave it.
@@ -6829,9 +6853,7 @@ void TestStudio::listsWhatTheDesktopOpenedLately()
     QCOMPARE(tab()->title(), QStringLiteral("(recent)"));
     // Newest first, and only what is there.
     QCOMPARE(names(), (QStringList{QStringLiteral("two.md"), QStringLiteral("one.txt")}));
-    QObject *crumbs = root->findChild<QObject *>(QStringLiteral("pathCrumbs"));
-    QVERIFY(crumbs);
-    QCOMPARE(crumbs->property("full").toString(), QStringLiteral("(recent)"));
+    QCOMPARE(pathLabels(), QStringList{QStringLiteral("(recent)")});
 
     // Nowhere in particular, so nothing is made in it; the menu says how out.
     key('n');
@@ -12719,7 +12741,7 @@ void TestStudio::routesTooltipKeysOnlyWhenContentOverflows()
     QVERIFY(folder);
     QTRY_COMPARE(folder->property("count").toInt(), 101);
     QQuickItem *control = nullptr;
-    for (auto *item : itemsNamed("sortDirection"))
+    for (auto *item : itemsNamed("sortButton"))
         if (item->isVisible())
             control = item;
     QVERIFY(control);
@@ -13276,12 +13298,13 @@ void TestStudio::dropsEachPanelInItsOwnNarrowPane()
             if (panel->isAncestorOf(chain.at(i))) return i;
         return -1;
     };
+    const int inStrip = first(itemsNamed(QStringLiteral("tabStrip")).first());
+    const int inToolbar = first(itemsNamed(QStringLiteral("toolbar")).first());
     const int inSidebar = first(sidebar);
-    const int inPane = first(itemsNamed(QStringLiteral("pane")).first());
     const int inDetails = first(details);
-    QVERIFY2(inSidebar >= 0 && inSidebar < inPane && inPane < inDetails,
-             qPrintable(QStringLiteral("Tab meets the sidebar at %1, the pane at %2, the details at %3")
-                            .arg(inSidebar).arg(inPane).arg(inDetails)));
+    QVERIFY2(inStrip >= 0 && inStrip < inToolbar && inToolbar < inSidebar && inSidebar < inDetails,
+             qPrintable(QStringLiteral("Tab meets the tabs at %1, the toolbar at %2, the sidebar at %3, the details at %4")
+                            .arg(inStrip).arg(inToolbar).arg(inSidebar).arg(inDetails)));
 
     QMetaObject::invokeMethod(m_workspace, "splitRight", Q_ARG(QString, QStringLiteral("files")));
     settle();
@@ -15469,7 +15492,7 @@ void TestStudio::returnsInlinePromptsToTheList()
     auto *listFocus = window()->activeFocusItem();
     QQuickItem *toolbar = nullptr;
     for (auto *item : window()->findChildren<QQuickItem *>())
-        if (item->property("caption").toString() == "Reload index") { toolbar = item; break; }
+        if (item->property("caption").toString() == "Parent folder") { toolbar = item; break; }
     QVERIFY(toolbar);
     toolbar->forceActiveFocus();
     QCOMPARE(window()->activeFocusItem(), toolbar);
@@ -17213,14 +17236,15 @@ void TestStudio::keepsTheViewControlsInNarrowPanes()
         window()->resize(original); QMetaObject::invokeMethod(window(), "takeFocus");
     });
     window()->resize(420, 300); tab()->setViewMode("list"); settle(); focusRow("one.txt");
-    QQuickItem *pane = nullptr;
-    for (auto *item : itemsNamed("pane")) if (item->isVisible()) pane = item;
-    QVERIFY(pane); QVERIFY(pane->width() <= 480);
-    auto *modes = shownItem(pane, "viewModes"); QVERIFY(modes);
-    QVERIFY(QRectF(QPointF(), window()->size()).contains(modes->mapRectToScene(modes->boundingRect())));
-    QVERIFY(modes->width() + shownItem(pane, "sortControl")->width() <= 160);
+    auto *toolbar = itemsNamed("toolbar").first();
+    const QRectF shownArea(QPointF(), window()->size());
+    auto *modes = shownItem(toolbar, "viewModes"); QVERIFY(modes);
+    QVERIFY(shownArea.contains(modes->mapRectToScene(modes->boundingRect())));
+    auto *sort = shownItem(toolbar, "sortButton"); QVERIFY(sort);
+    QVERIFY(shownArea.contains(sort->mapRectToScene(sort->boundingRect())));
+    QCOMPARE(sort->property("tooltipKey").toString(), QStringLiteral("s"));
     QList<QQuickItem *> buttons;
-    for (auto *item : itemsNamed("viewMode")) if (pane->isAncestorOf(item)) buttons.append(item);
+    for (auto *item : itemsNamed("viewMode")) if (modes->isAncestorOf(item)) buttons.append(item);
     QCOMPARE(buttons.size(), 3);
     const QStringList modeNames{"list", "details", "icons"};
     for (int at = 0; at < 3; ++at) {
@@ -17229,53 +17253,48 @@ void TestStudio::keepsTheViewControlsInNarrowPanes()
         QVERIFY(tapItem(window(), buttons[at])); settle();
         QCOMPARE(tab()->viewMode(), modeNames[at]);
         QVERIFY(buttons[at]->property("on").toBool());
-        // In details view the column headings sort, in the others the chip:
-        // never both.
-        const bool details = modeNames[at] == "details";
-        QCOMPARE(shownItem(pane, "sortControl") == nullptr, details);
-        bool heading = false;
-        for (auto *head : itemsNamed("columnHead"))
-            heading |= pane->isAncestorOf(head) && head->isVisible() && head->height() > 0;
-        QCOMPARE(heading, details);
+        // The sort button is there in every view mode, details too.
+        QVERIFY(sort->isVisible());
     }
     for (int at = 0; at < 3; ++at) {
-        key(char('1' + at)); settle();
+        key(Qt::Key_Escape); key(char('1' + at)); settle();
         QCOMPARE(tab()->viewMode(), modeNames[at]);
         for (int other = 0; other < 3; ++other) QCOMPARE(buttons[other]->property("on").toBool(), other == at);
     }
     key('1'); settle();
-    auto *sortKey = shownItem(pane, "sortKey"); QVERIFY(sortKey);
-    auto *direction = shownItem(pane, "sortDirection"); QVERIFY(direction);
-    QCOMPARE(sortKey->property("label").toString(), QStringLiteral("name"));
-    QCOMPARE(direction->property("label").toString(), QStringLiteral("↑"));
-    QVERIFY(tapItem(window(), direction)); settle();
-    QCOMPARE(tab()->sortRole(), QStringLiteral("name")); QVERIFY(!tab()->sortAscending());
-    QCOMPARE(direction->property("label").toString(), QStringLiteral("↓"));
-    QVERIFY(tapItem(window(), sortKey)); settle();
-    QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
-    QCOMPARE(sortKey->property("label").toString(), QStringLiteral("tags"));
-    sortKey->forceActiveFocus(); key(Qt::Key_Return); settle();
-    QCOMPARE(tab()->sortRole(), QStringLiteral("type"));
-    direction->forceActiveFocus(); key(Qt::Key_Space); settle();
+    QCOMPARE(sort->property("label").toString(), QStringLiteral("name ↑ ⌄"));
+    key('S'); settle();
     QVERIFY(!tab()->sortAscending());
-    // Each pane of a split keeps its own controls.
+    QCOMPARE(sort->property("label").toString(), QStringLiteral("name ↓ ⌄"));
+    QVERIFY(tapItem(window(), sort)); settle();
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
+    QCOMPARE(sort->property("label").toString(), QStringLiteral("tags ↑ ⌄"));
+    sort->forceActiveFocus(); key(Qt::Key_Return); settle();
+    QCOMPARE(tab()->sortRole(), QStringLiteral("type"));
+    // In a split the toolbar works the focused pane, and each pane keeps its
+    // own tabs in a group of its own.
     window()->resize(1180, 720); settle();
+    key(Qt::Key_Escape);
     if (panesBefore == 1) key(Qt::Key_Backslash, Qt::ControlModifier);
     QCOMPARE(m_workspace->paneCount(), 2);
     settle();
-    int panes = 0;
-    for (auto *item : itemsNamed("pane")) {
-        if (!item->isVisible()) continue;
-        ++panes;
-        auto *paneModes = shownItem(item, "viewModes");
-        QVERIFY2(paneModes, qPrintable(QString("pane %1 px").arg(item->width())));
-        // The tabs yield the width: they end before the controls start.
-        const qreal controlsLeft = paneModes->mapToScene(QPointF()).x();
+    m_workspace->setFocusedPane(1); settle();
+    QVERIFY(tapItem(window(), buttons[1])); settle();
+    QCOMPARE(m_workspace->paneAtIndex(1)->current()->viewMode(), QStringLiteral("details"));
+    QCOMPARE(m_workspace->paneAtIndex(0)->current()->viewMode(), QStringLiteral("list"));
+    QList<QQuickItem *> groups;
+    for (auto *group : itemsNamed("tabGroup")) if (group->isVisible()) groups.append(group);
+    QCOMPARE(groups.size(), 2);
+    for (auto *group : groups) {
+        const QRectF edge = group->mapRectToScene(group->boundingRect());
+        int handles = 0;
         for (auto *handle : itemsNamed("tabHandle"))
-            if (item->isAncestorOf(handle))
-                QVERIFY(handle->mapRectToScene(handle->boundingRect()).right() < controlsLeft);
+            if (group->isAncestorOf(handle) && handle->isVisible()) {
+                ++handles;
+                QVERIFY(handle->mapRectToScene(handle->boundingRect()).right() <= edge.right());
+            }
+        QCOMPARE(handles, 1);
     }
-    QCOMPARE(panes, 2);
 }
 
 void TestStudio::givesTheNameColumnPriority()
@@ -20220,4 +20239,276 @@ void TestStudio::publishesReceiptsAfterUpdatingOperationState()
         m_index->clearNotice();
         QCOMPARE(m_index->error(), warning);
     }
+}
+
+// Every tab shows its close mark at all times: foreground on the current tab,
+// dim on the others, urgent under the pointer.
+void TestStudio::tabCloseVisibleOnEveryTab()
+{
+    PaneState *pane = m_workspace->paneAtIndex(0);
+    m_workspace->addTab(QStringLiteral("files"));
+    m_workspace->addTab(QStringLiteral("files"));
+    pane->setCurrentIndex(1);
+    QTest::mouseMove(window(), QPoint(window()->width() - 2, window()->height() - 2));
+    settle();
+    QList<QQuickItem *> handles;
+    for (auto *handle : itemsNamed(QStringLiteral("tabHandle"))) if (handle->isVisible()) handles.append(handle);
+    QCOMPARE(handles.size(), 3);
+    for (int at = 0; at < handles.size(); ++at) {
+        auto *close = itemNamedWithin(handles[at], QStringLiteral("tabClose"));
+        auto *mark = itemNamedWithin(handles[at], QStringLiteral("tabCloseMark"));
+        QVERIFY(close && mark);
+        QVERIFY2(close->isVisible() && mark->isVisible(), qPrintable(QString("tab %1 hides its ×").arg(at)));
+        QVERIFY(close->width() > 0);
+        QCOMPARE(mark->opacity(), 1.0);
+        QCOMPARE(mark->property("color").value<QColor>().rgba(),
+                 (at == pane->currentIndex() ? m_theme->foreground() : m_theme->dim()).rgba());
+    }
+    auto *close = itemNamedWithin(handles.first(), QStringLiteral("tabClose"));
+    auto *mark = itemNamedWithin(handles.first(), QStringLiteral("tabCloseMark"));
+    const QPoint centre = close->mapToScene(QPointF(close->width() / 2, close->height() / 2)).toPoint();
+    QTest::mouseMove(window(), centre);
+    QTRY_COMPARE(mark->property("color").value<QColor>().rgba(), m_theme->urgent().rgba());
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier, centre);
+    QTRY_COMPARE(pane->tabCount(), 2);
+}
+
+// The current tab is the list's `base` with its name in DemiBold; the others
+// are `chrome` with dim names; no tab draws an accent bar or edge.
+void TestStudio::currentTabIsBaseAndBold()
+{
+    PaneState *pane = m_workspace->paneAtIndex(0);
+    m_workspace->addTab(QStringLiteral("files"));
+    pane->setCurrentIndex(0);
+    QTest::mouseMove(window(), QPoint(window()->width() - 2, window()->height() - 2));
+    focusRow(QStringLiteral("one.txt"));
+    QList<QQuickItem *> handles;
+    for (auto *handle : itemsNamed(QStringLiteral("tabHandle"))) if (handle->isVisible()) handles.append(handle);
+    QCOMPARE(handles.size(), 2);
+    for (int at = 0; at < 2; ++at) {
+        const bool current = at == pane->currentIndex();
+        auto *body = itemNamedWithin(handles[at], QStringLiteral("tabBody"));
+        auto *title = itemNamedWithin(handles[at], QStringLiteral("tabTitle"));
+        QVERIFY(body && title);
+        QCOMPARE(body->property("color").value<QColor>().rgba(), (current ? m_theme->base() : m_theme->chrome()).rgba());
+        QCOMPARE(title->property("font").value<QFont>().weight(), current ? QFont::DemiBold : QFont::Normal);
+        QCOMPARE(title->property("color").value<QColor>().rgba(), (current ? m_theme->foreground() : m_theme->dim()).rgba());
+        QList<QQuickItem *> queue{handles[at]};
+        while (!queue.isEmpty()) {
+            QQuickItem *item = queue.takeFirst();
+            queue.append(item->childItems());
+            if (!item->isVisible() || !QByteArray(item->metaObject()->className()).startsWith("QQuickRectangle"))
+                continue;
+            QVERIFY2(item->property("color").value<QColor>().rgba() != m_theme->accent().rgba(), "a tab draws an accent fill");
+            auto *pen = item->property("border").value<QObject *>();
+            QVERIFY2(!pen || pen->property("width").toReal() == 0
+                         || pen->property("color").value<QColor>().rgba() != m_theme->accent().rgba(),
+                     "a tab draws an accent edge");
+        }
+    }
+}
+
+// In a split each pane keeps its tabs; only the focused pane's current tab is
+// DemiBold.
+void TestStudio::focusedPaneTabIsBold()
+{
+    m_workspace->splitRight(QStringLiteral("files"));
+    settle();
+    QCOMPARE(m_workspace->paneCount(), 2);
+    const auto weights = [this] {
+        QList<QFont::Weight> found;
+        for (auto *group : itemsNamed(QStringLiteral("tabGroup"))) {
+            if (!group->isVisible()) continue;
+            auto *title = itemNamedWithin(group, QStringLiteral("tabTitle"));
+            found.append(QFont::Weight(title->property("font").value<QFont>().weight()));
+        }
+        return found;
+    };
+    m_workspace->setFocusedPane(1);
+    settle();
+    QCOMPARE(weights(), (QList<QFont::Weight>{QFont::Normal, QFont::DemiBold}));
+    m_workspace->setFocusedPane(0);
+    settle();
+    QCOMPARE(weights(), (QList<QFont::Weight>{QFont::DemiBold, QFont::Normal}));
+}
+
+// A tab listing a tag shows the tag's colour square where a folder tab shows
+// the folder mark.
+void TestStudio::tagTabShowsColour()
+{
+    const auto swatch = [this] {
+        for (auto *handle : itemsNamed(QStringLiteral("tabHandle")))
+            if (handle->isVisible() && handle->property("current").toBool())
+                return itemNamedWithin(handle, QStringLiteral("tabSwatch"));
+        return static_cast<QQuickItem *>(nullptr);
+    };
+    QVERIFY(swatch());
+    QVERIFY(!swatch()->isVisible());
+    tab()->setSelectedTag(QStringLiteral("work"));
+    settle();
+    QVERIFY(swatch()->isVisible());
+    QCOMPARE(swatch()->property("color").value<QColor>().rgba(), m_theme->tagColour(QStringLiteral("work")).rgba());
+    tab()->setSelectedTag(QString());
+    settle();
+    QVERIFY(!swatch()->isVisible());
+
+    m_workspace->addTab(QStringLiteral("tags"));
+    tab()->setFacets({QStringLiteral("work"), QStringLiteral("draft")});
+    settle();
+    QVERIFY(swatch()->isVisible());
+    QCOMPARE(swatch()->property("color").value<QColor>().rgba(), m_theme->tagColour(QStringLiteral("draft")).rgba());
+}
+
+// The view modes are one Tab stop; Left and Right move the checked segment.
+void TestStudio::viewModeSwitchIsOneTabStop()
+{
+    focusRow(QStringLiteral("one.txt"));
+    auto *modes = itemsNamed(QStringLiteral("viewModes")).first();
+    QList<QQuickItem *> segments;
+    for (auto *item : itemsNamed(QStringLiteral("viewMode"))) if (modes->isAncestorOf(item)) segments.append(item);
+    QCOMPARE(segments.size(), 3);
+    QQuickItem *start = window()->activeFocusItem();
+    int stops = 0;
+    bool back = false;
+    for (int step = 0; step < 150 && !back; ++step) {
+        key(Qt::Key_Tab);
+        QQuickItem *now = window()->activeFocusItem();
+        QVERIFY2(!segments.contains(now), "Tab stopped on a single view mode segment");
+        stops += now == modes;
+        back = now == start;
+    }
+    QVERIFY2(back, "Tab never came back to the list");
+    QCOMPARE(stops, 1);
+
+    modes->forceActiveFocus(Qt::TabFocusReason);
+    QCOMPARE(tab()->viewMode(), QStringLiteral("list"));
+    key(Qt::Key_Right);
+    QCOMPARE(tab()->viewMode(), QStringLiteral("details"));
+    QVERIFY(segments[1]->property("on").toBool());
+    key(Qt::Key_Right);
+    QCOMPARE(tab()->viewMode(), QStringLiteral("icons"));
+    key(Qt::Key_Right);
+    QCOMPARE(tab()->viewMode(), QStringLiteral("icons"));
+    key(Qt::Key_Left);
+    QCOMPARE(tab()->viewMode(), QStringLiteral("details"));
+    QVERIFY(modes->hasActiveFocus());
+    QCOMPARE(window()->property("focusRegion").toString(), QStringLiteral("control"));
+}
+
+// The path is one button per folder; a button goes to its folder with the
+// cursor on the one walked out of, the current one opens the path box, and in
+// a narrow window the stem gives way behind `…` while the current folder stays.
+void TestStudio::pathSegmentsNavigate()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    window()->resize(1800, 720);
+    const QString inner = m_tree.filePath(QStringLiteral("alpha/inner"));
+    tab()->setCwd(inner);
+    settle();
+    QStringList expected{QStringLiteral("/")};
+    expected += inner.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    QCOMPARE(pathLabels(), expected);
+    const auto segment = [this](const QString &label) {
+        for (auto *item : itemsNamed(QStringLiteral("pathSegment")))
+            if (item->isVisible() && item->property("label").toString() == label) return item;
+        return static_cast<QQuickItem *>(nullptr);
+    };
+    for (const QString &label : expected)
+        QCOMPARE(segment(label)->property("on").toBool(), label == expected.last());
+
+    QVERIFY(tapItem(window(), segment(QStringLiteral("alpha"))));
+    QTRY_COMPARE(cwd(), m_tree.filePath(QStringLiteral("alpha")));
+    QTRY_COMPARE(cursor(), rowOf(QStringLiteral("inner")));
+    QCOMPARE(pathLabels().last(), QStringLiteral("alpha"));
+    QVERIFY(tapItem(window(), segment(QFileInfo(m_tree.path()).fileName())));
+    QTRY_COMPARE(cwd(), m_tree.path());
+    QTRY_COMPARE(cursor(), rowOf(QStringLiteral("alpha")));
+
+    QVERIFY(tapItem(window(), segment(expected.at(expected.size() - 3))));
+    QVERIFY(window()->property("editingPath").toBool());
+    key(Qt::Key_Escape);
+    QVERIFY(!window()->property("editingPath").toBool());
+
+    tab()->setCwd(inner);
+    window()->resize(420, 300);
+    settle();
+    const QStringList shown = pathLabels();
+    QCOMPARE(shown.last(), QStringLiteral("inner"));
+    QVERIFY(shown.size() < expected.size());
+    QCOMPARE(shown, expected.mid(expected.size() - shown.size()));
+    auto *ellipsis = itemsNamed(QStringLiteral("pathEllipsis")).first();
+    QVERIFY(ellipsis->isVisible());
+    QVERIFY(tapItem(window(), ellipsis));
+    QTRY_COMPARE(cwd(), QStringLiteral("/") + expected.mid(1, expected.size() - shown.size() - 1).join('/'));
+
+    // A current folder wider than the bar is still the one button drawn.
+    const QString name(80, QLatin1Char('w'));
+    const QString wide = m_tree.filePath(QStringLiteral("alpha/") + name);
+    QVERIFY(QDir().mkpath(wide));
+    const auto gone = qScopeGuard([&] { tab()->setCwd(m_tree.path()); QDir(wide).removeRecursively(); });
+    tab()->setCwd(wide);
+    settle();
+    QCOMPARE(pathLabels(), QStringList{name});
+}
+
+// The Details toggle and `I` show and hide the details panel where it fits;
+// where it does not, the toggle is not drawn.
+void TestStudio::toolbarDetailsToggles()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    window()->resize(1400, 720);
+    focusRow(QStringLiteral("one.txt"));
+    auto *toggle = itemsNamed(QStringLiteral("detailsToggle")).first();
+    auto *panel = itemsNamed(QStringLiteral("detailsPanel")).first();
+    QVERIFY(toggle->isVisible() && panel->isVisible());
+    QVERIFY(toggle->property("on").toBool());
+    QCOMPARE(toggle->property("tooltipKey").toString(), QStringLiteral("I"));
+    QVERIFY(tapItem(window(), toggle));
+    QTRY_VERIFY(!panel->isVisible());
+    QVERIFY(!toggle->property("on").toBool());
+    key(Qt::Key_Escape);
+    key('I');
+    QTRY_VERIFY(panel->isVisible());
+    QVERIFY(toggle->property("on").toBool());
+    window()->resize(420, 300);
+    settle();
+    QVERIFY(!toggle->isVisible());
+}
+
+// Back and forward walk the folders a tab stood in, with H and L and the
+// buttons; a new folder empties the way forward, and a step back puts the
+// cursor on the folder walked out of.
+void TestStudio::backAndForwardWalkTheHistory()
+{
+    const QString alpha = m_tree.filePath(QStringLiteral("alpha"));
+    const QString inner = m_tree.filePath(QStringLiteral("alpha/inner"));
+    tab()->setCwd(alpha);
+    tab()->setCwd(inner);
+    QMetaObject::invokeMethod(window(), "takeFocus");
+    settle();
+    auto *backButton = itemsNamed(QStringLiteral("backButton")).first();
+    auto *forwardButton = itemsNamed(QStringLiteral("forwardButton")).first();
+    QVERIFY(backButton->property("usable").toBool());
+    QVERIFY(!forwardButton->property("usable").toBool());
+    key('H');
+    QCOMPARE(cwd(), alpha);
+    QTRY_COMPARE(cursor(), rowOf(QStringLiteral("inner")));
+    QVERIFY(forwardButton->property("usable").toBool());
+    QVERIFY(tapItem(window(), backButton));
+    QTRY_COMPARE(cwd(), m_tree.path());
+    key(Qt::Key_Escape);
+    key('L');
+    QCOMPARE(cwd(), alpha);
+    QVERIFY(tapItem(window(), forwardButton));
+    QTRY_COMPARE(cwd(), inner);
+    QVERIFY(!forwardButton->property("usable").toBool());
+    key(Qt::Key_Escape);
+    key('H');
+    QCOMPARE(cwd(), alpha);
+    tab()->setCwd(m_tree.filePath(QStringLiteral("beta")));
+    settle();
+    QVERIFY(!tab()->canGoForward());
+    QVERIFY(!forwardButton->property("usable").toBool());
 }

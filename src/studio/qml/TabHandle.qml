@@ -3,7 +3,10 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import omafiles
 
-// One tab: a box with the name in it and a close mark of its own.
+// One tab: the name, a close mark of its own, and before the name a folder or
+// graph mark, or the colour square of the tag it lists. The current tab is
+// `base`, so it joins the list under it; the others are `chrome` with dim
+// names. The focused pane's current tab sets its name in DemiBold.
 //
 // The close mark keeps its own column at the right, and the title is elided
 // before it reaches that column. A mark that floats over the last few letters
@@ -18,6 +21,10 @@ FocusScope {
     property string title: ""
     property string kind: "files"
     property bool current: false
+    /// The tab is the current one of the focused pane.
+    property bool focusedPane: false
+    /// The tag a tag listing shows, whose colour stands in for the mark.
+    property string tag: ""
     signal activated
     signal closed
     signal menuRequested(real x, real y)
@@ -28,7 +35,7 @@ FocusScope {
 
     implicitWidth: Math.max(minimumWidth, Math.min(220, label.implicitWidth + Theme.spacingS + Theme.iconSize
                                               + Theme.iconGap + closeColumn))
-    implicitHeight: Theme.controlHeight
+    implicitHeight: Theme.stripHeight
     width: implicitWidth
     height: implicitHeight
 
@@ -45,11 +52,14 @@ FocusScope {
 
     FocusableControl {
         id: body
+        objectName: "tabBody"
         focusRingSource: handle
         pointerFocus: handle
         anchors.fill: parent
         tabFocusable: false
         usable: true
+        // Inside: the tab fills its clipped strip.
+        ringInset: Theme.focusRing
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
         tapped: function (point, button) {
             if (button === Qt.MiddleButton)
@@ -60,16 +70,14 @@ FocusScope {
                 handle.activated()
         }
 
-        radius: Theme.rounding
         hasChrome: true
-        color: handle.current ? Theme.cursor
-             : body.hovered ? Theme.hoverRaised
-                            : Theme.raised
-        border.width: 1
-        border.color: handle.current ? Theme.accent : Theme.line
+        color: handle.current ? Theme.base
+             : body.hovered ? Theme.hoverChrome
+                            : Theme.chrome
 
         Icon {
             id: mark
+            visible: handle.tag === ""
             anchors.left: parent.left
             anchors.leftMargin: Theme.spacingS
             anchors.verticalCenter: parent.verticalCenter
@@ -77,8 +85,23 @@ FocusScope {
             ink: handle.current ? Theme.foreground : Theme.dim
         }
 
+        Rectangle {
+            objectName: "tabSwatch"
+            visible: handle.tag !== ""
+            anchors.centerIn: mark
+            width: Theme.tagSwatch
+            height: Theme.tagSwatch
+            color: {
+                // tagColour is no binding dependency; `raised` changes with
+                // the theme, so reading it redraws the square on a theme switch.
+                Theme.raised
+                return Theme.tagColour(handle.tag)
+            }
+        }
+
         Text {
             id: label
+            objectName: "tabTitle"
             anchors.left: mark.right
             anchors.leftMargin: Theme.iconGap
             anchors.right: parent.right
@@ -88,6 +111,7 @@ FocusScope {
             color: handle.current ? Theme.foreground : Theme.dim
             elide: Text.ElideMiddle
             font.family: Theme.fontFamily
+            font.weight: handle.current && handle.focusedPane ? Font.DemiBold : Font.Normal
             font.pixelSize: Theme.fontBody
             renderType: Text.NativeRendering
         }
@@ -96,6 +120,7 @@ FocusScope {
         // control the keyboard and the eye both have to guess at.
         Item {
             id: closeMark
+            objectName: "tabClose"
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
@@ -105,6 +130,7 @@ FocusScope {
             Accessible.name: "Close tab"
 
             Text {
+                objectName: "tabCloseMark"
                 anchors.centerIn: parent
                 text: "×"
                 color: closeHover.hovered ? Theme.urgent : handle.current ? Theme.foreground : Theme.dim
@@ -115,6 +141,15 @@ FocusScope {
 
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: handle.closed() }
+        }
+
+        // The edge between two tabs on the strip.
+        Rectangle {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 1
+            color: Theme.line
         }
     }
 }

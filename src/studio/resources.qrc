@@ -32,6 +32,7 @@
         <file>qml/KeyCap.qml</file>
         <file>qml/KeyCaps.qml</file>
         <file>qml/ModeBits.qml</file>
+        <file>qml/ViewModeSwitch.qml</file>
         <file>qml/ModeSheet.qml</file>
         <file>qml/ConflictSheet.qml</file>
         <file>qml/ArchiveSheet.qml</file>
