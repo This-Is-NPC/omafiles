@@ -30,7 +30,7 @@ Window {
     minimumHeight: 480
     visible: true
     title: "omafiles"
-    color: Theme.background
+    color: Theme.base
     onClosing: Qt.quit()
 
     property var receiptDialogs: []
@@ -110,14 +110,14 @@ Window {
             title: "Properties"
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
-            palette.window: Theme.panel
+            palette.window: Theme.chrome
             palette.windowText: Theme.foreground
             palette.text: Theme.foreground
-            palette.base: Theme.panel
-            palette.button: Theme.sunken
+            palette.base: Theme.chrome
+            palette.button: Theme.raised
             palette.buttonText: Theme.foreground
             palette.highlight: Theme.accent
-            palette.highlightedText: Theme.background
+            palette.highlightedText: Theme.base
             modal: true
             C.Overlay.modal: Rectangle { color: Theme.scrim }
             popupType: C.Popup.Item
@@ -1861,7 +1861,7 @@ Window {
                 id: header
                 width: parent.width
                 height: Theme.barHeight
-                color: Theme.panel
+                color: Theme.chrome
 
                 Row {
                     id: navRow
@@ -2096,7 +2096,7 @@ Window {
                     handle: Rectangle {
                         implicitWidth: split.handleWidth
                         color: C.SplitHandle.pressed || C.SplitHandle.hovered
-                               ? Theme.fill(Theme.accent, 0.5) : Theme.line
+                               ? Theme.accent : Theme.line
                     }
 
                     Repeater {
@@ -2155,7 +2155,7 @@ Window {
 
                 Rectangle {
                     anchors.fill: parent
-                    color: Theme.panel
+                    color: Theme.chrome
                 }
 
                 Entry {
@@ -2970,7 +2970,7 @@ Window {
         // fraction of the window and hope the split had finished laying out.
         objectName: "pane"
         // Qt Rectangle defaults to white; the files views paint transparent on top of this pane.
-        color: Theme.background
+        color: Theme.base
         property var pane
         property int paneIndex
         required property real narrowest
@@ -3020,7 +3020,7 @@ Window {
                 id: strip
                 Layout.fillWidth: true
                 Layout.preferredHeight: Theme.stripHeight
-                color: Workspace.focusedPane === paneRoot.paneIndex ? Theme.panel : Theme.sunken
+                color: Workspace.focusedPane === paneRoot.paneIndex ? Theme.chrome : Theme.base
                 clip: true
 
                 // The tabs share what the new-tab chip and the view controls
@@ -3130,9 +3130,9 @@ Window {
                         width: modes.width
                         height: Theme.controlHeight
                         radius: Theme.rounding
-                        color: "transparent"
+                        color: Theme.chrome
                         border.width: 1
-                        border.color: Theme.fill(Theme.foreground, 0.18)
+                        border.color: Theme.line
 
                         Row {
                             id: modes
@@ -3479,7 +3479,7 @@ Window {
                             width: listing.width
                             height: filesRoot.viewMode === "details" ? Theme.controlHeight : 0
                             visible: height > 0
-                            color: Theme.sunken
+                            color: Theme.chrome
 
                             ColumnHead {
                                 id: nameHead
@@ -3536,7 +3536,7 @@ Window {
                             Rule { anchors.bottom: parent.bottom }
                         }
 
-                        delegate: Rectangle {
+                        delegate: Item {
                             id: row
                             objectName: "fileRow"
                             property bool pooled: false
@@ -3572,9 +3572,17 @@ Window {
                             height: Theme.rowHeight
                             Accessible.role: row.details ? Accessible.Cell : Accessible.ListItem
                             Accessible.name: row.name
-                            color: onCursor ? Theme.fill(Theme.accent, 0.16)
-                                 : rowHover.hovered ? Theme.fill(Theme.foreground, 0.05)
-                                                    : "transparent"
+
+                            // Opaque, and drawn only when the row has a state:
+                            // at rest the list's own surface shows.
+                            Rectangle {
+                                objectName: "rowWash"
+                                anchors.fill: parent
+                                visible: row.onCursor || row.marked || rowHover.hovered
+                                color: row.onCursor ? Theme.cursor
+                                     : row.marked ? Theme.marked
+                                                  : Theme.hoverBase
+                            }
 
                             Text {
                                 id: markDot
@@ -3811,14 +3819,22 @@ Window {
                                 height: cellName.y + cellName.height
                             }
 
-                            Rectangle {
+                            Item {
                                 id: tile
                                 anchors.fill: parent
                                 anchors.margins: Theme.spacingXs
-                                radius: Theme.rounding
-                                color: cell.onCursor ? Theme.fill(Theme.accent, 0.16)
-                                     : cellHover.hovered ? Theme.fill(Theme.foreground, 0.05)
-                                                         : "transparent"
+
+                                // Opaque, and drawn only when the cell has a
+                                // state: at rest the grid's own surface shows.
+                                Rectangle {
+                                    objectName: "rowWash"
+                                    anchors.fill: parent
+                                    radius: Theme.rounding
+                                    visible: cell.onCursor || cell.marked || cellHover.hovered
+                                    color: cell.onCursor ? Theme.cursor
+                                         : cell.marked ? Theme.marked
+                                                       : Theme.hoverBase
+                                }
 
                                 Column {
                                     id: tileColumn

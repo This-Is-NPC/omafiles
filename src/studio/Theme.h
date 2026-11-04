@@ -9,6 +9,9 @@
 
 namespace omafiles {
 
+/// The WCAG contrast ratio of two opaque colours, from 1 to 21.
+qreal contrast(const QColor &a, const QColor &b);
+
 class Theme : public QObject
 {
     Q_OBJECT
@@ -20,13 +23,20 @@ class Theme : public QObject
     QML_ELEMENT
     QML_SINGLETON
     Q_PROPERTY(int rounding READ rounding NOTIFY changed)
-    Q_PROPERTY(QColor background READ background NOTIFY changed)
+    // Every colour is opaque (docs/design.md §3): a surface never shows what
+    // is under it.
+    Q_PROPERTY(QColor base READ base NOTIFY changed)
     Q_PROPERTY(QColor foreground READ foreground NOTIFY changed)
     Q_PROPERTY(QColor accent READ accent NOTIFY changed)
     Q_PROPERTY(QColor urgent READ urgent NOTIFY changed)
-    Q_PROPERTY(QColor panel READ panel NOTIFY changed)
-    Q_PROPERTY(QColor sunken READ sunken NOTIFY changed)
+    Q_PROPERTY(QColor chrome READ chrome NOTIFY changed)
+    Q_PROPERTY(QColor raised READ raised NOTIFY changed)
     Q_PROPERTY(QColor line READ line NOTIFY changed)
+    Q_PROPERTY(QColor hoverBase READ hoverBase NOTIFY changed)
+    Q_PROPERTY(QColor hoverChrome READ hoverChrome NOTIFY changed)
+    Q_PROPERTY(QColor hoverRaised READ hoverRaised NOTIFY changed)
+    Q_PROPERTY(QColor cursor READ cursor NOTIFY changed)
+    Q_PROPERTY(QColor marked READ marked NOTIFY changed)
     Q_PROPERTY(QColor dim READ dim NOTIFY changed)
     Q_PROPERTY(QColor scrim READ scrim NOTIFY changed)
     Q_PROPERTY(QString fontFamily READ fontFamily CONSTANT)
@@ -54,17 +64,30 @@ public:
 
     int rounding() const { return m_rounding; }
 
-    QColor background() const { return m_background; }
+    /// The content surface: the file list, sheet bodies, the current tab.
+    QColor base() const { return m_base; }
     QColor foreground() const { return m_foreground; }
     QColor accent() const { return m_accent; }
     QColor urgent() const { return m_urgent; }
 
-    QColor panel() const;
-    QColor sunken() const;
+    /// The surface of the bars, the sidebar and the details panel.
+    QColor chrome() const;
+    /// Menus, tooltips, keycaps and controls at rest.
+    QColor raised() const;
+    /// Every hairline and control border.
     QColor line() const;
+    /// A hovered row or control on each of the three surfaces.
+    QColor hoverBase() const;
+    QColor hoverChrome() const;
+    QColor hoverRaised() const;
+    /// The keyboard cursor's row or cell, and a control that is on.
+    QColor cursor() const;
+    /// A marked row.
+    QColor marked() const;
+    /// Secondary text, at least 4.5:1 against chrome where the theme allows.
     QColor dim() const;
-    /// The wash a sheet or dialog lays over the window behind it.
-    QColor scrim() const { return fill(m_background, 0.55); }
+    /// The opaque surface behind a sheet or dialog, in place of the window.
+    QColor scrim() const;
 
     QString fontFamily() const { return QStringLiteral("monospace"); }
 
@@ -91,7 +114,6 @@ public:
     static constexpr int iconGap() { return spacingS(); }
     // The width of the focus ring, drawn just outside the box it marks.
     static constexpr int focusRing() { return 2; }
-    Q_INVOKABLE QColor fill(const QColor &role, qreal alpha) const;
 
 signals:
     void changed();
@@ -106,12 +128,10 @@ private:
     /// first: the user's override, then omarchy's default.
     QStringList m_roundingPaths;
     int m_rounding = 0;
-    bool m_dark = true;
-    QColor m_background{"#16161e"};
+    QColor m_base{"#16161e"};
     QColor m_foreground{"#c0caf5"};
     QColor m_accent{"#7aa2f7"};
     QColor m_urgent{"#f7768e"};
-    QColor m_muted{"#565f89"};
 };
 
 } // namespace omafiles

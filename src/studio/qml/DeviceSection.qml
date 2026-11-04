@@ -104,8 +104,9 @@ Column {
             required property var modelData
             required property int index
             width: ListView.view.width
-            color: devices.activeFocus && devices.currentIndex === index ? Theme.fill(Theme.accent, 0.18)
-                 : hovered ? Theme.fill(Theme.foreground, 0.06) : "transparent"
+            readonly property bool onCursor: devices.activeFocus && devices.currentIndex === index
+            washed: onCursor || hovered
+            color: onCursor ? Theme.cursor : Theme.hoverChrome
             Accessible.role: Accessible.ListItem
             Accessible.name: modelData.name
             Accessible.description: modelData.mounted ? "Mounted" : "Not mounted"

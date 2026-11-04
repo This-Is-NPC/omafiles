@@ -92,7 +92,8 @@ Item {
                 Keys.onBacktabPressed: function (event) { Focus.move(event, hints.adjacent(index, -1)) }
                 implicitWidth: contents.implicitWidth
                 height: Theme.controlHeight
-                color: hovered ? hoverChromeFill : "transparent"
+                hasChrome: hovered
+                color: Theme.hoverChrome
                 radius: Theme.rounding
                 tooltipCaption: pair.modelData.label
                 tooltipKey: pair.modelData.key

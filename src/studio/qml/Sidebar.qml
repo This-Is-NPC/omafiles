@@ -31,7 +31,7 @@ Rectangle {
     signal viewMenuRequested(int row, real x, real y)
     signal keyRequested(var event)
 
-    color: Theme.panel
+    color: Theme.chrome
 
     function focusList(list) {
         if (!list.activeFocus) return
@@ -152,9 +152,8 @@ Rectangle {
                         Accessible.role: Accessible.ListItem
                         Accessible.name: viewRow.name
                         Accessible.description: viewRow.asks
-                        color: viewRow.onCursor ? Theme.fill(Theme.foreground, 0.10)
-                             : viewRow.hovered ? Theme.fill(Theme.foreground, 0.06)
-                                               : "transparent"
+                        washed: viewRow.onCursor || viewRow.hovered
+                        color: viewRow.onCursor ? Theme.raised : Theme.hoverChrome
                         // The icon says which of the two it is, so a name that does
                         // not is still readable at a glance.
                         iconKind: viewRow.kind === "folder" ? "folder" : "tag"
@@ -268,11 +267,11 @@ Rectangle {
                         width: ListView.view.width
                         Accessible.role: Accessible.ListItem
                         Accessible.name: tagRow.tag
-                        color: chosen ? Theme.fill(Theme.accent, 0.16)
-                             : onCursor ? Theme.fill(Theme.foreground, 0.10)
-                             : hovered ? Theme.fill(Theme.foreground, 0.06)
-                                       : "transparent"
-                        border.color: chosen ? Theme.fill(Theme.accent, 0.55) : "transparent"
+                        washed: chosen || onCursor || hovered
+                        color: chosen ? Theme.cursor
+                             : onCursor ? Theme.raised
+                                        : Theme.hoverChrome
+                        border.color: chosen ? Theme.accent : color
                         iconKind: "tag"
                         iconInk: tagRow.chosen ? Theme.accent : Theme.dim
                         text: tagRow.tag

@@ -707,6 +707,10 @@ private slots:
     void selectsFocusedPreviewText();
     void leavesSelectedPreviewText_data();
     void leavesSelectedPreviewText();
+    void themeRolesAreOpaque_data();
+    void themeRolesAreOpaque();
+    void dimTextHasContrast_data();
+    void dimTextHasContrast();
 
 private:
     QQuickWindow *window() const;
@@ -3429,7 +3433,7 @@ void TestStudio::dressesTheGraphInTheDesktopTheme()
         item.setTheme(theme);
         item.setIndex(index);
         QImage canvas(900, 600, QImage::Format_ARGB32_Premultiplied);
-        canvas.fill(theme->background());
+        canvas.fill(theme->base());
         QPainter painter(&canvas);
         item.paint(&painter);
         return canvas;
@@ -3500,7 +3504,7 @@ void TestStudio::paintsTheGraphOnTheThemeBackground()
     if (shot.isNull())
         QSKIP("grabWindow returned a null image");
 
-    const QColor backdrop = m_theme->background();
+    const QColor backdrop = m_theme->base();
     const auto sample = [&](const QPoint &local, const char *where) {
         const QPoint pt = graph->mapToScene(local).toPoint();
         const QColor pixel = shot.pixelColor(pt);
@@ -3544,7 +3548,7 @@ void TestStudio::paintsTheFolderOnTheThemeBackground()
     if (shot.isNull())
         QSKIP("grabWindow returned a null image");
 
-    const QColor backdrop = m_theme->background();
+    const QColor backdrop = m_theme->base();
     const QPoint local(qRound(pane->width() * 0.55), qRound(pane->height() * 0.85));
     const QPoint pt = pane->mapToScene(local).toPoint();
     const QColor pixel = shot.pixelColor(pt);
@@ -4866,18 +4870,18 @@ void TestStudio::followsEveryThemeChangeAndNotJustTheFirst()
     const auto restore = qScopeGuard([&previous] { qputenv("XDG_STATE_HOME", previous); });
 
     Theme theme;
-    QCOMPARE(theme.background(), QColor(QStringLiteral("#101010")));
+    QCOMPARE(theme.base(), QColor(QStringLiteral("#101010")));
 
     QVERIFY(paint(QStringLiteral("#202020")));
-    QTRY_COMPARE(theme.background(), QColor(QStringLiteral("#202020")));
+    QTRY_COMPARE(theme.base(), QColor(QStringLiteral("#202020")));
 
     // The one that fails without the re-arm: by now the file the watch was taken
     // on has been unlinked once already.
     QVERIFY(paint(QStringLiteral("#303030")));
-    QTRY_COMPARE(theme.background(), QColor(QStringLiteral("#303030")));
+    QTRY_COMPARE(theme.base(), QColor(QStringLiteral("#303030")));
 
     QVERIFY(paint(QStringLiteral("#404040")));
-    QTRY_COMPARE(theme.background(), QColor(QStringLiteral("#404040")));
+    QTRY_COMPARE(theme.base(), QColor(QStringLiteral("#404040")));
 }
 
 // Two tabs in one pane are drawn by one model. Marks kept on the model would
@@ -8919,6 +8923,86 @@ void TestStudio::keepsEveryKeyboardMoveInTheViewport()
     settle();
 }
 
+
+// The built-in theme and a light one. Synthetic values, shaped like a light
+// omarchy colors.toml.
+static void addThemeRows()
+{
+    QTest::addColumn<QByteArray>("colours");
+    QTest::newRow("default") << QByteArray();
+    QTest::newRow("light") << QByteArrayLiteral(
+        "mode = \"light\"\n"
+        "background = \"#fffcf0\"\n"
+        "foreground = \"#100f0f\"\n"
+        "accent = \"#205ea6\"\n"
+        "muted = \"#b7b5ac\"\n"
+        "red = \"#d14d41\"\n");
+}
+
+// A Theme read from `colours` as the current omarchy theme; none is the
+// built-in default.
+static std::unique_ptr<Theme> themeFrom(const QTemporaryDir &state, const QByteArray &colours)
+{
+    if (!colours.isEmpty()) {
+        const QString themeDir = QDir(state.path()).filePath(QStringLiteral("omarchy/current/theme"));
+        QDir().mkpath(themeDir);
+        QFile file(QDir(themeDir).filePath(QStringLiteral("colors.toml")));
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text) || file.write(colours) != colours.size())
+            return nullptr;
+    }
+    const QByteArray previous = qgetenv("XDG_STATE_HOME");
+    qputenv("XDG_STATE_HOME", state.path().toUtf8());
+    auto theme = std::make_unique<Theme>();
+    qputenv("XDG_STATE_HOME", previous);
+    return theme;
+}
+
+void TestStudio::themeRolesAreOpaque_data()
+{
+    addThemeRows();
+}
+
+// Every colour the window draws with is opaque: a translucent role shows
+// whatever is under it, and over a hole in the window, the desktop.
+void TestStudio::themeRolesAreOpaque()
+{
+    QFETCH(QByteArray, colours);
+    QTemporaryDir state;
+    QVERIFY(state.isValid());
+    const auto theme = themeFrom(state, colours);
+    QVERIFY(theme);
+    const QMetaObject *meta = theme->metaObject();
+    int roles = 0;
+    for (int i = meta->propertyOffset(); i < meta->propertyCount(); ++i) {
+        const QMetaProperty property = meta->property(i);
+        if (property.metaType() != QMetaType::fromType<QColor>())
+            continue;
+        ++roles;
+        const QColor colour = property.read(theme.get()).value<QColor>();
+        QVERIFY2(colour.alpha() == 255,
+                 qPrintable(QStringLiteral("%1 has alpha %2").arg(property.name()).arg(colour.alpha())));
+    }
+    QVERIFY(roles > 0);
+}
+
+void TestStudio::dimTextHasContrast_data()
+{
+    addThemeRows();
+}
+
+// Secondary text stays readable on the bars and panels: 4.5:1, the WCAG floor
+// for body text.
+void TestStudio::dimTextHasContrast()
+{
+    QFETCH(QByteArray, colours);
+    QTemporaryDir state;
+    QVERIFY(state.isValid());
+    const auto theme = themeFrom(state, colours);
+    QVERIFY(theme);
+    const qreal ratio = omafiles::contrast(theme->dim(), theme->chrome());
+    QVERIFY2(ratio >= 4.5, qPrintable(QStringLiteral("dim on chrome is %1:1").arg(ratio)));
+}
+
 QTEST_MAIN(TestStudio)
 // A search path entry that is not UTF-8 is skipped, the way the basedir spec
 // ignores an invalid one: decoded, `\xff` names the U+FFFD directory beside it.
@@ -9342,16 +9426,8 @@ void TestStudio::makesTheFileManagerDefaultFromTheKeyboard()
     QObject *text = dialog->findChild<QObject *>("propertyText");
     QVERIFY(background);
     QVERIFY(text);
-    const auto luminance = [](QColor color) {
-        const auto linear = [](double value) {
-            return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
-        };
-        return 0.2126 * linear(color.redF()) + 0.7152 * linear(color.greenF())
-             + 0.0722 * linear(color.blueF());
-    };
-    const double paper = luminance(background->property("color").value<QColor>());
-    const double ink = luminance(text->property("color").value<QColor>());
-    QVERIFY((qMax(paper, ink) + 0.05) / (qMin(paper, ink) + 0.05) >= 4.5);
+    QVERIFY(omafiles::contrast(background->property("color").value<QColor>(),
+                               text->property("color").value<QColor>()) >= 4.5);
     key(Qt::Key_Escape);
     settle();
     QVERIFY(!dialog || !dialog->property("visible").toBool());
@@ -12639,7 +12715,7 @@ void TestStudio::keepsCliNotesInWindowReceipts()
     for (int i = 0; i < 100 && !receipt->hasActiveFocus(); ++i)
         key(Qt::Key_Tab);
     QVERIFY(receipt->hasActiveFocus());
-    QCOMPARE(receipt->property("color").value<QColor>().alpha(), 0);
+    QVERIFY(!receipt->property("hasChrome").toBool());
     key(Qt::Key_Return);
     QPointer<QObject> dialog = window()->findChild<QObject *>("propertiesDialog");
     auto *text = dialog->findChild<QQuickItem *>("propertyText");
@@ -15176,7 +15252,7 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
         const QPoint corner = button->mapToScene(QPointF(1, 1)).toPoint();
         const QImage frame = window()->grabWindow();
         QVERIFY(!frame.isNull());
-        QVERIFY2(std::abs(frame.pixelColor(corner).lightnessF() - m_theme->panel().lightnessF()) < 0.15, "Footer actions keep theme chrome");
+        QVERIFY2(std::abs(frame.pixelColor(corner).lightnessF() - m_theme->chrome().lightnessF()) < 0.15, "Footer actions keep theme chrome");
         if (activation == 0) QVERIFY(tapItem(window(), button));
         else { button->forceActiveFocus(); key(activation == 1 ? Qt::Key_Return : Qt::Key_Space); }
         settle(); QVERIFY(menu->isVisible()); key(Qt::Key_Escape);
@@ -15321,7 +15397,7 @@ void TestStudio::traversesEveryMenuAction()
         QTRY_VERIFY(current->mapToItem(list, QPointF(0, current->height())).y() <= list->height() + 0.5);
         QVERIFY(overlay->isAncestorOf(window()->activeFocusItem()));
         const QColor fill = current->property("color").value<QColor>();
-        QCOMPARE(fill, m_theme->fill(m_theme->accent(), 0.18));
+        QCOMPARE(fill, m_theme->cursor());
         chosen.clear();
         if (palette && activation == Qt::Key_Space) {
             auto *query = overlay->findChild<QQuickItem *>("paletteQuery");
@@ -15596,7 +15672,7 @@ void TestStudio::auditsTagEditorControls()
         for (int step = 0; step <= index; ++step) key(Qt::Key_Down);
         QCOMPARE(choices->property("currentIndex").toInt(), index);
         auto *current = choices->property("currentItem").value<QQuickItem *>();
-        QVERIFY(current); QTRY_COMPARE(current->property("color").value<QColor>(), m_theme->fill(m_theme->accent(), 0.18));
+        QVERIFY(current); QTRY_COMPARE(current->property("color").value<QColor>(), m_theme->cursor());
         QTRY_VERIFY(hasFocusOutline(window(), source->parentItem(), m_theme->accent()));
         key(Qt::Key_Tab); QCOMPARE(source->property("text").toString(), words.at(index));
         key(Qt::Key_Backtab, Qt::ShiftModifier);

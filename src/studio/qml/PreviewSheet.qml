@@ -18,7 +18,7 @@ Rectangle {
     property bool nextAvailable: false
     signal stepRequested(int direction)
     visible: false
-    color: Theme.fill(Theme.background, 0.72)
+    color: Theme.scrim
     Accessible.ignored: true
 
     function openFor(file) {

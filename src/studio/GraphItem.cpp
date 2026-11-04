@@ -419,7 +419,7 @@ void GraphItem::paint(QPainter *painter)
     const QColor accent = m_theme ? m_theme->accent() : QColor(QStringLiteral("#7aa2f7"));
     const QColor ink = m_theme ? m_theme->foreground() : QColor(QStringLiteral("#c0caf5"));
     const QColor faint = m_theme ? m_theme->dim() : QColor(QStringLiteral("#565f89"));
-    const QColor backdrop = m_theme ? m_theme->background() : QColor(QStringLiteral("#16161e"));
+    const QColor backdrop = m_theme ? m_theme->base() : QColor(QStringLiteral("#16161e"));
     const auto wash = [](QColor colour, int alpha) {
         colour.setAlpha(alpha);
         return colour;

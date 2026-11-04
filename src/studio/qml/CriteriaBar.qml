@@ -40,7 +40,7 @@ Rectangle {
     }
 
     height: Theme.stripHeight
-    color: Theme.panel
+    color: Theme.chrome
 
     Row {
         anchors.left: parent.left

@@ -6,6 +6,8 @@ import omafiles
 
 // Shared tab focus, keyboard activation, the focus ring, and pointer shell.
 // Host types set chrome colours and content; Escape is not accepted here.
+// The chrome draws only while the host sets `hasChrome`, and then in an opaque
+// role: a transparent Rectangle can leave a hole in the window's alpha.
 Item {
     id: control
 
@@ -22,8 +24,7 @@ Item {
     property string tooltipCaption: ""
     property string tooltipKey: ""
 
-    readonly property color hoverChromeFill: Theme.fill(Theme.foreground, 0.08)
-    readonly property color hoverChromeBorder: Theme.fill(Theme.foreground, 0.25)
+    property bool hasChrome: false
 
     signal activated()
     signal hoverChanged(bool hovered)
@@ -79,10 +80,10 @@ Item {
         id: chrome
         anchors.fill: parent
         z: -1
-        color: "transparent"
-
-        Behavior on color { ColorAnimation { duration: 90 } }
-        Behavior on border.color { ColorAnimation { duration: 90 } }
+        visible: control.hasChrome
+        color: Theme.chrome
+        border.width: 0
+        border.color: Theme.line
     }
 
     readonly property Tooltip tooltip: tooltipLoader.item as Tooltip

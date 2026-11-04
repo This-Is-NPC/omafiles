@@ -3,8 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import omafiles
 
-// A control, in omarchy's shape: a translucent wash of a role over the surface
-// with a hairline border rather than a second opaque colour.
+// A control, in omarchy's shape: a raised surface with a hairline border.
 //
 // Two weights. The default carries its border at rest, for a control that has
 // to be findable on its own -- `+`, `×`, the palette key. `quiet` keeps only
@@ -42,17 +41,14 @@ FocusableControl {
     height: implicitHeight
     radius: Theme.rounding
 
-    color: !chip.usable ? "transparent"
-         : chip.on ? Theme.fill(chip.role, quiet ? 0.16 : 0.18)
-         : chip.hovered ? chip.hoverChromeFill
-         : quiet ? "transparent"
-                 : Theme.fill(Theme.foreground, 0.04)
+    hasChrome: !quiet || (chip.usable && (chip.on || chip.hovered))
+    color: chip.on && chip.usable ? Theme.cursor
+         : !chip.hovered || !chip.usable ? Theme.raised
+         : quiet ? Theme.hoverChrome
+                 : Theme.hoverRaised
 
     border.width: 1
-    border.color: chip.on ? (quiet ? Theme.fill(chip.role, 0.55) : chip.role)
-                : chip.hovered ? chip.hoverChromeBorder
-                : quiet ? "transparent"
-                        : Theme.fill(Theme.foreground, 0.18)
+    border.color: chip.on && chip.usable ? chip.role : Theme.line
 
     Text {
         id: captionText

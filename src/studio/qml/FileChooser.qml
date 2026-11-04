@@ -19,7 +19,7 @@ Window {
     height: 560
     minimumWidth: 240
     minimumHeight: 180
-    color: Theme.background
+    color: Theme.base
     title: request ? request.title : "File chooser"
     visible: request !== null
 
@@ -320,7 +320,7 @@ Window {
                         x: Theme.focusRing
                         width: files.width - 2 * Theme.focusRing
                         height: Theme.rowHeight
-                        color: files.currentIndex === index ? Theme.fill(Theme.accent, 0.18) : "transparent"
+                        color: files.currentIndex === index ? Theme.cursor : Theme.base
                         Text {
                             textFormat: Text.PlainText
                             anchors.fill: parent
@@ -431,7 +431,7 @@ Window {
         Rectangle {
             anchors.fill: parent
             visible: chooser.request && chooser.request.overwritePaths.length > 0
-            color: Theme.background
+            color: Theme.base
             OverlayScroll {
                 anchors.fill: parent
                 anchors.margins: Theme.inset - Theme.focusRing
@@ -479,13 +479,13 @@ Window {
         palette.buttonText: Theme.foreground
         palette.highlight: Theme.accent
         palette.highlightedText: Theme.foreground
-        palette.base: Theme.panel
-        palette.window: Theme.panel
-        palette.button: Theme.panel
+        palette.base: Theme.chrome
+        palette.window: Theme.chrome
+        palette.button: Theme.chrome
         font.family: Theme.fontFamily
         font.pixelSize: Theme.fontBody
         background: Rectangle {
-            color: Theme.panel
+            color: Theme.chrome
             implicitHeight: Theme.controlHeight
             border.color: Theme.line
             border.width: 1

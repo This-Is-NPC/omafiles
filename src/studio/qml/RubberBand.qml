@@ -122,7 +122,8 @@ Item {
         y: band.live ? Math.min(band.from.y - band.view.contentY, band.to.y) : 0
         width: band.live ? Math.abs(band.from.x - band.view.contentX - band.to.x) : 0
         height: band.live ? Math.abs(band.from.y - band.view.contentY - band.to.y) : 0
-        color: Theme.fill(Theme.accent, 0.16)
+        // An outline: the rows it sweeps stay readable.
+        color: "transparent"
         border.width: 1
         border.color: Theme.accent
     }

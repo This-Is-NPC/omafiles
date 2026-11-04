@@ -9,7 +9,7 @@ Rectangle {
     width: Math.max(0, Math.min(preferredWidth, parent.width - 2 * margin))
     height: Math.max(0, Math.min(preferredHeight, parent.height - 2 * margin))
     radius: Theme.rounding
-    color: Theme.panel
+    color: Theme.chrome
     border.width: 1
     border.color: Theme.accent
 }

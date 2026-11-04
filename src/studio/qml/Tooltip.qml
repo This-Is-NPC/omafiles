@@ -26,9 +26,9 @@ C.ToolTip {
     delay: 480
 
     background: Rectangle {
-        color: Theme.background
+        color: Theme.raised
         border.width: 1
-        border.color: Theme.fill(Theme.accent, 0.6)
+        border.color: Theme.accent
         radius: Theme.rounding
     }
 

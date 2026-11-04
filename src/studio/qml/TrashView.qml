@@ -136,11 +136,6 @@ FocusScope {
             }
             topMargin: Theme.focusRing
             bottomMargin: Theme.focusRing
-            highlight: Rectangle {
-                color: Theme.fill(Theme.accent, 0.12)
-                radius: Theme.rounding
-            }
-            highlightFollowsCurrentItem: true
             FocusRing {
                 parent: list
                 focused: list.activeFocus || (list.currentItem !== null && list.currentItem.activeFocus)
@@ -160,7 +155,10 @@ FocusScope {
                 x: Theme.focusRing
                 width: list.width - 2 * Theme.focusRing
                 height: rowLabels.implicitHeight + 2 * Theme.spacingS
-                color: row.marked ? Theme.fill(Theme.accent, 0.08) : "transparent"
+                radius: Theme.rounding
+                color: row.ListView.isCurrentItem ? Theme.cursor
+                     : row.marked ? Theme.marked
+                                  : Theme.base
                 Accessible.role: Accessible.ListItem
                 Accessible.name: name + "; Original: " + original + "; Deleted: " + deleted + "; " + problem
                 Column {

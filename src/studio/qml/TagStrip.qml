@@ -170,9 +170,9 @@ Item {
             height: Theme.chipHeight
             width: overflowLeadingMark.implicitWidth + strip.chipPadding
             radius: Theme.rounding
-            color: Theme.fill(Theme.accent, 0.14)
+            color: Theme.raised
             border.width: 1
-            border.color: Theme.fill(Theme.accent, 0.35)
+            border.color: Theme.line
             Accessible.role: Accessible.StaticText
             Accessible.name: "+" + Counted.of(strip.hiddenCount, "more tag")
             TapHandler { onTapped: strip.activated("") }
@@ -204,9 +204,9 @@ Item {
                 height: Theme.chipHeight
                 width: shown ? mark.implicitWidth + strip.chipPadding : 0
                 radius: Theme.rounding
-                color: Theme.fill(Theme.accent, 0.14)
+                color: Theme.raised
                 border.width: 1
-                border.color: Theme.fill(Theme.accent, 0.35)
+                border.color: Theme.line
                 opacity: shown ? 1 : 0
                 Accessible.role: Accessible.Button
                 Accessible.name: "Edit tag " + chip.modelData
@@ -232,9 +232,9 @@ Item {
             height: Theme.chipHeight
             width: overflowTrailingMark.implicitWidth + strip.chipPadding
             radius: Theme.rounding
-            color: Theme.fill(Theme.accent, 0.14)
+            color: Theme.raised
             border.width: 1
-            border.color: Theme.fill(Theme.accent, 0.35)
+            border.color: Theme.line
             Accessible.role: Accessible.StaticText
             Accessible.name: "+" + Counted.of(strip.hiddenCount, "more tag")
             TapHandler { onTapped: strip.activated("") }

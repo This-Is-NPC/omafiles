@@ -83,14 +83,14 @@ Row {
                         event.accepted = true
                     }
                     radius: Math.max(2, Theme.rounding - 2)
-                    color: cell.on && bits.editable ? Theme.fill(Theme.accent, 0.16)
-                                                    : "transparent"
-                    border.width: 1
+                    readonly property bool filled: cell.on && bits.editable
                     // The cursor while the sheet around it has the keyboard;
                     // a focused cell has the focus ring instead.
-                    border.color: bits.cursor === cell.at && !cell.activeFocus ? Theme.accent
-                                : hovered ? Theme.fill(Theme.foreground, 0.3)
-                                : "transparent"
+                    readonly property bool cursorCell: bits.cursor === cell.at && !cell.activeFocus
+                    hasChrome: filled || cursorCell || hovered
+                    color: filled ? Theme.cursor : hovered ? Theme.hoverChrome : Theme.chrome
+                    border.width: 1
+                    border.color: cursorCell ? Theme.accent : hovered ? Theme.line : color
 
                     Accessible.role: Accessible.CheckBox
                     Accessible.name: group.modelData + " " + cell.modelData
