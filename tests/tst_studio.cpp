@@ -648,6 +648,7 @@ private slots:
     void dimsUnderPropertiesLikeTheSheets();
     void restoresTheTopOverlayWhenOthersClose();
     void stacksAsynchronousReceipts();
+    void fitsPropertiesToItsText();
     void preservesFocusInCommandsOpenedByOverlays();
     void restoresAvailableOverlayFocusTargets();
     void preservesInterruptedTextSelections_data();
@@ -13632,6 +13633,46 @@ void TestStudio::restoresTheTopOverlayWhenOthersClose()
     const int before = cursor();
     key('j');
     QVERIFY(cursor() != before);
+}
+
+void TestStudio::fitsPropertiesToItsText()
+{
+    FileManager manager;
+    manager.setWorkspace(m_workspace);
+    manager.ShowItemProperties({QUrl::fromLocalFile(m_tree.filePath("one.txt")).toString()}, "");
+    settle();
+    QPointer<QObject> dialog = window()->findChild<QObject *>("propertiesDialog");
+    QVERIFY(dialog);
+    auto *text = dialog->findChild<QQuickItem *>("propertyText");
+    auto *viewport = dialog->findChild<QQuickItem *>("overlayScroll");
+    auto *header = dialog->property("header").value<QQuickItem *>();
+    auto *footer = dialog->property("footer").value<QQuickItem *>();
+    QVERIFY(text && viewport && header && footer);
+    const qreal chrome = header->height() + footer->height() + 2 * dialog->property("spacing").toReal()
+        + dialog->property("topPadding").toReal() + dialog->property("bottomPadding").toReal();
+    const qreal height = dialog->property("height").toReal();
+    QVERIFY(height < 480);
+    QVERIFY(height <= text->implicitHeight() + chrome + 0.5);
+    QVERIFY(text->implicitHeight() <= viewport->height() + 0.5);
+    key(Qt::Key_Escape);
+    QTRY_VERIFY(!dialog);
+
+    QStringList lines;
+    for (int i = 0; i < 200; ++i)
+        lines.append(QStringLiteral("line %1").arg(i));
+    m_workspace->propertiesRequested(lines.join('\n'));
+    settle();
+    dialog = window()->findChild<QObject *>("propertiesDialog");
+    QVERIFY(dialog);
+    text = dialog->findChild<QQuickItem *>("propertyText");
+    viewport = dialog->findChild<QQuickItem *>("overlayScroll");
+    QCOMPARE(dialog->property("height").toReal(), 480.0);
+    QVERIFY(viewport->property("contentHeight").toReal() > viewport->height());
+    QTRY_VERIFY(text->hasActiveFocus());
+    key(Qt::Key_PageDown);
+    QTRY_VERIFY(viewport->property("contentY").toReal() > 0);
+    key(Qt::Key_Escape);
+    QTRY_VERIFY(!dialog);
 }
 
 void TestStudio::stacksAsynchronousReceipts()

@@ -105,7 +105,7 @@ Window {
             parent: win.contentItem
             anchors.centerIn: parent
             width: Math.min(700, Math.max(0, win.width - 2 * Theme.spacingS))
-            height: Math.min(480, Math.max(0, win.height - 2 * Theme.spacingS))
+            height: Math.min(implicitHeight, 480, Math.max(0, win.height - 2 * Theme.spacingS))
             title: "Properties"
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
@@ -139,6 +139,7 @@ Window {
             }
             contentItem: OverlayScroll {
                 id: propertiesScroll
+                implicitHeight: propertyText.implicitHeight
                 contentHeight: propertyText.height
                 ReadOnlyText {
                     id: propertyText

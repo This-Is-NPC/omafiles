@@ -24,7 +24,7 @@ FACTOR = re.compile(r"\d+\s*\*|[*/]\s*\d+")
 # image.
 EXTENTS = {
     ("Main.qml", "height: 720"),
-    ("Main.qml", "height: Math.min(480, Math.max(0, win.height - 2 * Theme.spacingS))"),
+    ("Main.qml", "height: Math.min(implicitHeight, 480, Math.max(0, win.height - 2 * Theme.spacingS))"),
     ("FileChooser.qml", "height: 560"),
     ("PreviewSheet.qml", "height: hasImage ? Math.max(120, Math.min(420, panel.height - 150)) : 0"),
 }
