@@ -13,6 +13,7 @@ Rectangle {
     Accessible.ignored: true
 
     readonly property Item focusTarget: scroll
+    readonly property var hints: [{ key: "Esc", label: "close" }, { key: "PgDn PgUp", label: "page" }, { key: "↑ ↓", label: "scroll" }]
     property var groups: []
 
     property OverlayScroll scroll: null

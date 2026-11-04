@@ -12,6 +12,7 @@ Item {
     property TextMetrics labelRuler: null
     property Column keyRuler: null
     readonly property Item focusTarget: menu.list
+    readonly property var hints: [{ key: "Esc", label: "close" }, { key: "Enter / Space", label: "choose" }, { key: "j k", label: "move" }]
     signal chosen(string id)
 
     // Compare hover in client coordinates so scrolling cannot select a stationary pointer.

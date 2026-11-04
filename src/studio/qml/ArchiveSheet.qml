@@ -9,6 +9,7 @@ Rectangle {
     objectName: "archiveSheet"
     Accessible.ignored: true
     readonly property Item focusTarget: IndexModel.archive.busy ? cancelButton : destination ? destination.focusTarget : null
+    readonly property var hints: [{ key: "Esc", label: "cancel" }, { key: "Tab", label: "next" }, { key: "Enter / Space", label: "press" }]
     property bool extracting: false
     property var paths: []
     property string format: "zip"

@@ -16,6 +16,7 @@ Rectangle {
     property TextInput query: null
     property ListView list: null
     readonly property Item focusTarget: sheet.query
+    readonly property var hints: [{ key: "Esc", label: "close" }, { key: "Enter", label: "run" }, { key: "↑ ↓", label: "choose" }]
     signal chosen(string id)
 
     visible: false

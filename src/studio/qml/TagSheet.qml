@@ -14,6 +14,7 @@ Rectangle {
     property string refusal: ""
     property bool waiting: false
     readonly property Item focusTarget: source ? source.editor : null
+    readonly property var hints: [{ key: "Esc", label: "close" }, { key: "Enter", label: "apply" }, { key: "Tab", label: "complete" }, { key: "↑ ↓", label: "choose" }]
     property TagField source: null
     property TagField destination: null
     property Item closeButton: null
