@@ -113,16 +113,18 @@ activation component.
 One focus ring shows where the keyboard is: 2 px of accent just outside the
 focused button, chip, tab or path. A file list has no ring around it: the
 cursor row of the focused pane carries a 1 px accent ring on its own edge, and
-the other pane's cursor row keeps only its fill. A sidebar list, a scrolling
-sheet, a section heading and a text field fill the pane they sit in, so they
-draw the ring along their own edge, clear of their rows and text. A click or tap hides the ring until the next key, the way Qt
+the other pane's cursor row keeps only its fill. A sidebar list has no ring
+around it either: its cursor row, or the place button under the cursor, carries
+the 1 px ring. A scrolling sheet, a section heading and a text field fill the
+pane they sit in, so they draw the ring along their own edge, clear of their
+rows and text. A click or tap hides the ring until the next key, the way Qt
 Quick Controls show
 [visual focus](https://doc.qt.io/qt-6/qml-qtquick-controls-control.html#visualFocus-prop)
 only for keyboard focus.
 
-Keyboard navigation and key hints follow the focused control. **t** and **v**
-focus the tag or saved-view list, revealing the sidebar at narrow widths; an
-empty list focuses its heading. A heading is never a Tab stop. Clicking or
+Keyboard navigation and key hints follow the focused control. **p**, **t** and
+**v** focus the places, the tag list or the saved-view list, revealing the
+sidebar at narrow widths; an empty list focuses its heading. A heading is never a Tab stop. Clicking or
 tapping a sidebar heading focuses its list. **j k**, **Home End**, **PgUp PgDn** and **Ctrl d / Ctrl u** then
 navigate that list. Returning focus to the file-list control restores file
 navigation, including after a forward and reverse Tab round trip. Toolbar,

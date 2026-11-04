@@ -265,6 +265,11 @@ public:
     void setFocusedPane(int index);
     TabState *currentTab() const;
 
+    /// The sidebar's places, read off the disk on each call: home, the XDG
+    /// user directories that are folders other than home, then the Trash.
+    /// Each is `{name, icon, path}`; the Trash has no path.
+    Q_INVOKABLE static QVariantList places();
+
     Q_INVOKABLE PaneState *paneAtIndex(int index) const;
     Q_INVOKABLE TabState *tabAtIndex(int paneIndex, int tabIndex) const;
     Q_INVOKABLE void addTab(const QString &kind);

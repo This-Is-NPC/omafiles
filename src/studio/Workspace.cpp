@@ -472,6 +472,24 @@ void Workspace::adopt(PaneState *pane, int at)
     m_paneList->endInsertRows();
 }
 
+QVariantList Workspace::places()
+{
+    const auto place = [](const QString &name, const QString &icon, const QString &path) {
+        return QVariantMap{{QStringLiteral("name"), name}, {QStringLiteral("icon"), icon},
+                           {QStringLiteral("path"), path}};
+    };
+    const QString home = standingPath(homeDirectory());
+    QVariantList out{place(QStringLiteral("Home"), QStringLiteral("home"), home)};
+    for (const auto &[name, written] : userDirectories()) {
+        // user-dirs.dirs sets a directory it turns off to home itself.
+        const QString path = standingPath(written);
+        if (path != home)
+            out.append(place(name, QStringLiteral("folder"), path));
+    }
+    out.append(place(QStringLiteral("Trash"), QStringLiteral("trash"), QString()));
+    return out;
+}
+
 PaneState *Workspace::paneAtIndex(int index) const
 {
     if (index < 0 || index >= m_panes.size())

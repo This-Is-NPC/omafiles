@@ -156,7 +156,7 @@ public:
     /// The way out of a tag listing, where the rows come from as many folders
     /// as they like and none of them is the one the listing is standing in.
     Q_INVOKABLE void goTo(const QString &path);
-    void enter(const QString &path);
+    Q_INVOKABLE void enter(const QString &path);
     void activate(const QString &path, const QString &kind);
     Q_INVOKABLE void activateRow(int row);
     Q_INVOKABLE void toggleMarkAt(int row);

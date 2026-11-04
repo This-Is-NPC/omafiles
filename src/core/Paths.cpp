@@ -4,8 +4,10 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <QSet>
+#include <QStandardPaths>
 #include <QStringDecoder>
 #include <QUrl>
 #include <QScopeGuard>
@@ -132,6 +134,25 @@ QString homeDirectory()
     if (!nameFromBytes(qgetenv("HOME"), &home) || !home.startsWith(QLatin1Char('/')))
         return QStringLiteral("/");
     return home;
+}
+
+QList<std::pair<QString, QString>> userDirectories()
+{
+    const std::pair<QStandardPaths::StandardLocation, const char *> user[] = {
+        {QStandardPaths::DesktopLocation, "Desktop"},
+        {QStandardPaths::DocumentsLocation, "Documents"},
+        {QStandardPaths::DownloadLocation, "Downloads"},
+        {QStandardPaths::MusicLocation, "Music"},
+        {QStandardPaths::PicturesLocation, "Pictures"},
+        {QStandardPaths::MoviesLocation, "Videos"},
+    };
+    QList<std::pair<QString, QString>> out;
+    for (const auto &[location, name] : user) {
+        const QString path = QStandardPaths::writableLocation(location);
+        if (!path.isEmpty() && QFileInfo(path).isDir())
+            out.append({QString::fromLatin1(name), path});
+    }
+    return out;
 }
 
 QString anchoredPath(const QString &path)

@@ -171,6 +171,23 @@ Item {
                 ctx.beginPath()
                 ctx.arc(6, 6.2, 0.9, 0, Math.PI * 2)
                 ctx.fill()
+            } else if (k === "trash") {
+                ctx.beginPath()
+                ctx.moveTo(2.2, 4.2)
+                ctx.lineTo(13.8, 4.2)
+                ctx.moveTo(6.2, 4.2)
+                ctx.lineTo(6.6, 2.2)
+                ctx.lineTo(9.4, 2.2)
+                ctx.lineTo(9.8, 4.2)
+                ctx.moveTo(3.8, 4.2)
+                ctx.lineTo(4.6, 14.2)
+                ctx.lineTo(11.4, 14.2)
+                ctx.lineTo(12.2, 4.2)
+                ctx.moveTo(6.6, 7)
+                ctx.lineTo(6.8, 11.6)
+                ctx.moveTo(9.4, 7)
+                ctx.lineTo(9.2, 11.6)
+                ctx.stroke()
             } else if (k === "view-list") {
                 ctx.beginPath()
                 for (const y of [4, 8, 12]) {

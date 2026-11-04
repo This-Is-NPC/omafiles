@@ -30,10 +30,7 @@ Rectangle {
         content.active = true
         sheet.paths = paths.slice()
         sheet.existing = IndexModel.tagChoices(paths)
-        const words = []
-        for (let i = 0; i < IndexModel.tagRowCount(); ++i)
-            words.push(IndexModel.tagAt(i))
-        sheet.vocabulary = words
+        sheet.vocabulary = IndexModel.vocabulary()
         sheet.operation = operation
         source.text = tag || ""
         destination.text = ""
