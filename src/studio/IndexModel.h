@@ -52,6 +52,12 @@ class IndexModel : public QObject
     // Results expire when their context changes; current conditions take precedence.
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
     Q_PROPERTY(QAbstractListModel *tags READ tagsModel CONSTANT)
+    /// The order of `tags`: most used first, or by name.
+    Q_PROPERTY(bool tagsByCount READ tagsByCount WRITE setTagsByCount NOTIFY tagListChanged)
+    /// The text a tag name must hold to be a row of `tags`; empty shows them all.
+    Q_PROPERTY(QString tagFilter READ tagFilter WRITE setTagFilter NOTIFY tagListChanged)
+    /// The largest count in the whole vocabulary, which a count bar is measured against.
+    Q_PROPERTY(int largestTagCount READ largestTagCount NOTIFY changed)
 
 public:
     explicit IndexModel(QObject *parent = nullptr);
@@ -71,6 +77,13 @@ public:
     int unknownRows() const { return m_unknown; }
     int tagCount() const;
     QAbstractListModel *tagsModel() const;
+    bool tagsByCount() const;
+    void setTagsByCount(bool byCount);
+    QString tagFilter() const;
+    void setTagFilter(const QString &filter);
+    int largestTagCount() const;
+    /// Every tag in the index by name, whatever `tags` is narrowed to.
+    Q_INVOKABLE QStringList vocabulary() const;
 
     /// The index as it was last read.
     const Store &store() const { return m_store; }
@@ -186,7 +199,7 @@ public:
     Q_INVOKABLE void pruneTree(const QString &directory);
     Q_INVOKABLE void verifyTree(const QString &directory);
 
-    /// The tag on one row of the vocabulary list.
+    /// The tag on one row of `tags`, as the panel shows it.
     ///
     /// The tag panel is walked by the keyboard, and a keyboard walks past the
     /// bottom of the window. Reading the tag off the delegate would only work
@@ -203,6 +216,7 @@ signals:
     void conflictRequested(const QString &from, const QString &to);
     void noticeChanged();
     void tagEditingChanged();
+    void tagListChanged();
     void tagEditFinished(bool ok, const QString &receipt);
     void defaultManagerFinished(bool ok, const QString &text);
 

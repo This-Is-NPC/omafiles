@@ -198,8 +198,10 @@ Window {
         if (editingPath && insideOverlay(pathField, item)) return "path"
         if (filterBar.visible && insideOverlay(filterBar, item)) return "filter"
         if (activeSidebar) {
+            if (insideOverlay(activePlacesList, item)) return "places"
             if (item === activeSidebar.devicesFocusTarget || insideOverlay(activeDevicesList, item)) return "devices"
-            if (item === activeSidebar.tagsFocusTarget || insideOverlay(activeTagsList, item)) return "tags"
+            if (item === activeSidebar.tagsFocusTarget || item === activeSidebar.tagFind
+                    || insideOverlay(activeTagsList, item)) return "tags"
             if (item === activeSidebar.viewsFocusTarget || insideOverlay(activeViewsList, item)) return "views"
         }
         // A button, chip, tab or the path. A footer hint is a key of the list,
@@ -221,6 +223,7 @@ Window {
     readonly property var activeTagsList: activeSidebar ? activeSidebar.tagsList : null
     readonly property var activeDevicesList: activeSidebar ? activeSidebar.devicesList : null
     readonly property var activeViewsList: activeSidebar ? activeSidebar.viewsList : null
+    readonly property var activePlacesList: activeSidebar ? activeSidebar.placesList : null
     // A list is on screen. Two kinds of tab draw one: a folder, and a set of
     // tags read as folders. They share the view, the keys and the model, so
     // almost everything that asks this question means either of them.
@@ -368,6 +371,11 @@ Window {
             { key: "PgDn PgUp", label: "page" },
             { key: "Home End", label: "first, last row" },
             { key: "← →", label: "prev, next (icons)" } ] },
+        { title: "places", keys: [
+            { key: "p", label: "places panel" },
+            { key: "j k / ↓ ↑", label: "next, previous place" },
+            { key: "Enter / Space / l", label: "open the place in this tab" },
+            { key: "h / ← / Esc", label: "return to files" } ] },
         { title: "devices", keys: [
             { key: "d", label: "devices panel" },
             { key: "j k / ↑ ↓", label: "move; Home/End/Page Up/Page Down also work" },
@@ -427,6 +435,8 @@ Window {
             { key: "Enter", label: "keep filter" },
             { key: "Esc", label: "clear filter" },
             { key: "t", label: "tag panel; a adds, d removes, r renames" },
+            { key: "s", label: "in the tag panel: order by count or by name" },
+            { key: "/", label: "in the tag panel: find a tag" },
             { key: "v", label: "saved views" },
             { key: "Enter / Space", label: "toggle tag" },
             { key: "m / Menu / Shift F10", label: "tag menu" },
@@ -507,6 +517,11 @@ Window {
                     { key: "m", label: "menu" },
                     { key: "l", label: "open" },
                     { key: "j k", label: "node" }]
+        if (focusRegion === "places")
+            return [{ key: "?", label: "keys" },
+                    { key: "Enter", label: "open" },
+                    { key: "Esc", label: "back" },
+                    { key: "j k", label: "move" }]
         if (focusRegion === "devices" || focusRegion === "views")
             return [{ key: "?", label: "keys" },
                     { key: "Enter", label: "open" },
@@ -518,6 +533,8 @@ Window {
                     { key: "Enter", label: "toggle" },
                     { key: "Esc", label: "back" },
                     { key: "m", label: "menu" },
+                    { key: "s", label: "order" },
+                    { key: "/", label: "find" },
                     { key: "j k", label: "move" }]
         return [{ key: "?", label: "keys" },
                 { key: ":", label: "cmd" },
@@ -1047,7 +1064,7 @@ Window {
             return
         }
         activeSidebar.expanded = true
-        activeSidebar.devicesFocusTarget.forceActiveFocus()
+        activeSidebar.focusDevices()
     }
 
     function openDeviceMenu(id, x, y) {
@@ -1059,6 +1076,28 @@ Window {
         activeSidebar.devicesFocusTarget.forceActiveFocus()
         deviceMenu.targetId = id
         deviceMenu.openAt(x, y)
+    }
+
+    function focusPlaces() {
+        if (!activePlacesList)
+            return
+        activeSidebar.expanded = true
+        activePlacesList.forceActiveFocus()
+    }
+
+    // A folder opens in the tab, which a tags tab cannot hold: there it opens
+    // in a new files tab. The Trash is a tab of its own.
+    function openPlace(place) {
+        if (!place)
+            return
+        if (place.path === "") {
+            Workspace.addTab("trash")
+        } else if (activeTab.kind === "files" && activeFolder) {
+            activeFolder.enter(place.path)
+        } else {
+            Workspace.openTabIn(Workspace.focusedPane, "files", place.path)
+        }
+        Qt.callLater(takeFocus)
     }
 
     // Focused even with nothing in it, so `v` shows where views live rather
@@ -1322,6 +1361,8 @@ Window {
     // How many rows fit in the list the keyboard is walking. The tag panel
     // draws 25px rows with a pixel between them, the file views 30.
     function pageStep() {
+        if (focusRegion === "places")
+            return activePlacesList ? Math.max(1, activePlacesList.count) : 2
         if (focusRegion === "devices")
             return activeDevicesList ? Math.max(1, Math.floor(activeDevicesList.height / 32)) : 6
         if (focusRegion === "views")
@@ -1356,8 +1397,8 @@ Window {
                 graph.stepSelection(delta)
             return
         }
-        if (focusRegion === "devices") {
-            const list = activeDevicesList
+        if (focusRegion === "places" || focusRegion === "devices") {
+            const list = focusRegion === "places" ? activePlacesList : activeDevicesList
             if (list) list.currentIndex = Math.max(0, Math.min(list.currentIndex + delta, list.count - 1))
         } else if (focusRegion === "views")
             moveViewCursor(delta)
@@ -1374,8 +1415,8 @@ Window {
                 graph.selectEnd(last)
             return
         }
-        if (focusRegion === "devices") {
-            const list = activeDevicesList
+        if (focusRegion === "places" || focusRegion === "devices") {
+            const list = focusRegion === "places" ? activePlacesList : activeDevicesList
             if (list) list.currentIndex = last ? Math.max(0, list.count - 1) : 0
         } else if (focusRegion === "views") {
             const views = activeViewsList
@@ -1531,11 +1572,26 @@ Window {
             openTagMenuAt(tags.currentIndex, at.x, at.y)
             return true
         }
+        if (text === "s") {
+            IndexModel.tagsByCount = !IndexModel.tagsByCount
+            return true
+        }
         if (handleSideListKey(event, text))
             return true
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
                 || event.key === Qt.Key_Space) {
             toggleTagAt(tags.currentIndex)
+            return true
+        }
+        return false
+    }
+
+    function handlePlaceKey(event, text) {
+        if (handleSideListKey(event, text))
+            return true
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                || event.key === Qt.Key_Space || text === "l") {
+            openPlace(activeSidebar.places[activePlacesList.currentIndex])
             return true
         }
         return false
@@ -1629,6 +1685,7 @@ Window {
         case "~": folder.goHome(); return true
         case "t": focusTags(); return true
         case "v": focusViews(); return true
+        case "p": focusPlaces(); return true
         case "m": openFileMenuForListing(); return true
         case "a": folder.markAll(); return true
         case "A": folder.clearMarks(); return true
@@ -1793,7 +1850,10 @@ Window {
             return
         }
         if (event.key === Qt.Key_Slash) {
-            startFilter()
+            if (focusRegion === "tags")
+                activeSidebar.focusTagFind()
+            else
+                startFilter()
             event.accepted = true
             return
         }
@@ -1820,7 +1880,8 @@ Window {
         if (!onFiles)
             return
 
-        const handled = focusRegion === "devices" ? handleDeviceKey(event, text)
+        const handled = focusRegion === "places" ? handlePlaceKey(event, text)
+                      : focusRegion === "devices" ? handleDeviceKey(event, text)
                       : focusRegion === "views" ? handleViewKey(event, text)
                       : focusRegion === "tags"  ? handleTagKey(event, text)
                                                 : handleListKey(event, text)
@@ -2043,7 +2104,7 @@ Window {
                     id: sidebar
                     objectName: "sidebar"
                     Layout.fillHeight: true
-                    Layout.preferredWidth: 220
+                    Layout.preferredWidth: 264
                     // The panel belongs to both list tabs: the views in it are
                     // how you get anywhere, and a tags tab needs them as much
                     // as a folder does.
@@ -2056,11 +2117,14 @@ Window {
                     // work at every size.
                     visible: holdsTags && (win.paneShare >= 480 || expanded)
                     tab: win.activeTab
-                    entry: details.entry
+                    entry: win.activeFilesRoot ? win.activeFilesRoot.entry : ({})
                     walking: win.focusRegion === "tags"
+                    walkingPlaces: win.focusRegion === "places"
                     walkingDevices: win.focusRegion === "devices"
                     walkingViews: win.focusRegion === "views"
                     onKeyRequested: function (event) { win.handleKey(event) }
+                    onLeaveRequested: win.takeFocus()
+                    onPlaceActivated: function (place) { win.openPlace(place) }
                     onDeviceActivated: function (id) { Devices.act(id, "open") }
                     onDeviceMenuRequested: function (id, x, y) { win.openDeviceMenu(id, x, y) }
                     onTagEditRequested: win.startTagEdit("add")
@@ -2263,6 +2327,7 @@ Window {
             commands: [
                 { id: "add-files", label: "New files tab", key: "Ctrl t" },
                 { id: "add-tags", label: "New tags tab", key: "" },
+                { id: "places", label: "Places", key: "p" },
                 { id: "devices", label: "Devices", key: "d" },
                 { id: "open-trash", label: "Open Trash", key: "" },
                 { id: "restore-trash", label: "Restore from Trash", key: "r" },
@@ -2326,6 +2391,7 @@ Window {
                 case "empty-trash": if (win.onTrash) win.confirmEmptyTrash(); break
                 case "save-view": Qt.callLater(win.startNaming); break
                 case "views": Qt.callLater(win.focusViews); break
+                case "places": Qt.callLater(win.focusPlaces); break
                 case "add-graph": Workspace.addTab("graph"); break
                 case "close-tab": Workspace.closeCurrentTab(); break
                 case "split": Workspace.splitRight("files"); break

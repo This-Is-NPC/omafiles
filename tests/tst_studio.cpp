@@ -92,6 +92,7 @@
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTextOption>
 #include <QtQml>
 #include <QtTest>
 
@@ -732,6 +733,14 @@ private slots:
     void cursorRowCarriesTheOnlyRing();
     void markedRowHasNoStripe();
     void controlsHaveRestFill();
+    void placesListsExistingXdgDirs();
+    void placesOpenInCurrentTab();
+    void placesKeyReachesSection();
+    void findATagFilters();
+    void tagOrderToggles();
+    void tagBarLengthIsRelativeCount();
+    void cursorFileTagsAreBold();
+    void sidebarRowsHaveNoListRing();
 
 private:
     QQuickWindow *window() const;
@@ -2509,7 +2518,7 @@ void TestStudio::reachesControlsWithTabAndComesBackWithEscape()
 
 // One ring wherever the keyboard is: focusRing px of accent just outside the
 // box it marks, around the control itself, never cut by a clipping parent,
-// and the cursor row of a focused list keeps only its fill.
+// and in a list 1 px on the cursor row's own edge.
 void TestStudio::drawsOneFocusRingOutsideWhatHasFocus()
 {
     QObject *root = m_engine->rootObjects().first();
@@ -2535,10 +2544,10 @@ void TestStudio::drawsOneFocusRingOutsideWhatHasFocus()
         const auto shown = shownRings();
         QVERIFY2(shown.size() == 1, qPrintable(where + QStringLiteral(": %1 rings").arg(shown.size())));
         QQuickItem *ring = shown.first();
-        // A file list's ring is 1 px on its cursor row's own edge; every
-        // other ring is focusRing px just outside its box.
+        // A list's ring is 1 px on its cursor row's own edge; every other
+        // ring is focusRing px just outside its box.
         QQuickItem *cursorRow = ring->parentItem();
-        while (cursorRow && cursorRow->objectName() != QLatin1String("fileRow"))
+        while (cursorRow && !cursorRow->property("onCursor").isValid())
             cursorRow = cursorRow->parentItem();
         QVERIFY2(!cursorRow || cursorRow->property("onCursor").toBool(), qPrintable(where));
         const qreal weight = cursorRow ? 1 : width;
@@ -2614,7 +2623,7 @@ void TestStudio::drawsOneFocusRingOutsideWhatHasFocus()
     for (const char *region : {"views", "tags", "list"})
         QVERIFY2(regions.contains(QLatin1String(region)), region);
 
-    for (char walk : {'v', 'd', 't'}) {
+    for (char walk : {'p', 'v', 'd', 't'}) {
         key(Qt::Key_Escape);
         key(walk);
         check(QStringLiteral("key %1").arg(QLatin1Char(walk)));
@@ -4496,6 +4505,7 @@ void TestStudio::everyDocumentedKeyIsAnswered()
     static const Case cases[] = {
         {"j", ""},        {"k", ""},        {"l", ""},        {"h", ""},
         {"~", ""},        {"t", ""},        {"v", ""},        {"d", ""},        {"m", ""},
+        {"p", ""},
         {"s", ""},        {"i", ""},
         {"S", ""},        {"G", ""},        {"a", ""},        {".", ""},
         {"g", "twice"},                    // one `g` only arms the second
@@ -4836,6 +4846,17 @@ void TestStudio::writesTheDocumentationShots()
                         .toUtf8());
     }
     m_views->reload();
+
+    // User folders in the home folder, so Places shows them between Home and
+    // the Trash; they go when the pictures are drawn.
+    const QStringList userFolders{QStringLiteral("Documents"), QStringLiteral("Downloads"),
+                                  QStringLiteral("Pictures")};
+    for (const QString &folder : userFolders)
+        QVERIFY(QDir(m_tree.path()).mkpath(folder));
+    const auto removeUserFolders = qScopeGuard([&] {
+        for (const QString &folder : userFolders)
+            QDir(QDir(m_tree.path()).filePath(folder)).removeRecursively();
+    });
 
     m_index->reload();
     settle();
@@ -5484,6 +5505,9 @@ void TestStudio::namesTheHighlightedTagAfterAReload()
         QVERIFY(file.open(QIODevice::WriteOnly));
     }
     const auto restore = qScopeGuard([&] { writeIndex(); m_index->reload(); settle(); });
+    // The new tag is first by name, where the vocabulary is by count by default.
+    m_index->setTagsByCount(false);
+    const auto byCount = qScopeGuard([&] { m_index->setTagsByCount(true); });
     const QString first = QStringLiteral("0-first");
     putIndexRow(elsewhere, {first});
     m_index->reload();
@@ -9240,8 +9264,10 @@ void TestStudio::sectionHeadingsAreNotTabStops()
     QTRY_COMPARE(tags->property("count").toInt(), 0);
     QTRY_COMPARE(m_views->rowCount(), 0);
     QCOMPARE(devices->property("count").toInt(), 0);
+    // Devices are hidden while there are none, until `d` holds them.
     for (const auto &section : sections)
-        QVERIFY2(heading(section.second) && heading(section.second)->isVisible(), qPrintable(section.second));
+        QVERIFY2(heading(section.second) && heading(section.second)->isVisible()
+                     == (section.second != QLatin1String("devices")), qPrintable(section.second));
     tabSkipsHeadings(QStringLiteral("empty"));
     QVERIFY(!QTest::currentTestFailed());
     for (const auto &section : sections) {
@@ -9284,18 +9310,30 @@ void TestStudio::emptyStateTextWraps()
     });
     auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
     QVERIFY(sidebar && sidebar->isVisible());
-    QCOMPARE(sidebar->width(), qreal(220));
+    QCOMPARE(sidebar->width(), qreal(264));
+    // The sidebar has no drag handle: its layout width is set to 220, where
+    // the help needs two lines.
+    QQmlProperty preferred(sidebar, QStringLiteral("Layout.preferredWidth"), qmlContext(sidebar));
+    QVERIFY(preferred.isValid());
+    const QVariant width = preferred.read();
+    const auto widen = qScopeGuard([&] { preferred.write(width); settle(); });
+    QVERIFY(preferred.write(220));
+    QTRY_COMPARE(sidebar->width(), qreal(220));
+    // The devices section shows its text while `d` holds it.
+    key('d');
     for (const QString name : {"viewsEmpty", "devicesStatus"}) {
         auto *text = itemNamedWithin(sidebar, name);
         QVERIFY2(text, qPrintable(name));
         QTRY_VERIFY2(text->isVisible(), qPrintable(name));
         QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
         QVERIFY2(!text->property("truncated").toBool(), qPrintable(name + " is cut"));
+        QCOMPARE(text->property("wrapMode").toInt(), int(QTextOption::WrapAtWordBoundaryOrAnywhere));
         if (name == QLatin1String("viewsEmpty"))
             QVERIFY2(text->property("lineCount").toInt() > 1,
                      qPrintable(name + QStringLiteral(" is on %1 line").arg(text->property("lineCount").toInt())));
         QVERIFY2(text->property("contentWidth").toReal() <= text->width(), qPrintable(name));
     }
+    key(Qt::Key_Escape);
 }
 
 // A footer hint is a key and a caption on the footer itself: nothing is filled
@@ -9492,6 +9530,265 @@ void TestStudio::controlsHaveRestFill()
     QTest::mouseMove(window(), QPoint(window()->width() - 2, window()->height() - 2));
     QTRY_VERIFY(!tip->property("opened").toBool());
     focusRow("one.txt");
+}
+
+// ------------------------------------------------------------- sidebar places
+
+// The places are home, the XDG user folders that exist under the disposable
+// HOME, then the Trash; a user folder that is not there has no button.
+void TestStudio::placesListsExistingXdgDirs()
+{
+    const QDir home(m_tree.path());
+    QVERIFY(home.mkdir(QStringLiteral("Documents")));
+    QVERIFY(home.mkdir(QStringLiteral("Music")));
+    const auto cleanup = qScopeGuard([&] {
+        QDir(home.filePath(QStringLiteral("Documents"))).removeRecursively();
+        QDir(home.filePath(QStringLiteral("Music"))).removeRecursively();
+        tab()->setCwd(home.filePath(QStringLiteral("alpha")));
+        tab()->setCwd(m_tree.path());
+        settle();
+    });
+    // The places are read again when the tab moves.
+    tab()->setCwd(home.filePath(QStringLiteral("alpha")));
+    tab()->setCwd(m_tree.path());
+    settle();
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    QVERIFY(sidebar);
+    QStringList names, paths;
+    for (const QVariant &place : sidebar->property("places").toList()) {
+        names.append(place.toMap().value(QStringLiteral("name")).toString());
+        paths.append(place.toMap().value(QStringLiteral("path")).toString());
+    }
+    QCOMPARE(names, (QStringList{"Home", "Documents", "Music", "Trash"}));
+    QCOMPARE(paths, (QStringList{m_tree.path(), home.filePath("Documents"), home.filePath("Music"), QString()}));
+    QStringList drawn;
+    auto *grid = sidebar->property("placesList").value<QQuickItem *>();
+    QTRY_COMPARE(grid->property("count").toInt(), 4);
+    for (auto *name : itemsNamed(QStringLiteral("placeName")))
+        if (name->isVisible() && grid->isAncestorOf(name)) drawn.append(name->property("text").toString());
+    QCOMPARE(drawn, names);
+}
+
+// Home and a folder open in the tab the window is on, without a new tab, and
+// the folder the tab stands in is the chosen button; the Trash opens its tab.
+void TestStudio::placesOpenInCurrentTab()
+{
+    const QDir home(m_tree.path());
+    QVERIFY(home.mkdir(QStringLiteral("Documents")));
+    PaneState *pane = m_workspace->paneAtIndex(0);
+    const auto cleanup = qScopeGuard([&] {
+        QDir(home.filePath(QStringLiteral("Documents"))).removeRecursively();
+        while (pane->tabCount() > 1)
+            m_workspace->closeTab(0, pane->tabCount() - 1);
+        tab()->setCwd(home.filePath(QStringLiteral("alpha")));
+        tab()->setCwd(m_tree.path());
+        settle();
+    });
+    tab()->setCwd(home.filePath(QStringLiteral("alpha")));
+    settle();
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    QVERIFY(sidebar);
+    auto *grid = sidebar->property("placesList").value<QQuickItem *>();
+    QTRY_COMPARE(grid->property("count").toInt(), 3);
+    const auto button = [&](const QString &name) -> QQuickItem * {
+        for (auto *label : itemsNamed(QStringLiteral("placeName")))
+            if (grid->isAncestorOf(label) && label->property("text").toString() == name)
+                return label->parentItem()->parentItem();
+        return nullptr;
+    };
+    const auto click = [&](const QString &name) {
+        QQuickItem *chip = button(name);
+        QVERIFY2(chip && chip->objectName() == QLatin1String("placeButton"), qPrintable(name));
+        QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier,
+                          chip->mapToScene(QPointF(chip->width() / 2, chip->height() / 2)).toPoint());
+        settle();
+    };
+    QVERIFY(!button(QStringLiteral("Home"))->property("on").toBool());
+    click(QStringLiteral("Home"));
+    QVERIFY(!QTest::currentTestFailed());
+    QTRY_COMPARE(cwd(), m_tree.path());
+    QCOMPARE(pane->tabCount(), 1);
+    QTRY_VERIFY(button(QStringLiteral("Home"))->property("on").toBool());
+    QVERIFY(!button(QStringLiteral("Documents"))->property("on").toBool());
+
+    // By the keyboard: p, then j to Documents, then Enter.
+    key(Qt::Key_Escape);
+    key('p');
+    key('j');
+    key(Qt::Key_Return);
+    QTRY_COMPARE(cwd(), home.filePath(QStringLiteral("Documents")));
+    QCOMPARE(pane->tabCount(), 1);
+    QTRY_VERIFY(button(QStringLiteral("Documents"))->property("on").toBool());
+    QVERIFY(!button(QStringLiteral("Home"))->property("on").toBool());
+    QCOMPARE(window()->property("focusRegion").toString(), QStringLiteral("list"));
+
+    click(QStringLiteral("Trash"));
+    QVERIFY(!QTest::currentTestFailed());
+    QTRY_COMPARE(tab()->kind(), QStringLiteral("trash"));
+}
+
+// `p` walks the places like `v`, `d` and `t` walk theirs: the cursor on the
+// first button, j to the next, Esc back to the files.
+void TestStudio::placesKeyReachesSection()
+{
+    QObject *root = m_engine->rootObjects().first();
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    auto *grid = sidebar->property("placesList").value<QQuickItem *>();
+    QVERIFY(grid);
+    key(Qt::Key_Escape);
+    key('p');
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("places"));
+    QVERIFY(grid->hasActiveFocus());
+    QCOMPARE(grid->property("currentIndex").toInt(), 0);
+    key('j');
+    QCOMPARE(grid->property("currentIndex").toInt(), 1);
+    key('G');
+    QCOMPARE(grid->property("currentIndex").toInt(), grid->property("count").toInt() - 1);
+    auto *heading = sidebar->findChild<QQuickItem *>(QStringLiteral("placesHeading"));
+    QVERIFY(heading);
+    auto *caps = itemNamedWithin(heading, QStringLiteral("keyCaps"));
+    QVERIFY(caps && caps->isVisible());
+    QCOMPARE(caps->property("keys").toString(), QStringLiteral("p"));
+    key(Qt::Key_Escape);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+}
+
+// The field under the Tags heading narrows the list to the names holding its
+// text; the tag sheet still offers the whole vocabulary.
+void TestStudio::findATagFilters()
+{
+    QObject *root = m_engine->rootObjects().first();
+    const auto cleanup = qScopeGuard([&] { m_index->setTagFilter(QString()); settle(); });
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    auto *tags = sidebar->property("tagsList").value<QQuickItem *>();
+    const int all = tags->property("count").toInt();
+    QVERIFY(all > 2);
+    key('t');
+    key('/');
+    auto *find = sidebar->property("tagFind").value<QQuickItem *>();
+    QVERIFY(find && find->hasActiveFocus());
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("tags"));
+    for (char ch : QByteArray("PRO")) key(ch);
+    QTRY_COMPARE(tags->property("count").toInt(), 1);
+    QCOMPARE(m_index->tagAt(0), QStringLiteral("project"));
+    QCOMPARE(m_index->vocabulary().size(), all);
+    // Enter in the field takes the tag the list cursor is on.
+    key(Qt::Key_Return);
+    QTRY_COMPARE(tab()->selectedTag(), QStringLiteral("project"));
+    tab()->setSelectedTag(QString());
+    key('t');
+    key('/');
+    for (int i = 0; i < 3; ++i) key(Qt::Key_Backspace);
+    QTRY_COMPARE(tags->property("count").toInt(), all);
+    key(Qt::Key_Escape);
+    QCOMPARE(root->property("focusRegion").toString(), QStringLiteral("list"));
+}
+
+// The tags are most used first, ties by name, and `s` in the panel or a click
+// on the toggle orders them by name and back.
+void TestStudio::tagOrderToggles()
+{
+    const auto cleanup = qScopeGuard([&] { m_index->setTagsByCount(true); settle(); });
+    const auto order = [&] {
+        QStringList out;
+        for (int i = 0; i < m_index->tagRowCount(); ++i) out.append(m_index->tagAt(i));
+        return out;
+    };
+    const QStringList byCount{"notes", "project", "backup", "work", "archive", "diagram", "spreadsheet"};
+    const QStringList byName{"archive", "backup", "diagram", "notes", "project", "spreadsheet", "work"};
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    auto *toggle = itemNamedWithin(sidebar, QStringLiteral("tagOrderButton"));
+    QVERIFY(toggle && toggle->isVisible());
+    QCOMPARE(order(), byCount);
+    QCOMPARE(toggle->property("label").toString(), QStringLiteral("by count"));
+    key('t');
+    key('s');
+    QCOMPARE(order(), byName);
+    QCOMPARE(toggle->property("label").toString(), QStringLiteral("by name"));
+    key(Qt::Key_Escape);
+    QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier,
+                      toggle->mapToScene(QPointF(toggle->width() / 2, toggle->height() / 2)).toPoint());
+    settle();
+    QCOMPARE(order(), byCount);
+    QCOMPARE(toggle->property("label").toString(), QStringLiteral("by count"));
+}
+
+// Each tag row's bar is its count over the largest count of the track, in the
+// tag's colour on a `base` track.
+void TestStudio::tagBarLengthIsRelativeCount()
+{
+    QCOMPARE(m_index->property("largestTagCount").toInt(), 3);
+    int seen = 0;
+    for (auto *row : itemsNamed(QStringLiteral("tagRow"))) {
+        if (!row->isVisible()) continue;
+        auto *track = itemNamedWithin(row, QStringLiteral("tagBarTrack"));
+        auto *bar = itemNamedWithin(row, QStringLiteral("tagBar"));
+        QVERIFY(track && bar && track->width() > 0);
+        const QString tag = row->property("tag").toString();
+        const int count = row->property("count").toInt();
+        QCOMPARE(bar->width(), track->width() * count / 3);
+        QCOMPARE(track->property("color").value<QColor>(), m_theme->base());
+        QCOMPARE(bar->property("color").value<QColor>(), m_theme->tagColour(tag));
+        ++seen;
+    }
+    QVERIFY(seen >= 3);
+}
+
+// The cursor file's tags are DemiBold, with a dim caption under the list that
+// names the file; a file with no tags has neither.
+void TestStudio::cursorFileTagsAreBold()
+{
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    auto *caption = itemNamedWithin(sidebar, QStringLiteral("tagsBoldCaption"));
+    QVERIFY(caption);
+    const auto bold = [&] {
+        QStringList out;
+        for (auto *row : itemsNamed(QStringLiteral("tagRow"))) {
+            if (!row->isVisible()) continue;
+            auto *text = itemNamedWithin(row, QStringLiteral("rowText"));
+            if (text->property("font").value<QFont>().weight() == QFont::DemiBold)
+                out.append(row->property("tag").toString());
+        }
+        out.sort();
+        return out;
+    };
+    focusRow(QStringLiteral("one.txt"));
+    QTRY_COMPARE(bold(), (QStringList{"notes", "work"}));
+    QVERIFY(caption->isVisible());
+    QCOMPARE(caption->property("text").toString(), QStringLiteral("Bold: on one.txt"));
+    QCOMPARE(caption->property("color").value<QColor>().rgba(), m_theme->dim().rgba());
+    focusRow(QStringLiteral("plain.txt"));
+    QTRY_COMPARE(bold(), QStringList());
+    QVERIFY(!caption->isVisible());
+}
+
+// Walking a sidebar section draws one ring, 1 px on the cursor row or button,
+// and none around the whole list.
+void TestStudio::sidebarRowsHaveNoListRing()
+{
+    QObject *root = m_engine->rootObjects().first();
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    QVERIFY(m_views->rowCount() > 0);
+    for (char walk : {'p', 't', 'v'}) {
+        key(Qt::Key_Escape);
+        key(walk);
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        const QString where = QString(QLatin1Char(walk)) + QLatin1Char(' ')
+                              + root->property("focusRegion").toString();
+        QList<QQuickItem *> rings;
+        for (auto *ring : itemsNamed(QStringLiteral("focusRing")))
+            if (ring->isVisible()) rings.append(ring);
+        QVERIFY2(rings.size() == 1, qPrintable(where + QStringLiteral(": %1 rings").arg(rings.size())));
+        QQuickItem *ring = rings.first();
+        QVERIFY2(sidebar->isAncestorOf(ring), qPrintable(where));
+        QCOMPARE(ring->property("border").value<QObject *>()->property("width").toReal(), 1.0);
+        QQuickItem *row = ring->parentItem();
+        while (row && !row->property("onCursor").isValid()) row = row->parentItem();
+        QVERIFY2(row && row->property("onCursor").toBool(), qPrintable(where + QStringLiteral(": ring off the cursor row")));
+        QCOMPARE(ring->mapRectToScene(ring->boundingRect()),
+                 ring->parentItem()->mapRectToScene(ring->parentItem()->boundingRect()));
+    }
+    key(Qt::Key_Escape);
 }
 
 QTEST_MAIN(TestStudio)
@@ -11296,11 +11593,12 @@ void TestStudio::rejectsMixedClipboardFileUrls()
     QCOMPARE(m_clipboard->files(), QStringList{one});
 }
 
-static void dragOverlayContent(QQuickWindow *window, QQuickItem *view)
+// A touch drag up by 140 px from `y` in `view`, by default 20 px above its bottom.
+static void dragOverlayContent(QQuickWindow *window, QQuickItem *view, qreal y = -1)
 {
     static auto *touch = QTest::createTouchDevice();
     auto sequence = QTest::touchEvent(window, touch, false);
-    const QPoint start = view->mapToScene(QPointF(view->width() / 2, view->height() - 20)).toPoint();
+    const QPoint start = view->mapToScene(QPointF(view->width() / 2, y < 0 ? view->height() - 20 : y)).toPoint();
     sequence.press(0, start, window).commit();
     for (int distance : {20, 50, 90, 140}) {
         sequence.move(0, start - QPoint(0, distance), window).commit();
@@ -12707,7 +13005,8 @@ void TestStudio::keepsSidebarSelectionVisibleInSmallWindows()
     QTest::qWait(30);
     QCOMPARE(scroll->property("contentY").toReal(), 0);
     verbRuns().clear();
-    dragOverlayContent(window(), scroll);
+    // On the places, at the top: the tag list under the bottom scrolls itself.
+    dragOverlayContent(window(), scroll, scroll->height() / 2);
     QTRY_VERIFY(scroll->property("contentY").toReal() > 0);
     QVERIFY(verbRuns().isEmpty());
     key(Qt::Key_Home);
@@ -12840,7 +13139,7 @@ void TestStudio::alignsPanelRowsOnOneEdgeAndOneCentre()
         }
         return headings;
     };
-    QCOMPARE(headingsIn(sidebar), (QStringList{"Views", "Devices", "Tags"}));
+    QCOMPARE(headingsIn(sidebar), (QStringList{"Places", "Tags", "Views"}));
     QVERIFY(!QTest::currentTestFailed());
     QCOMPARE(headingsIn(details), (QStringList{"details"}));
     QVERIFY(!QTest::currentTestFailed());
@@ -12851,8 +13150,13 @@ void TestStudio::alignsPanelRowsOnOneEdgeAndOneCentre()
     auto *add = sidebar->findChild<QQuickItem *>(QStringLiteral("editTagsButton"));
     auto *letter = itemNamedWithin(tags, QStringLiteral("keyCaps"));
     QVERIFY(tags && add && letter);
+    auto *order = sidebar->findChild<QQuickItem *>(QStringLiteral("tagOrderButton"));
+    QVERIFY(order);
     QCOMPARE(middle(add), middle(tags));
-    QCOMPARE(left(add) + add->width() + omafiles::Theme::spacingS(), left(letter));
+    QCOMPARE(middle(order), middle(tags));
+    QCOMPARE(left(add) + add->width() + omafiles::Theme::spacingXs(), left(order));
+    auto *actions = add->parentItem();
+    QCOMPARE(left(actions) + actions->width() + omafiles::Theme::spacingS(), left(letter));
 
     int rows = 0;
     for (const QString &name : {QStringLiteral("viewRow"), QStringLiteral("tagRow"),
@@ -16503,7 +16807,10 @@ void TestStudio::traversesSidebarActions()
             if (control->hasActiveFocus()) { reached = true; break; }
         }
         QVERIFY2(reached, qPrintable(control->objectName()));
-        QTRY_VERIFY2(hasFocusOutline(window(), control, m_theme->accent()),
+        // A sidebar list's ring is on its cursor row.
+        const bool sideList = identity.first == "sidebarViews" || identity.first == "sidebarTags";
+        QTRY_VERIFY2(hasFocusOutline(window(), sideList ? control->property("currentItem").value<QQuickItem *>()
+                                                        : control, m_theme->accent()),
                      qPrintable(identity.first + " " + identity.second));
         key(Qt::Key_Backtab, Qt::ShiftModifier);
         key(Qt::Key_Tab);
@@ -16984,11 +17291,11 @@ void TestStudio::givesTheNameColumnPriority()
     const QStringList chosen = m_workspace->columns();
     QVERIFY(chosen.contains("tags") && chosen.contains("size") && chosen.contains("mtime"));
     QList<qreal> lists;
-    // Window widths and pane counts that give lists from 160 to 1340 px; the
-    // sidebar and the details panel take 486 px beside a single pane, and the
+    // Window widths and pane counts that give lists from 100 to 1340 px; the
+    // sidebar and the details panel take 530 px beside a single pane, and the
     // list's scroll bar 8.
-    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(1042, 1), qMakePair(1180, 1),
-                                         qMakePair(1593, 1), qMakePair(1834, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
+    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(1086, 1), qMakePair(1180, 1),
+                                         qMakePair(1593, 1), qMakePair(1878, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
         window()->resize(layout.first, 600);
         if (layout.second == 2 && m_workspace->paneCount() == 1) key(Qt::Key_Backslash, Qt::ControlModifier);
         QCOMPARE(m_workspace->paneCount(), layout.second);

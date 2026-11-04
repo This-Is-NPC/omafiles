@@ -4,9 +4,17 @@ import QtQuick
 import QtQuick.Templates as T
 import omafiles
 
+// Removable devices. Hidden while there are none, except while its key holds
+// it, so `d` still says there are none.
 Column {
     id: deviceSection
     property real maximumHeight: 160
+    property bool held: false
+    visible: devices.count > 0 || Devices.busy || held
+    function hold() {
+        held = true
+        focusTarget.forceActiveFocus()
+    }
     property alias list: devices
     readonly property Item focusTarget: devices.count > 0 ? devices : heading
     signal focusEntered()
@@ -41,7 +49,10 @@ Column {
         objectName: "devicesHeading"
         width: parent.width
         target: deviceSection.focusTarget
-        onActiveFocusChanged: if (activeFocus) deviceSection.focusEntered()
+        onActiveFocusChanged: {
+            if (activeFocus) deviceSection.focusEntered()
+            else deviceSection.held = false
+        }
         Keys.onPressed: function (event) { deviceSection.keyRequested(event) }
         text: "Devices"
         key: "d"
@@ -92,11 +103,6 @@ Column {
             reveal()
         }
         ImmediateWheel { anchors.fill: parent; view: devices; step: 32 }
-        FocusRing {
-            parent: devices
-            focused: devices.activeFocus
-            inset: Theme.focusRing
-        }
         delegate: PanelRow {
             id: row
             objectName: "deviceRow"
@@ -105,6 +111,7 @@ Column {
             width: ListView.view.width - Theme.scrollBarWidth
             readonly property bool onCursor: devices.activeFocus && devices.currentIndex === index
             washed: onCursor || hovered
+            ringed: onCursor
             color: onCursor ? Theme.cursor : Theme.hoverChrome
             Accessible.role: Accessible.ListItem
             Accessible.name: modelData.name

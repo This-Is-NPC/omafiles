@@ -3,10 +3,12 @@
 #include <QFile>
 #include <QAnyStringView>
 #include <QHash>
+#include <QList>
 #include <QString>
 #include <QStringList>
 
 #include <optional>
+#include <utility>
 #include <functional>
 
 class QUrl;
@@ -34,6 +36,9 @@ QString defaultIndexPath();
 /// `$HOME` as text, or `/` where it is unset, relative or not valid UTF-8, the
 /// root `QDir::homePath` falls back to.
 QString homeDirectory();
+/// The XDG user directories that exist (Desktop, Documents, Downloads, Music,
+/// Pictures, Videos), each as its name and the path user-dirs.dirs gives it.
+QList<std::pair<QString, QString>> userDirectories();
 /// `path` made absolute against the current directory, nothing resolved and
 /// nothing cleaned; empty where the current directory cannot be named.
 QString anchoredPath(const QString &path);

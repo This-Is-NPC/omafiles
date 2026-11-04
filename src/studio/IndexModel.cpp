@@ -18,6 +18,7 @@
 #include <QFileInfo>
 #include <QPointer>
 
+#include <algorithm>
 #include <cerrno>
 #include <functional>
 #include <memory>
@@ -62,19 +63,62 @@ public:
 
     void rebuild(const QMap<QString, int> &counts)
     {
+        m_counts = counts;
+        m_largest = 0;
+        for (const int count : counts)
+            m_largest = qMax(m_largest, count);
+        show();
+    }
+
+    // The rows the panel shows: the vocabulary narrowed to the names holding
+    // `filter`, by name, or most used first with ties by name.
+    void show()
+    {
         beginResetModel();
         m_tags.clear();
-        for (auto it = counts.cbegin(); it != counts.cend(); ++it)
-            m_tags.push_back({it.key(), it.value()});
+        for (auto it = m_counts.cbegin(); it != m_counts.cend(); ++it)
+            if (it.key().contains(m_filter, Qt::CaseInsensitive))
+                m_tags.push_back({it.key(), it.value()});
+        if (m_byCount)
+            std::stable_sort(m_tags.begin(), m_tags.end(),
+                             [](const Row &a, const Row &b) { return a.count > b.count; });
         endResetModel();
     }
+
+    bool setByCount(bool byCount)
+    {
+        if (m_byCount == byCount)
+            return false;
+        m_byCount = byCount;
+        show();
+        return true;
+    }
+
+    bool setFilter(const QString &filter)
+    {
+        if (m_filter == filter)
+            return false;
+        m_filter = filter;
+        show();
+        return true;
+    }
+
+    bool byCount() const { return m_byCount; }
+    QString filter() const { return m_filter; }
+    int largest() const { return m_largest; }
+    QStringList vocabulary() const { return m_counts.keys(); }
+    int vocabularySize() const { return m_counts.size(); }
 
 private:
     struct Row {
         QString tag;
         int count = 0;
     };
+    QMap<QString, int> m_counts;
     QVector<Row> m_tags;
+    QString m_filter;
+    bool m_byCount = true;
+    int m_largest = 0;
 };
 
 IndexModel::IndexModel(QObject *parent)
@@ -108,7 +152,39 @@ IndexModel::IndexModel(QObject *parent)
 
 int IndexModel::tagCount() const
 {
-    return m_tags->rowCount();
+    return m_tags->vocabularySize();
+}
+
+bool IndexModel::tagsByCount() const
+{
+    return m_tags->byCount();
+}
+
+void IndexModel::setTagsByCount(bool byCount)
+{
+    if (m_tags->setByCount(byCount))
+        emit tagListChanged();
+}
+
+QString IndexModel::tagFilter() const
+{
+    return m_tags->filter();
+}
+
+void IndexModel::setTagFilter(const QString &filter)
+{
+    if (m_tags->setFilter(filter))
+        emit tagListChanged();
+}
+
+int IndexModel::largestTagCount() const
+{
+    return m_tags->largest();
+}
+
+QStringList IndexModel::vocabulary() const
+{
+    return m_tags->vocabulary();
 }
 
 QAbstractListModel *IndexModel::tagsModel() const

@@ -8,7 +8,9 @@ through status updates and reordering. Names come from the desktop service.
 Press **d**, or choose **Devices** in the **:** command palette, to focus the
 list. The mnemonic follows **t** for tags and **v** for saved views. This reveals
 the sidebar even in a narrow window. **Tab / Shift Tab** also
-reach it; an empty list focuses its heading. **j/k**, arrows, **Home/End**,
+reach it. While no device is connected the section is hidden; **d** shows it
+with its heading focused and **No removable devices** under it, until the
+keyboard leaves it. **j/k**, arrows, **Home/End**,
 **Page Up/Down** and **Ctrl d / Ctrl u** move within the list and keep the selection
 visible. **Esc**, **h** or Left returns to files.
 
