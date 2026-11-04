@@ -32,6 +32,7 @@ Rectangle {
     }
     component Value: Label {
         Layout.fillWidth: true
+        elide: Text.ElideRight
         Layout.alignment: Qt.AlignLeft | Qt.AlignBaseline
     }
 
@@ -49,7 +50,7 @@ Rectangle {
             id: column
             width: scroll.contentWidth
 
-            SectionHeading { width: parent.width; usable: false; text: "details" }
+            SectionHeading { width: parent.width; text: "details" }
 
             Column {
                 id: body
@@ -76,6 +77,7 @@ Rectangle {
                         width: parent.width - Theme.iconSize - Theme.iconGap
                         anchors.verticalCenter: parent.verticalCenter
                         text: details.has ? details.entry.name : "no row"
+                        elide: Text.ElideMiddle
                         color: details.has ? Theme.foreground : Theme.dim
                         font.bold: details.has
                     }
@@ -89,7 +91,7 @@ Rectangle {
                     text: details.has ? details.entry.path : ""
                     color: Theme.dim
                     font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSmall
+                    font.pixelSize: Theme.fontCaption
                     wrapMode: Text.WrapAnywhere
                     maximumLineCount: 3
                     elide: Text.ElideRight

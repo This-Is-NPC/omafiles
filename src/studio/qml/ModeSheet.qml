@@ -132,6 +132,7 @@ Rectangle {
                             width: parent.width
                             font.bold: true
                             font.pixelSize: Theme.fontTitle
+                            elide: Text.ElideMiddle
                             text: sheet.paths.length === 1
                                   ? "permissions of " + String(sheet.paths[0]).split("/").pop()
                                   : "permissions of " + Counted.of(sheet.paths.length, "file")
@@ -185,7 +186,6 @@ Rectangle {
                                 Keys.onBacktabPressed: function (event) { Focus.move(event, applyButton) }
                                 label: "cancel"
                                 key: "Esc"
-                                quiet: true
                                 onClicked: sheet.close()
                             }
                             Label {

@@ -33,10 +33,9 @@ Item {
         horizontalAlignment: head.alignRight ? Text.AlignRight : Text.AlignLeft
         text: head.label + (head.active ? (head.ascending ? " ↑" : " ↓") : "")
         color: head.active ? Theme.foreground : Theme.dim
-        opacity: head.active ? 0.9 : (hover.hovered ? 0.9 : 1)
         elide: Text.ElideRight
         font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSmall
+        font.pixelSize: Theme.fontCaption
         renderType: Text.NativeRendering
 
         Behavior on color { ColorAnimation { duration: 90 } }

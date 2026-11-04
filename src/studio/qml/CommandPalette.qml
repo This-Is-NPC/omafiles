@@ -193,6 +193,7 @@ Rectangle {
                                 anchors.right: shortcut.left
                                 anchors.rightMargin: Theme.spacingS
                                 text: entryRow.modelData.label
+                                elide: Text.ElideRight
                             }
                             KeyCaps {
                                 id: shortcut

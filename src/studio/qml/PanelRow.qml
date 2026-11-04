@@ -12,7 +12,6 @@ Item {
     property alias iconKind: mark.kind
     property alias iconInk: mark.ink
     property alias text: caption.text
-    property alias textOpacity: caption.opacity
     /// Whether the wash draws; it is opaque, so a row without one shows the panel.
     property bool washed: false
     property alias color: wash.color
@@ -52,6 +51,7 @@ Item {
         anchors.right: trail.left
         anchors.rightMargin: trail.width > 0 ? Theme.spacingS : 0
         anchors.verticalCenter: parent.verticalCenter
+        elide: Text.ElideRight
     }
     Row {
         id: trail

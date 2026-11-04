@@ -35,18 +35,15 @@ Column {
         target: Devices
         function onChanged() { deviceSection.updateRows() }
     }
+    spacing: Theme.spacingXs
     SectionHeading {
         id: heading
         objectName: "devicesHeading"
         width: parent.width
-        handCursor: true
-        tabFocusable: devices.count === 0 || activeFocus
-        pointerFocus: deviceSection.focusTarget
-        Accessible.name: "Devices"
+        target: deviceSection.focusTarget
         onActiveFocusChanged: if (activeFocus) deviceSection.focusEntered()
-        onActivated: deviceSection.focusTarget.forceActiveFocus()
         Keys.onPressed: function (event) { deviceSection.keyRequested(event) }
-        text: "devices"
+        text: "Devices"
         key: "d"
     }
 
@@ -155,7 +152,6 @@ Column {
         visible: Devices.status !== "" || devices.count === 0
         text: Devices.status || "No removable devices"
         wrapMode: Text.Wrap
-        elide: Text.ElideNone
         quiet: true
     }
     Chip {

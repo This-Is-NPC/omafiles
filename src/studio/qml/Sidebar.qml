@@ -71,12 +71,12 @@ Rectangle {
         onWidthChanged: Qt.callLater(sidebar.revealSelection)
         onContentHeightChanged: Qt.callLater(sidebar.revealSelection)
 
-        // Sections spacingL apart with a hairline halfway; inside a section
-        // the heading and its rows touch, the heading being a row tall.
+        // Sections spacingL apart, with no rule: the space separates them.
+        // Inside a section the rows sit spacingXs under the heading.
         Column {
             id: column
             width: scroll.contentWidth
-            spacing: Theme.spacingS
+            spacing: Theme.spacingL
 
             // Where you keep coming back to.
             //
@@ -90,18 +90,15 @@ Rectangle {
             Column {
                 id: viewsSection
                 width: parent.width
+                spacing: Theme.spacingXs
 
                 SectionHeading {
                     id: viewsHeading
                     objectName: "viewsHeading"
                     width: parent.width
-                    pointerFocus: sidebar.viewsFocusTarget
-                    tabFocusable: Views.count === 0 || activeFocus
-                    Accessible.role: Accessible.Grouping
-                    Accessible.name: "Saved views"
-                    text: "views"
+                    target: sidebar.viewsFocusTarget
+                    text: "Views"
                     key: "v"
-                    walking: sidebar.walkingViews
                 }
 
                 ListView {
@@ -160,7 +157,6 @@ Rectangle {
                         // not is still readable at a glance.
                         iconKind: viewRow.kind === "folder" ? "folder" : "tag"
                         text: viewRow.name
-                        textOpacity: 0.85
 
                         RowTapHandler {
                             onClicked: sidebar.viewActivated(viewRow.index)
@@ -175,15 +171,15 @@ Rectangle {
                 // What the list says when there is nothing in it: where they come
                 // from, in the words of the two ways to make one.
                 Label {
+                    objectName: "viewsEmpty"
                     x: Theme.inset
                     width: parent.width - 2 * Theme.inset
                     visible: Views.count === 0
                     quiet: true
+                    wrapMode: Text.Wrap
                     text: "nothing saved yet · m to save one"
                 }
             }
-
-            Rule {}
 
             DeviceSection {
                 id: devices
@@ -196,30 +192,29 @@ Rectangle {
                 onMenuRequested: function (id, x, y) { sidebar.deviceMenuRequested(id, x, y) }
             }
 
-            Rule {}
-
             Column {
                 id: tagsSection
                 width: parent.width
+                spacing: Theme.spacingXs
 
                 SectionHeading {
                     id: tagsHeading
                     objectName: "tagsHeading"
                     width: parent.width
-                    pointerFocus: sidebar.tagsFocusTarget
-                    tabFocusable: tagsListView.count === 0 || activeFocus
-                    Accessible.role: Accessible.Grouping
-                    Accessible.name: "Tags"
-                            text: "tags"
+                    target: sidebar.tagsFocusTarget
+                    text: "Tags"
                     key: "t"
-                    walking: sidebar.walking
+                    // Drawn whether or not there is a row to tag, so where
+                    // tagging lives is never hidden.
                     actions: Chip {
                         objectName: "editTagsButton"
-                        label: "+"
-                        caption: "Add a tag to the row or marked files"
+                        readonly property bool hasRow: !!sidebar.entry
+                            && (sidebar.entry.kind === "file" || sidebar.entry.kind === "dir")
+                        label: "+ Tag"
+                        caption: hasRow ? "Add a tag to the row or marked files" : "Select a file to tag it"
                         key: "t a"
                         onClicked: sidebar.tagEditRequested()
-                        usable: sidebar.entry && (sidebar.entry.kind === "file" || sidebar.entry.kind === "dir")
+                        usable: hasRow
                     }
                 }
 
@@ -239,7 +234,7 @@ Rectangle {
                     onCountChanged: sidebar.keepCursor(tagsListView)
                     width: parent.width
                     height: Math.min(contentHeight + topMargin + bottomMargin,
-                                     Math.max(Theme.rowHeight, scroll.height - tagsHeading.height))
+                                     Math.max(Theme.rowHeight, scroll.height - tagsHeading.height - tagsSection.spacing))
                     onCurrentIndexChanged: Qt.callLater(sidebar.revealSelection)
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
@@ -278,7 +273,6 @@ Rectangle {
                         iconKind: "tag"
                         iconInk: tagRow.chosen ? Theme.accent : Theme.dim
                         text: tagRow.tag
-                        textOpacity: tagRow.chosen ? 1 : 0.85
                         trailing: Label {
                             anchors.verticalCenter: parent.verticalCenter
                             quiet: true

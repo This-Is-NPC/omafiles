@@ -44,9 +44,9 @@ Rectangle {
         const parts = []
         parts.push(bar.total === 0 || bar.cursor < 0 ? "0/" + bar.total
                                                       : (bar.cursor + 1) + "/" + bar.total)
-        parts.push(bar.note !== "" ? bar.note : bar.tagged + " tagged here")
         if (bar.marked > 0)
             parts.push(bar.marked + " marked")
+        parts.push(bar.note !== "" ? bar.note : bar.tagged + " tagged here")
         if (bar.pastable > 0)
             parts.push(bar.pastable + (bar.cutting ? " to move" : " to paste"))
         if (bar.tag !== "")
@@ -75,7 +75,7 @@ Rectangle {
         readonly property var drawn: {
             const out = []
             let used = 0
-            for (const fact of [position, note, marks, paste, chosenTag, filterText]) {
+            for (const fact of [position, marks, note, paste, chosenTag, filterText]) {
                 if (!fact.wanted)
                     continue
                 used += (out.length > 0 ? spacing : 0) + fact.implicitWidth
@@ -97,8 +97,8 @@ Rectangle {
             readonly property bool wanted: true
             visible: facts.drawn.indexOf(position) >= 0
             width: Math.min(implicitWidth, facts.room)
+            elide: Text.ElideRight
             quiet: true
-            font.pixelSize: Theme.fontSmall
             text: bar.total === 0 || bar.cursor < 0
                   ? "0/" + bar.total
                   : (bar.cursor + 1) + "/" + bar.total
@@ -107,28 +107,28 @@ Rectangle {
         // "11 tagged" above a list where nothing is tagged reads as a promise
         // about that list.
         Label {
+            id: marks
+            objectName: "statusMarked"
+            readonly property bool wanted: bar.marked > 0
+            visible: facts.drawn.indexOf(marks) >= 0
+            color: Theme.accent
+            font.pixelSize: Theme.fontCaption
+            text: bar.marked + " marked"
+        }
+        Label {
             id: note
             objectName: "statusNote"
             readonly property bool wanted: true
             visible: facts.drawn.indexOf(note) >= 0
             quiet: true
-            font.pixelSize: Theme.fontSmall
             text: bar.note !== "" ? bar.note : bar.tagged + " tagged here"
-        }
-        Label {
-            id: marks
-            readonly property bool wanted: bar.marked > 0
-            visible: facts.drawn.indexOf(marks) >= 0
-            color: Theme.accent
-            font.pixelSize: Theme.fontSmall
-            text: bar.marked + " marked"
         }
         Label {
             id: paste
             readonly property bool wanted: bar.pastable > 0
             visible: facts.drawn.indexOf(paste) >= 0
             color: Theme.accent
-            font.pixelSize: Theme.fontSmall
+            font.pixelSize: Theme.fontCaption
             text: bar.pastable + (bar.cutting ? " to move" : " to paste")
         }
         Label {
@@ -136,14 +136,14 @@ Rectangle {
             readonly property bool wanted: bar.tag !== ""
             visible: facts.drawn.indexOf(chosenTag) >= 0
             color: Theme.accent
-            font.pixelSize: Theme.fontSmall
+            font.pixelSize: Theme.fontCaption
             text: "tag " + bar.tag
         }
         Label {
             id: filterText
             readonly property bool wanted: bar.filter !== ""
             visible: facts.drawn.indexOf(filterText) >= 0
-            font.pixelSize: Theme.fontSmall
+            font.pixelSize: Theme.fontCaption
             text: "/" + bar.filter
         }
     }
@@ -166,7 +166,8 @@ Rectangle {
             anchors.fill: parent
             verticalAlignment: Text.AlignVCenter
             color: Theme.urgent
-            font.pixelSize: Theme.fontSmall
+            font.pixelSize: Theme.fontCaption
+            elide: Text.ElideRight
             text: bar.message
         }
     }
@@ -174,7 +175,7 @@ Rectangle {
     Hints {
         id: hintStrip
         anchors.left: bar.alarm ? receipt.right : facts.right
-        anchors.leftMargin: Theme.spacingL - Theme.focusRing
+        anchors.leftMargin: Theme.spacingXl - Theme.focusRing
         anchors.right: parent.right
         anchors.rightMargin: Theme.inset - Theme.focusRing
         anchors.verticalCenter: parent.verticalCenter

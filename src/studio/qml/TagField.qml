@@ -145,7 +145,7 @@ Column {
                 field.text = suggestion.modelData
                 input.forceActiveFocus()
             }
-            Label { anchors.fill: parent; anchors.leftMargin: Theme.spacingS; text: suggestion.modelData }
+            Label { anchors.fill: parent; anchors.leftMargin: Theme.spacingS; elide: Text.ElideRight; text: suggestion.modelData }
         }
     }
 }

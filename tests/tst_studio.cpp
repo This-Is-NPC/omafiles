@@ -668,8 +668,6 @@ private slots:
     void traversesEveryPermissionControl();
     void traversesSidebarActions_data();
     void traversesSidebarActions();
-    void walksTheTagsHeadingOnlyWithoutTags();
-    void walksTheViewsHeadingOnlyWithoutViews();
     void auditsPreviewButtons_data();
     void auditsPreviewButtons();
     void auditsInlinePromptButtons_data();
@@ -724,6 +722,12 @@ private slots:
     void troughMiddleOrShiftClickJumps();
     void barDoesNotCoverRows();
     void scrollJumpButtonsMatchHomeEnd();
+    void sectionHeadingsAreNotTabStops();
+    void emptyStateTextWraps();
+    void footerHintsHaveNoFillAtRest();
+    void cursorRowCarriesTheOnlyRing();
+    void markedRowHasNoStripe();
+    void controlsHaveRestFill();
 
 private:
     QQuickWindow *window() const;
@@ -2525,18 +2529,25 @@ void TestStudio::drawsOneFocusRingOutsideWhatHasFocus()
         const auto shown = shownRings();
         QVERIFY2(shown.size() == 1, qPrintable(where + QStringLiteral(": %1 rings").arg(shown.size())));
         QQuickItem *ring = shown.first();
+        // A file list's ring is 1 px on its cursor row's own edge; every
+        // other ring is focusRing px just outside its box.
+        QQuickItem *cursorRow = ring->parentItem();
+        while (cursorRow && cursorRow->objectName() != QLatin1String("fileRow"))
+            cursorRow = cursorRow->parentItem();
+        QVERIFY2(!cursorRow || cursorRow->property("onCursor").toBool(), qPrintable(where));
+        const qreal weight = cursorRow ? 1 : width;
         auto *pen = ring->property("border").value<QObject *>();
         QVERIFY(pen);
-        QCOMPARE(pen->property("width").toReal(), width);
+        QCOMPARE(pen->property("width").toReal(), weight);
         QCOMPARE(pen->property("color").value<QColor>(), accent);
         const qreal inset = ring->property("inset").toReal();
         const QRectF box = sceneRect(ring->parentItem()).adjusted(inset, inset, -inset, -inset);
         const QRectF drawn = sceneRect(ring);
-        QVERIFY2(drawn == box.adjusted(-width, -width, width, width), qPrintable(where));
-        // A control's ring is around it; only a section heading, which fills
-        // the clipped sidebar, keeps its ring inside its edge.
-        if (ring->parentItem()->property("ringInset").isValid()
-            && !focus->objectName().endsWith(QLatin1String("Heading")))
+        QVERIFY2(drawn == box.adjusted(-weight, -weight, weight, weight), qPrintable(where));
+        if (cursorRow)
+            QVERIFY2(drawn == sceneRect(ring->parentItem()), qPrintable(where));
+        // A control's ring is around it.
+        if (ring->parentItem()->property("ringInset").isValid())
             QVERIFY2(inset == 0 && drawn == sceneRect(focus).adjusted(-width, -width, width, width),
                      qPrintable(where));
         for (QQuickItem *up = ring->parentItem(); up; up = up->parentItem())
@@ -2544,15 +2555,13 @@ void TestStudio::drawsOneFocusRingOutsideWhatHasFocus()
                 QVERIFY2(sceneRect(up).contains(drawn), qPrintable(where + QStringLiteral(" cut by ")
                                                                     + up->objectName()));
         QQuickItem *list = ring->parentItem()->property("currentItem").isValid() ? ring->parentItem() : nullptr;
-        auto *view = filesRoot() ? filesRoot()->property("view").value<QQuickItem *>() : nullptr;
-        if (!list && view && ring->parentItem()->isAncestorOf(view))
-            list = view;
-        auto *row = list ? list->property("currentItem").value<QQuickItem *>() : nullptr;
+        auto *row = cursorRow ? cursorRow : list ? list->property("currentItem").value<QQuickItem *>() : nullptr;
         qInfo().noquote() << "Inventory PASS ring" << where << (row ? "cursor row" : "");
         if (!row)
             return;
         // The cursor row keeps its fill: no accent bar in it, and no accent
-        // edge on it or on anything around it inside the ringed region.
+        // edge on it or on anything around it inside the ringed region but
+        // the ring.
         const QRectF rowRect = sceneRect(row);
         QList<QQuickItem *> parts{ring->parentItem()};
         while (!parts.isEmpty()) {
@@ -9175,6 +9184,310 @@ void TestStudio::dimTextHasContrast()
     QVERIFY2(ratio >= 4.5, qPrintable(QStringLiteral("dim on chrome is %1:1").arg(ratio)));
 }
 
+// A section heading is text: Tab passes it by whether or not its section has
+// rows, and v, d and t still walk the sections, landing on the heading of a
+// section with no row to stand on.
+void TestStudio::sectionHeadingsAreNotTabStops()
+{
+    QFile saved(m_desktop.filePath("config/omafiles/views.jsonl"));
+    QVERIFY(saved.open(QIODevice::ReadOnly));
+    const QByteArray original = saved.readAll();
+    saved.close();
+    const auto writeViews = [&](const QByteArray &views) {
+        if (!saved.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+        const bool written = saved.write(views) == views.size();
+        saved.close();
+        m_views->reload();
+        return written;
+    };
+    const auto restore = qScopeGuard([&] { writeViews(original); writeIndex(); m_index->reload(); settle(); });
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    QVERIFY(sidebar);
+    QObject *root = m_engine->rootObjects().first();
+    const QList<QPair<char, QString>> sections{{'v', "views"}, {'d', "devices"}, {'t', "tags"}};
+    const auto heading = [&](const QString &region) {
+        return sidebar->findChild<QQuickItem *>(region + QStringLiteral("Heading"));
+    };
+    const auto tabSkipsHeadings = [&](const QString &step) {
+        QMetaObject::invokeMethod(window(), "takeFocus");
+        focusRow("one.txt");
+        QQuickItem *first = window()->activeFocusItem();
+        for (int at = 0; at < 150; ++at) {
+            key(Qt::Key_Tab);
+            for (const auto &section : sections)
+                QVERIFY2(!heading(section.second)->hasActiveFocus(),
+                         qPrintable(step + QStringLiteral(": Tab landed on the ") + section.second + " heading"));
+            if (window()->activeFocusItem() == first) return;
+        }
+        QFAIL(qPrintable(step + QStringLiteral(": Tab never came back to the list")));
+    };
+
+    QFile index(QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl")));
+    QVERIFY(index.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    index.close();
+    m_index->reload();
+    QVERIFY(writeViews({}));
+    auto *tags = sidebar->property("tagsList").value<QQuickItem *>();
+    auto *views = sidebar->property("viewsList").value<QQuickItem *>();
+    auto *devices = sidebar->property("devicesList").value<QQuickItem *>();
+    QVERIFY(tags && views && devices);
+    QTRY_COMPARE(tags->property("count").toInt(), 0);
+    QTRY_COMPARE(m_views->rowCount(), 0);
+    QCOMPARE(devices->property("count").toInt(), 0);
+    for (const auto &section : sections)
+        QVERIFY2(heading(section.second) && heading(section.second)->isVisible(), qPrintable(section.second));
+    tabSkipsHeadings(QStringLiteral("empty"));
+    QVERIFY(!QTest::currentTestFailed());
+    for (const auto &section : sections) {
+        key(Qt::Key_Escape);
+        key(section.first);
+        QVERIFY2(heading(section.second)->hasActiveFocus(), qPrintable(section.second));
+        QCOMPARE(root->property("focusRegion").toString(), section.second);
+    }
+    key(Qt::Key_Escape);
+
+    QVERIFY(writeViews(original));
+    writeIndex();
+    m_index->reload();
+    QTRY_VERIFY(tags->property("count").toInt() > 0);
+    QTRY_VERIFY(m_views->rowCount() > 0);
+    tabSkipsHeadings(QStringLiteral("filled"));
+    QVERIFY(!QTest::currentTestFailed());
+    for (const auto &[walk, list] : {std::pair{'v', views}, std::pair{'t', tags}}) {
+        key(Qt::Key_Escape);
+        key(walk);
+        QVERIFY2(list->hasActiveFocus(), qPrintable(QString(QLatin1Char(walk))));
+    }
+    key(Qt::Key_Escape);
+}
+
+// What an empty section says is help, and help wraps rather than being cut.
+void TestStudio::emptyStateTextWraps()
+{
+    QFile saved(m_desktop.filePath("config/omafiles/views.jsonl"));
+    QVERIFY(saved.open(QIODevice::ReadOnly));
+    const QByteArray original = saved.readAll();
+    saved.close();
+    QVERIFY(saved.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    saved.close();
+    m_views->reload();
+    const auto restore = qScopeGuard([&] {
+        if (saved.open(QIODevice::WriteOnly | QIODevice::Truncate)) { saved.write(original); saved.close(); }
+        m_views->reload();
+        settle();
+    });
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    QVERIFY(sidebar && sidebar->isVisible());
+    QCOMPARE(sidebar->width(), qreal(220));
+    for (const QString name : {"viewsEmpty", "devicesStatus"}) {
+        auto *text = itemNamedWithin(sidebar, name);
+        QVERIFY2(text, qPrintable(name));
+        QTRY_VERIFY2(text->isVisible(), qPrintable(name));
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        QVERIFY2(!text->property("truncated").toBool(), qPrintable(name + " is cut"));
+        if (name == QLatin1String("viewsEmpty"))
+            QVERIFY2(text->property("lineCount").toInt() > 1,
+                     qPrintable(name + QStringLiteral(" is on %1 line").arg(text->property("lineCount").toInt())));
+        QVERIFY2(text->property("contentWidth").toReal() <= text->width(), qPrintable(name));
+    }
+}
+
+// A footer hint is a key and a caption on the footer itself: nothing is filled
+// under it until the pointer is over it.
+void TestStudio::footerHintsHaveNoFillAtRest()
+{
+    focusRow("one.txt");
+    QTest::mouseMove(window(), QPoint(window()->width() / 2, window()->height() / 2));
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+    QList<QQuickItem *> hints;
+    for (auto *hint : itemsNamed(QStringLiteral("hintAction")))
+        if (hint->isVisible()) hints.append(hint);
+    QVERIFY(hints.size() >= 2);
+    const auto fills = [](QQuickItem *hint) {
+        QList<QQuickItem *> found;
+        QList<QQuickItem *> queue{hint};
+        while (!queue.isEmpty()) {
+            QQuickItem *item = queue.takeFirst();
+            if (!item->isVisible() || item->objectName() == QLatin1String("keyCap")
+                    || item->objectName() == QLatin1String("focusRing"))
+                continue;
+            if (item->inherits("QQuickRectangle")) found.append(item);
+            queue.append(item->childItems());
+        }
+        return found;
+    };
+    for (auto *hint : hints)
+        QVERIFY2(fills(hint).isEmpty(), qPrintable(hint->property("caption").toString() + " is filled at rest"));
+
+    QQuickItem *hovered = hints.first();
+    QTest::mouseMove(window(), hovered->mapToScene(QPointF(hovered->width() / 2, hovered->height() / 2)).toPoint());
+    QTRY_COMPARE(fills(hovered).size(), 1);
+    QCOMPARE(fills(hovered).first()->property("color").value<QColor>(), m_theme->hoverChrome());
+    for (auto *hint : hints)
+        if (hint != hovered)
+            QVERIFY2(fills(hint).isEmpty(), qPrintable(hint->property("caption").toString()));
+    QTest::mouseMove(window(), QPoint(window()->width() / 2, window()->height() / 2));
+    QTRY_VERIFY(fills(hovered).isEmpty());
+}
+
+// In a split, both cursor rows are filled `cursor`, and only the focused
+// pane's carries the window's one ring: 1 px of accent on the row's edge.
+void TestStudio::cursorRowCarriesTheOnlyRing()
+{
+    focusRow("one.txt");
+    QMetaObject::invokeMethod(m_workspace, "splitRight", Q_ARG(QString, QStringLiteral("files")));
+    const auto unsplit = qScopeGuard([&] {
+        QMetaObject::invokeMethod(m_workspace, "closePane", Q_ARG(int, 1));
+        settle();
+        QMetaObject::invokeMethod(window(), "takeFocus");
+    });
+    settle();
+    QCOMPARE(m_workspace->paneCount(), 2);
+    const auto check = [&](int focused) {
+        m_workspace->setFocusedPane(focused);
+        QMetaObject::invokeMethod(window(), "takeFocus");
+        key(Qt::Key_Shift);
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        auto *here = qobject_cast<QQuickItem *>(filesRoot());
+        QVERIFY(here);
+        QList<QQuickItem *> rings;
+        for (auto *ring : itemsNamed(QStringLiteral("focusRing")))
+            if (ring->isVisible()) rings.append(ring);
+        QVERIFY2(rings.size() == 1, qPrintable(QStringLiteral("%1 rings").arg(rings.size())));
+        QList<QQuickItem *> cursorRows;
+        for (auto *row : itemsNamed(QStringLiteral("fileRow")))
+            if (row->isVisible() && row->property("onCursor").toBool()) cursorRows.append(row);
+        QCOMPARE(cursorRows.size(), 2);
+        for (auto *row : cursorRows) {
+            auto *wash = itemNamedWithin(row, QStringLiteral("rowWash"));
+            QVERIFY(wash && wash->isVisible());
+            QCOMPARE(wash->property("color").value<QColor>(), m_theme->cursor());
+            const bool mine = here->isAncestorOf(row);
+            QCOMPARE(row->isAncestorOf(rings.first()), mine);
+        }
+        QQuickItem *ring = rings.first();
+        auto *pen = ring->property("border").value<QObject *>();
+        QCOMPARE(pen->property("width").toReal(), 1.0);
+        QCOMPARE(pen->property("color").value<QColor>(), m_theme->accent());
+        QCOMPARE(ring->mapRectToScene(ring->boundingRect()),
+                 ring->parentItem()->mapRectToScene(ring->parentItem()->boundingRect()));
+    };
+    check(0);
+    QVERIFY(!QTest::currentTestFailed());
+    check(1);
+    QVERIFY(!QTest::currentTestFailed());
+    check(0);
+}
+
+// A marked row is the `marked` fill across the whole row and nothing else: no
+// stripe, dot or accent mark, in the list and in the grid.
+void TestStudio::markedRowHasNoStripe()
+{
+    auto *folder = qobject_cast<FolderModel *>(filesRoot()->property("folder").value<QObject *>());
+    const auto restore = qScopeGuard([&] { folder->clearMarks(); key('1'); settle(); });
+    focusRow("one.txt");
+    key(Qt::Key_Space);
+    if (folder->pathAt(cursor()) == m_tree.filePath("one.txt"))
+        key('j');
+    QTest::mouseMove(window(), QPoint(window()->width() - 2, window()->height() - 2));
+    for (char mode : {'1', '3'}) {
+        key(mode);
+        settle();
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        QQuickItem *marked = nullptr;
+        for (auto *row : itemsNamed(QStringLiteral("fileRow")))
+            if (row->isVisible() && row->property("marked").toBool() && !row->property("onCursor").toBool())
+                marked = row;
+        QVERIFY2(marked, qPrintable(QStringLiteral("no marked row off the cursor in mode %1").arg(mode)));
+        QList<QQuickItem *> queue{marked};
+        QList<QQuickItem *> fills;
+        while (!queue.isEmpty()) {
+            QQuickItem *item = queue.takeFirst();
+            if (!item->isVisible()) continue;
+            queue.append(item->childItems());
+            if (item->inherits("QQuickRectangle") && item->objectName() != QLatin1String("focusRing"))
+                fills.append(item);
+            if (item->inherits("QQuickText")) {
+                QVERIFY2(item->property("color").value<QColor>() != m_theme->accent()
+                             || item->property("text").toString().isEmpty(),
+                         qPrintable(QStringLiteral("accent mark ") + item->property("text").toString()));
+                QVERIFY2(!item->property("text").toString().contains(QChar(0x2022)),
+                         qPrintable(QStringLiteral("dot in ") + item->property("text").toString()));
+            }
+        }
+        // Row-tall fills: the wash and nothing beside it (a tag chip is
+        // shorter than the row).
+        QList<QQuickItem *> bands;
+        for (auto *fill : fills) {
+            QVERIFY2(fill->property("color").value<QColor>().rgba() != m_theme->accent().rgba(),
+                     "an accent fill on the marked row");
+            if (fill->height() >= marked->height() - 2 * omafiles::Theme::spacingXs())
+                bands.append(fill);
+        }
+        QCOMPARE(bands.size(), 1);
+        QCOMPARE(bands.first()->objectName(), QStringLiteral("rowWash"));
+        QCOMPARE(bands.first()->property("color").value<QColor>(), m_theme->marked());
+        if (mode == '1')
+            QCOMPARE(bands.first()->width(), marked->width());
+    }
+}
+
+// Every button rests on `raised` with a `line` border, is `cursor` with an
+// `accent` border while on, and says it cannot be used by its ink alone. The
+// tag button stays drawn without a file row and says why in its caption.
+void TestStudio::controlsHaveRestFill()
+{
+    focusRow("one.txt");
+    QTest::mouseMove(window(), QPoint(window()->width() - 2, window()->height() - 2));
+    settle();
+    const auto look = [&](QQuickItem *control, const QColor &fill, const QColor &edge, const QString &what) {
+        QVERIFY2(control && control->isVisible(), qPrintable(what));
+        QVERIFY2(control->property("hasChrome").toBool(), qPrintable(what + " draws no box"));
+        QCOMPARE(control->property("color").value<QColor>(), fill);
+        auto *pen = control->property("border").value<QObject *>();
+        QCOMPARE(pen->property("width").toReal(), 1.0);
+        QCOMPARE(pen->property("color").value<QColor>(), edge);
+        QCOMPARE(control->opacity(), 1.0);
+    };
+    look(itemsNamed(QStringLiteral("parentFolderButton")).first(), m_theme->raised(), m_theme->line(),
+         QStringLiteral("up"));
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    auto *add = itemNamedWithin(sidebar, QStringLiteral("editTagsButton"));
+    look(add, m_theme->raised(), m_theme->line(), QStringLiteral("+ Tag"));
+    QCOMPARE(add->property("label").toString(), QStringLiteral("+ Tag"));
+    QCOMPARE(itemNamedWithin(add, QStringLiteral("chipLabel"))->property("color").value<QColor>().rgba(),
+             m_theme->foreground().rgba());
+    for (auto *mode : itemsNamed(QStringLiteral("viewMode")))
+        if (mode->property("on").toBool())
+            look(mode, m_theme->cursor(), m_theme->accent(), QStringLiteral("view mode on"));
+        else
+            look(mode, m_theme->raised(), m_theme->line(), QStringLiteral("view mode off"));
+    for (auto *cap : itemsNamed(QStringLiteral("keyCap"))) {
+        if (!cap->isVisible()) continue;
+        QCOMPARE(cap->property("color").value<QColor>(), m_theme->raised());
+        QCOMPARE(cap->property("border").value<QObject *>()->property("color").value<QColor>(), m_theme->line());
+    }
+
+    // The parent row is not a file: the tag button stays, disabled, in dim ink.
+    QVERIFY(QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(0))));
+    settle();
+    QCOMPARE(filesRoot()->property("entry").toMap().value(QStringLiteral("kind")).toString(), QStringLiteral("parent"));
+    QTRY_VERIFY(!add->isEnabled());
+    look(add, m_theme->raised(), m_theme->line(), QStringLiteral("+ Tag without a file"));
+    QCOMPARE(itemNamedWithin(add, QStringLiteral("chipLabel"))->property("color").value<QColor>().rgba(),
+             m_theme->dim().rgba());
+    QCOMPARE(add->property("tooltipCaption").toString(), QStringLiteral("Select a file to tag it"));
+    // Disabled, it still answers the pointer with why.
+    QTest::mouseMove(window(), add->mapToScene(QPointF(add->width() / 2, add->height() / 2)).toPoint());
+    QTRY_VERIFY(add->findChild<QObject *>(QStringLiteral("controlTooltip")));
+    auto *tip = add->findChild<QObject *>(QStringLiteral("controlTooltip"));
+    QTRY_VERIFY(tip->property("opened").toBool());
+    QVERIFY(tip->property("text").toString().startsWith(QStringLiteral("Select a file to tag it")));
+    QTest::mouseMove(window(), QPoint(window()->width() - 2, window()->height() - 2));
+    QTRY_VERIFY(!tip->property("opened").toBool());
+    focusRow("one.txt");
+}
+
 QTEST_MAIN(TestStudio)
 // A search path entry that is not UTF-8 is skipped, the way the basedir spec
 // ignores an invalid one: decoded, `\xff` names the U+FFFD directory beside it.
@@ -12328,20 +12641,20 @@ void TestStudio::alignsPanelRowsOnOneEdgeAndOneCentre()
         QStringList headings;
         for (auto *caption : itemsNamed(QStringLiteral("headingCaption"))) {
             if (!panel->isAncestorOf(caption) || !caption->isVisible()) continue;
-            auto *heading = caption->parentItem()->parentItem();
+            auto *heading = caption->parentItem();
             headings.append(caption->property("text").toString());
             [&] {
                 QCOMPARE(left(caption), edge);
-                QCOMPARE(heading->height(), qreal(omafiles::Theme::rowHeight()));
+                QCOMPARE(heading->height(), qreal(omafiles::Theme::headingHeight()));
                 QCOMPARE(middle(caption), middle(heading));
-                if (auto *letter = itemNamedWithin(heading, QStringLiteral("headingKey"));
+                if (auto *letter = itemNamedWithin(heading, QStringLiteral("keyCaps"));
                         letter && letter->isVisible())
                     QCOMPARE(middle(letter), middle(caption));
             }();
         }
         return headings;
     };
-    QCOMPARE(headingsIn(sidebar), (QStringList{"views", "devices", "tags"}));
+    QCOMPARE(headingsIn(sidebar), (QStringList{"Views", "Devices", "Tags"}));
     QVERIFY(!QTest::currentTestFailed());
     QCOMPARE(headingsIn(details), (QStringList{"details"}));
     QVERIFY(!QTest::currentTestFailed());
@@ -12350,7 +12663,7 @@ void TestStudio::alignsPanelRowsOnOneEdgeAndOneCentre()
 
     auto *tags = sidebar->findChild<QQuickItem *>(QStringLiteral("tagsHeading"));
     auto *add = sidebar->findChild<QQuickItem *>(QStringLiteral("editTagsButton"));
-    auto *letter = itemNamedWithin(tags, QStringLiteral("headingKey"));
+    auto *letter = itemNamedWithin(tags, QStringLiteral("keyCaps"));
     QVERIFY(tags && add && letter);
     QCOMPARE(middle(add), middle(tags));
     QCOMPARE(left(add) + add->width() + omafiles::Theme::spacingS(), left(letter));
@@ -12382,7 +12695,7 @@ void TestStudio::alignsPanelRowsOnOneEdgeAndOneCentre()
     // The permission bits fit inside the panel's inset at its default width.
     auto *bits = itemNamedWithin(details, QStringLiteral("detailsMode"));
     QVERIFY(bits && bits->isVisible());
-    QCOMPARE(details->width(), qreal(252));
+    QCOMPARE(details->width(), qreal(264));
     QVERIFY2(left(bits) + bits->width() <= left(details) + details->width() - omafiles::Theme::inset(),
              qPrintable(QStringLiteral("mode bits end at %1 in a panel ending at %2")
                             .arg(left(bits) + bits->width()).arg(left(details) + details->width())));
@@ -16041,60 +16354,6 @@ void TestStudio::traversesSidebarActions()
     }
 }
 
-// The tags heading is a Tab stop only while the tag list has no row to take
-// it, including when the tags arrive while the heading holds the keyboard.
-void TestStudio::walksTheTagsHeadingOnlyWithoutTags()
-{
-    const auto restore = qScopeGuard([&] { writeIndex(); m_index->reload(); settle(); });
-    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
-    QVERIFY(sidebar);
-    auto *heading = sidebar->findChild<QQuickItem *>(QStringLiteral("tagsHeading"));
-    auto *list = sidebar->findChild<QQuickItem *>(QStringLiteral("sidebarTags"));
-    QVERIFY(heading && list);
-    QFile index(QDir(m_home.path()).filePath(QStringLiteral("omafiles/index.jsonl")));
-    QVERIFY(index.open(QIODevice::WriteOnly | QIODevice::Truncate));
-    index.close();
-    m_index->reload();
-    QTRY_COMPARE(list->property("count").toInt(), 0);
-    QCOMPARE(tabCycleThrough(heading), QStringLiteral("visited"));
-    QMetaObject::invokeMethod(window(), "focusTags"); settle();
-    QVERIFY(heading->hasActiveFocus());
-    writeIndex();
-    m_index->reload();
-    QTRY_VERIFY(list->property("count").toInt() > 0);
-    QCOMPARE(tabCycleThrough(heading), QStringLiteral("skipped"));
-}
-
-// The views heading is a Tab stop only while there is no saved view, including
-// when the first view arrives while the heading holds the keyboard.
-void TestStudio::walksTheViewsHeadingOnlyWithoutViews()
-{
-    QFile saved(m_desktop.filePath("config/omafiles/views.jsonl"));
-    QVERIFY(saved.open(QIODevice::ReadOnly));
-    const QByteArray original = saved.readAll();
-    saved.close();
-    const auto write = [&](const QByteArray &views) {
-        if (!saved.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
-        const bool written = saved.write(views) == views.size();
-        saved.close();
-        m_views->reload();
-        return written;
-    };
-    const auto restore = qScopeGuard([&] { write(original); settle(); });
-    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
-    QVERIFY(sidebar);
-    auto *heading = sidebar->findChild<QQuickItem *>(QStringLiteral("viewsHeading"));
-    QVERIFY(heading);
-    QVERIFY(write({}));
-    QTRY_COMPARE(m_views->rowCount(), 0);
-    QCOMPARE(tabCycleThrough(heading), QStringLiteral("visited"));
-    QMetaObject::invokeMethod(window(), "focusViews"); settle();
-    QVERIFY(heading->hasActiveFocus());
-    QVERIFY(write(original));
-    QTRY_VERIFY(m_views->rowCount() > 0);
-    QCOMPARE(tabCycleThrough(heading), QStringLiteral("skipped"));
-}
-
 void TestStudio::auditsTagEditorControls_data()
 {
     QTest::addColumn<QString>("control");
@@ -16540,10 +16799,10 @@ void TestStudio::givesTheNameColumnPriority()
     QVERIFY(chosen.contains("tags") && chosen.contains("size") && chosen.contains("mtime"));
     QList<qreal> lists;
     // Window widths and pane counts that give lists from 160 to 1340 px; the
-    // sidebar and the details panel take 474 px beside a single pane, and the
+    // sidebar and the details panel take 486 px beside a single pane, and the
     // list's scroll bar 8.
-    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(1030, 1), qMakePair(1180, 1),
-                                         qMakePair(1593, 1), qMakePair(1822, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
+    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(1042, 1), qMakePair(1180, 1),
+                                         qMakePair(1593, 1), qMakePair(1834, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
         window()->resize(layout.first, 600);
         if (layout.second == 2 && m_workspace->paneCount() == 1) key(Qt::Key_Backslash, Qt::ControlModifier);
         QCOMPARE(m_workspace->paneCount(), layout.second);

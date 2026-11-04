@@ -61,7 +61,7 @@ Item {
         id: overflowMetrics
         visible: false
         font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSmall
+        font.pixelSize: Theme.fontCaption
     }
 
     function chipWidth(tag) {
@@ -181,9 +181,8 @@ Item {
                 anchors.centerIn: parent
                 text: "+" + strip.hiddenCount
                 color: Theme.foreground
-                opacity: 0.85
                 font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
+                font.pixelSize: Theme.fontCaption
                 renderType: Text.NativeRendering
             }
         }
@@ -228,9 +227,8 @@ Item {
                 anchors.centerIn: parent
                 text: "+" + strip.hiddenCount
                 color: Theme.foreground
-                opacity: 0.85
                 font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSmall
+                font.pixelSize: Theme.fontCaption
                 renderType: Text.NativeRendering
             }
         }

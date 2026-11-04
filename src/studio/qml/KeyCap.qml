@@ -22,9 +22,8 @@ Rectangle {
         anchors.centerIn: parent
         text: cap.key
         color: Theme.foreground
-        opacity: 0.8
         font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSmall
+        font.pixelSize: Theme.fontCaption
         renderType: Text.NativeRendering
     }
 }
