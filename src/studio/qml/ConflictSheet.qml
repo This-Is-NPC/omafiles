@@ -36,7 +36,7 @@ Loader {
         property string destinationPath: ""
         property bool applyAll: false
         visible: false
-        color: Theme.fill(Theme.background, 0.55)
+        color: Theme.scrim
         z: 90
 
         function openFor(source, destination) {

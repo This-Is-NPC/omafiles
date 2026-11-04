@@ -20,7 +20,7 @@ Rectangle {
     signal chosen(string id)
 
     visible: false
-    color: Theme.fill(Theme.background, 0.55)
+    color: Theme.scrim
     z: 80
 
     function open() {

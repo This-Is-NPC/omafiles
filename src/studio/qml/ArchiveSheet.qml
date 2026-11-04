@@ -19,7 +19,7 @@ Rectangle {
     property Item cancelButton: null
 
     visible: false
-    color: Theme.fill(Theme.background, 0.55)
+    color: Theme.scrim
     z: 85
 
     function openFor(paths, extracting, directory) {

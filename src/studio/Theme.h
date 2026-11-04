@@ -28,6 +28,7 @@ class Theme : public QObject
     Q_PROPERTY(QColor sunken READ sunken NOTIFY changed)
     Q_PROPERTY(QColor line READ line NOTIFY changed)
     Q_PROPERTY(QColor dim READ dim NOTIFY changed)
+    Q_PROPERTY(QColor scrim READ scrim NOTIFY changed)
     Q_PROPERTY(QString fontFamily READ fontFamily CONSTANT)
     // The window's metrics, in pixels: every QML size reads one of these.
     Q_PROPERTY(int spacingXs READ spacingXs CONSTANT)
@@ -62,6 +63,8 @@ public:
     QColor sunken() const;
     QColor line() const;
     QColor dim() const;
+    /// The wash a sheet or dialog lays over the window behind it.
+    QColor scrim() const { return fill(m_background, 0.55); }
 
     QString fontFamily() const { return QStringLiteral("monospace"); }
 

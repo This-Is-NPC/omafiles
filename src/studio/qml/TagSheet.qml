@@ -21,7 +21,7 @@ Rectangle {
 
     visible: false
     z: 85
-    color: Theme.fill(Theme.background, 0.55)
+    color: Theme.scrim
     Accessible.ignored: true
 
     function openFor(paths, operation, tag) {

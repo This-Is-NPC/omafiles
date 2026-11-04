@@ -252,7 +252,7 @@ Picture: No picture yet.
 
 ### Receipts and properties
 
-A receipt dialog shows the full text behind a status message: the result of an operation, or an error. It appears as scrollable text in a centered window with a Close button. The same dialog, titled Properties, opens when another application asks the desktop to show a file's properties.
+A receipt dialog shows the full text behind a status message: the result of an operation, or an error. It appears as scrollable text in a centered window with a Close button. The same dialog, titled Properties, opens when another application asks the desktop to show a file's properties. It darkens the window behind it the way a sheet does; a sheet that was already open stays drawn beneath it, and gets its focus and typed text back when the dialog closes.
 
 Reach it: Click the message in the footer after an operation finishes.
 
