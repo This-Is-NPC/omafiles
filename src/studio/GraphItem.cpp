@@ -1,5 +1,5 @@
 #include "GraphItem.h"
-#include "Counted.h"
+#include "Count.h"
 
 #include "IndexModel.h"
 #include "Paths.h"

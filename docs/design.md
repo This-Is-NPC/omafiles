@@ -86,7 +86,7 @@ Every key the window names is written one way, and `KeyCaps` (`src/studio/qml/Ke
 
 ### Counts
 
-Every count the window puts before a noun is spelled by `countOf` (`src/studio/Counted.h`), and QML reaches it as `Counted.of`: `1 entry`, `2 entries`, `1 selected file`. The last word is plural unless the count is one. `tests/test_counted_nouns.py`, run by `mise run test`, fails on a count written beside its noun anywhere else in `src/studio`.
+Every count the command line, the core and the window put before a noun is spelled by `countOf` (`src/core/Count.h`), and QML reaches it as `Counted.of` (`src/studio/Counted.h`): `1 entry`, `2 entries`, `1 selected file`. The last word is plural unless the count is one. `tests/test_counted_nouns.py`, run by `mise run test`, fails on a count written beside its noun anywhere else in `src/cli`, `src/core` or `src/studio`.
 
 ### Helpers
 

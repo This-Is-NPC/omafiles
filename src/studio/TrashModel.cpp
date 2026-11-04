@@ -1,5 +1,5 @@
 #include "TrashModel.h"
-#include "Counted.h"
+#include "Count.h"
 #include "BlockingJob.h"
 #include <QFileInfo>
 #include <QFutureWatcher>

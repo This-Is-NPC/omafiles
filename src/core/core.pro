@@ -21,7 +21,8 @@ HEADERS += \
     View.h \
     Open.h \
     Recent.h \
-    Glob.h
+    Glob.h \
+    Count.h
 
 SOURCES += \
     Tag.cpp \
@@ -34,7 +35,8 @@ SOURCES += \
     View.cpp \
     Open.cpp \
     Recent.cpp \
-    Glob.cpp
+    Glob.cpp \
+    Count.cpp
 
 HEADERS += Trash.h
 SOURCES += Trash.cpp

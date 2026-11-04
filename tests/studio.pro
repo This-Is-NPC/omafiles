@@ -38,7 +38,6 @@ SOURCES += \
     ../src/studio/FileTransfer.cpp \
     ../src/studio/Verb.cpp \
     ../src/studio/Views.cpp \
-    ../src/studio/Counted.cpp \
     ../src/core/View.cpp \
     ../src/core/Tag.cpp \
     ../src/core/Record.cpp \
@@ -49,7 +48,8 @@ SOURCES += \
     ../src/core/Names.cpp \
     ../src/core/Open.cpp \
     ../src/core/Recent.cpp \
-    ../src/core/Glob.cpp
+    ../src/core/Glob.cpp \
+    ../src/core/Count.cpp
 
 HEADERS += ../src/studio/DirectoryListing.h \
     ../src/studio/DefaultManager.h \
