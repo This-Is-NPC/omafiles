@@ -216,21 +216,11 @@ Rectangle {
                                 Accessible.name: "Edit tag " + tagChip.modelData
                                 onActivated: details.tagActivated(tagChip.modelData)
                                 required property string modelData
-                                height: Theme.chipHeight
-                                width: mark.implicitWidth + 2 * Theme.spacingXs
-                                radius: Theme.rounding
-                                hasChrome: true
-                                color: Theme.raised
-                                border.width: 1
-                                border.color: Theme.line
-                                Text {
-                                    id: mark
-                                    anchors.centerIn: parent
-                                    text: tagChip.modelData
-                                    color: Theme.foreground
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontSmall
-                                    renderType: Text.NativeRendering
+                                width: face.implicitWidth
+                                height: face.implicitHeight
+                                TagChip {
+                                    id: face
+                                    tag: tagChip.modelData
                                 }
                             }
                         }

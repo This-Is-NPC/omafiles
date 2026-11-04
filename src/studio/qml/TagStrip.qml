@@ -37,7 +37,7 @@ Item {
 
     property int firstVisible: 0
     property int lastVisible: -1
-    /// A chip's text and its two side gaps.
+    /// The +N chip's text and its two side gaps.
     readonly property int chipPadding: 2 * Theme.spacingXs
 
     implicitWidth: Math.min(row.width, limit)
@@ -52,11 +52,9 @@ Item {
     onAlignRightChanged: Qt.callLater(recomputeLayout)
     Component.onCompleted: recomputeLayout()
 
-    Text {
+    TagChip {
         id: chipMetrics
         visible: false
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSmall
     }
 
     Text {
@@ -66,9 +64,9 @@ Item {
         font.pixelSize: Theme.fontSmall
     }
 
-    function chipWidth(text) {
-        chipMetrics.text = text
-        return chipMetrics.implicitWidth + strip.chipPadding
+    function chipWidth(tag) {
+        chipMetrics.tag = tag
+        return chipMetrics.implicitWidth
     }
 
     function overflowWidth(count) {
@@ -193,7 +191,7 @@ Item {
         Repeater {
             model: strip.tags
 
-            Rectangle {
+            TagChip {
                 id: chip
                 objectName: "tagChip"
                 required property int index
@@ -201,27 +199,12 @@ Item {
                 readonly property bool shown: strip.hiddenCount === 0
                     || (strip.alignRight ? chip.index >= strip.firstVisible
                                          : chip.index <= strip.lastVisible)
-                height: Theme.chipHeight
-                width: shown ? mark.implicitWidth + strip.chipPadding : 0
-                radius: Theme.rounding
-                color: Theme.raised
-                border.width: 1
-                border.color: Theme.line
+                tag: chip.modelData
+                width: shown ? implicitWidth : 0
                 opacity: shown ? 1 : 0
                 Accessible.role: Accessible.Button
                 Accessible.name: "Edit tag " + chip.modelData
                 TapHandler { enabled: chip.shown; onTapped: strip.activated(chip.modelData) }
-
-                Text {
-                    id: mark
-                    anchors.centerIn: parent
-                    text: chip.modelData
-                    color: Theme.foreground
-                    opacity: 0.85
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSmall
-                    renderType: Text.NativeRendering
-                }
             }
         }
 
