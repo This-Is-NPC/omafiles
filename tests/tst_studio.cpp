@@ -964,6 +964,11 @@ void TestStudio::init()
     tab()->setSortAscending(true);
     tab()->setCwd(m_tree.path());
     tab()->setMarked({});
+    // The tag panel keeps its cursor between visits, so a tag a test walked to
+    // would meet the next test's `t` instead of the first row.
+    QObject *sidebar = window->property("activeSidebar").value<QObject *>();
+    QVERIFY(sidebar);
+    sidebar->property("tagsList").value<QObject *>()->setProperty("currentIndex", -1);
     settle();
 
     QMetaObject::invokeMethod(m_engine->rootObjects().first(), "takeFocus");
