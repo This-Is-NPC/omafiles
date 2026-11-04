@@ -59,7 +59,6 @@ Rectangle {
                 required property var modelData
                 objectName: "criterionChip"
                 on: true
-                quiet: true
                 label: bar.label(modelData.key, modelData.value) + "  ×"
                 caption: "Remove this filter"
                 onClicked: bar.removed(modelData.key, modelData.value)

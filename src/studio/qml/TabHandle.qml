@@ -85,9 +85,8 @@ FocusScope {
             anchors.rightMargin: handle.closeColumn
             anchors.verticalCenter: parent.verticalCenter
             text: handle.title
-            color: Theme.foreground
-            opacity: handle.current ? 1 : 0.75
-            elide: Text.ElideRight
+            color: handle.current ? Theme.foreground : Theme.dim
+            elide: Text.ElideMiddle
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
             renderType: Text.NativeRendering
@@ -108,8 +107,7 @@ FocusScope {
             Text {
                 anchors.centerIn: parent
                 text: "×"
-                color: closeHover.hovered ? Theme.urgent : Theme.foreground
-                opacity: closeHover.hovered ? 1 : (handle.current ? 0.7 : 0.45)
+                color: closeHover.hovered ? Theme.urgent : handle.current ? Theme.foreground : Theme.dim
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontBody
                 renderType: Text.NativeRendering

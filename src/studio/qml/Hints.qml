@@ -114,7 +114,7 @@ Item {
                         text: pair.modelData.label
                         color: Theme.dim
                         font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSmall
+                        font.pixelSize: Theme.fontCaption
                         renderType: Text.NativeRendering
                     }
                 }

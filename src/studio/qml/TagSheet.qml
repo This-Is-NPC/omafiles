@@ -124,6 +124,7 @@ Rectangle {
                                 width: parent.width
                                 font.bold: true
                                 font.pixelSize: Theme.fontTitle
+                                elide: Text.ElideMiddle
                                 text: sheet.paths.length === 1
                                     ? "Tags on " + String(sheet.paths[0]).split("/").pop()
                                     : "Tags on " + Counted.of(sheet.paths.length, "selected file")
@@ -200,6 +201,7 @@ Rectangle {
                             Label {
                                 width: parent.width
                                 text: "↑ ↓ choose · Tab completes · Enter applies · Esc closes"
+                                wrapMode: Text.Wrap
                                 quiet: true
                             }
                             Row {

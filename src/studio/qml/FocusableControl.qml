@@ -35,6 +35,7 @@ Item {
     property alias radius: chrome.radius
     property alias border: chrome.border
     readonly property alias hovered: hover.hovered
+    readonly property alias pressed: tap.pressed
 
     enabled: control.usable
 
@@ -122,6 +123,7 @@ Item {
         onHoveredChanged: control.hoverChanged(hovered)
     }
     TapHandler {
+        id: tap
         enabled: control.usable
         acceptedButtons: control.acceptedButtons
         onTapped: function (eventPoint, button) {

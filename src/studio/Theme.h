@@ -50,12 +50,14 @@ class Theme : public QObject
     Q_PROPERTY(int spacingL READ spacingL CONSTANT)
     Q_PROPERTY(int spacingXl READ spacingXl CONSTANT)
     Q_PROPERTY(int inset READ inset CONSTANT)
-    Q_PROPERTY(int fontSmall READ fontSmall CONSTANT)
+    Q_PROPERTY(int fontCaption READ fontCaption CONSTANT)
+    Q_PROPERTY(int fontHeading READ fontHeading CONSTANT)
     Q_PROPERTY(int fontBody READ fontBody CONSTANT)
     Q_PROPERTY(int fontTitle READ fontTitle CONSTANT)
     Q_PROPERTY(int rowHeight READ rowHeight CONSTANT)
     Q_PROPERTY(int barHeight READ barHeight CONSTANT)
     Q_PROPERTY(int stripHeight READ stripHeight CONSTANT)
+    Q_PROPERTY(int headingHeight READ headingHeight CONSTANT)
     Q_PROPERTY(int controlHeight READ controlHeight CONSTANT)
     Q_PROPERTY(int chipHeight READ chipHeight CONSTANT)
     Q_PROPERTY(int tagSwatch READ tagSwatch CONSTANT)
@@ -108,15 +110,19 @@ public:
     static constexpr int spacingL() { return 16; }
     static constexpr int spacingXl() { return 24; }
     static constexpr int inset() { return spacingM(); }
-    // Type: captions and keycaps, rows and values, sheet titles.
-    static constexpr int fontSmall() { return 10; }
-    static constexpr int fontBody() { return 12; }
-    static constexpr int fontTitle() { return 14; }
-    // Heights of a list row, the header bar, a strip (tabs, footer), a control
-    // (buttons, tabs, chips that act) and a tag chip.
+    // Type sizes: captions and keycaps (Normal), section headings (DemiBold),
+    // rows and values (Normal), titles (DemiBold). Weight, not opacity, is the
+    // second axis.
+    static constexpr int fontCaption() { return 11; }
+    static constexpr int fontHeading() { return 11; }
+    static constexpr int fontBody() { return 13; }
+    static constexpr int fontTitle() { return 15; }
+    // Heights of a list row, the header bar, a strip (tabs, footer), a section
+    // heading, a control (buttons, tabs, chips that act) and a tag chip.
     static constexpr int rowHeight() { return 28; }
     static constexpr int barHeight() { return 36; }
     static constexpr int stripHeight() { return 28; }
+    static constexpr int headingHeight() { return 24; }
     static constexpr int controlHeight() { return 24; }
     static constexpr int chipHeight() { return 18; }
     // The side of a tag's colour square.

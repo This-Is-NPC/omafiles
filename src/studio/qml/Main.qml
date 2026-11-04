@@ -2123,7 +2123,7 @@ Window {
                     id: details
                     objectName: "detailsPanel"
                     Layout.fillHeight: true
-                    Layout.preferredWidth: 252
+                    Layout.preferredWidth: 264
                     // Dropped whole in a pane too narrow to hold it and a list
                     // at the same time: splitting the window is asking for two
                     // lists, not for less of each.
@@ -3187,7 +3187,6 @@ Window {
 
                         Chip {
                             objectName: "sortKey"
-                            quiet: true
                             label: viewRow.tab ? win.columnLabel(viewRow.tab.sortRole) : ""
                             caption: "Sort by the next key"
                             key: "s"
@@ -3195,7 +3194,6 @@ Window {
                         }
                         Chip {
                             objectName: "sortDirection"
-                            quiet: true
                             label: viewRow.tab && !viewRow.tab.sortAscending ? "↓" : "↑"
                             caption: "Flip the sort direction"
                             key: "S"
@@ -3312,14 +3310,15 @@ Window {
             property alias band: band
             readonly property string viewMode: filesRoot.tab ? filesRoot.tab.viewMode : "list"
             readonly property var view: viewMode === "icons" ? grid : listing
+            /// The keyboard is on this pane's list, so its cursor row carries
+            /// the window's one focus ring.
+            readonly property bool keyboardHere: root.activeFocus
+                                                 && Workspace.focusedPane === filesRoot.paneIndex
 
             // The details table's geometry, in one place. A heading and the
             // cells under it that each work out their own width are a heading
             // and a column that do not line up.
-            readonly property real nameIndent: Theme.inset + markColumn + Theme.spacingS + Theme.iconSize
-                                               + Theme.iconGap
-            /// The width of the mark dot ahead of a row's icon.
-            readonly property real markColumn: Theme.spacingS
+            readonly property real nameIndent: Theme.inset + Theme.iconSize + Theme.iconGap
             // The name has priority: it keeps at least `nameMinimum`, and the
             // chosen columns that do not fit beside it are dropped in
             // `dropOrder`. Past `nameMaximum` the extra goes to the tags.
@@ -3607,7 +3606,8 @@ Window {
                             Accessible.name: row.name
 
                             // Opaque, and drawn only when the row has a state:
-                            // at rest the list's own surface shows.
+                            // at rest the list's own surface shows. A mark is
+                            // this fill across the row and nothing else.
                             Rectangle {
                                 objectName: "rowWash"
                                 anchors.fill: parent
@@ -3616,19 +3616,10 @@ Window {
                                      : row.marked ? Theme.marked
                                                   : Theme.hoverBase
                             }
-
-                            Text {
-                                id: markDot
-                                anchors.left: parent.left
-                                anchors.leftMargin: Theme.inset
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: filesRoot.markColumn
-                                horizontalAlignment: Text.AlignHCenter
-                                text: row.marked ? "\u2022" : ""
-                                color: Theme.accent
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontTitle
-                                renderType: Text.NativeRendering
+                            FocusRing {
+                                focused: row.onCursor && filesRoot.keyboardHere
+                                weight: 1
+                                inset: 1
                             }
 
                             FileIcon {
@@ -3642,8 +3633,8 @@ Window {
                                     && row.y + row.height > listing.contentY
                                     && row.y < listing.contentY + listing.height
                                 moving: listing.moving
-                                anchors.left: markDot.right
-                                anchors.leftMargin: Theme.spacingS
+                                anchors.left: parent.left
+                                anchors.leftMargin: Theme.inset
                                 anchors.verticalCenter: parent.verticalCenter
                                 kind: row.facet ? "tag"
                                     : (row.kind === "file" ? "file"
@@ -3664,7 +3655,7 @@ Window {
                                 anchors.rightMargin: Theme.spacingM
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: row.name
-                                opacity: row.onCursor ? 1 : 0.88
+                                elide: Text.ElideMiddle
                             }
 
                             // The same columns as the headings, at the same widths,
@@ -3872,6 +3863,11 @@ Window {
                                          : cell.marked ? Theme.marked
                                                        : Theme.hoverBase
                                 }
+                                FocusRing {
+                                    focused: cell.onCursor && filesRoot.keyboardHere
+                                    weight: 1
+                                    inset: 1
+                                }
 
                                 Column {
                                     id: tileColumn
@@ -3903,8 +3899,8 @@ Window {
                                     Label {
                                         id: cellName
                                         width: parent.width
-                                        text: (cell.marked ? "\u2022 " : "") + cell.name
-                                        opacity: cell.onCursor ? 1 : 0.88
+                                        text: cell.name
+                                        elide: Text.ElideMiddle
                                         horizontalAlignment: Text.AlignHCenter
                                     }
                                 }
@@ -3986,11 +3982,6 @@ Window {
                             visible: scrollColumn.scrolls
                             onActivated: filesRoot.jumpToEnd(true)
                         }
-                    }
-
-                    FocusRing {
-                        focused: root.activeFocus && Workspace.focusedPane === filesRoot.paneIndex
-                        inset: Theme.focusRing
                     }
                 }
 
