@@ -4,9 +4,14 @@ omafiles provides the `org.freedesktop.impl.portal.FileChooser` backend for
 applications using the desktop portal. OpenFile chooses one or more files or a
 folder. SaveFile chooses a filename and asks before returning an existing file.
 SaveFiles chooses a folder and returns a destination for each requested name,
-keeping their order and choosing unused names when necessary. Pending names
-that differ only in letter case receive distinct names as well, so they cannot
-collide on a case-insensitive destination. The chooser
+keeping their order and choosing unused names when necessary: a taken name gets
+` (1)`, ` (2)` and so on before its extension. A name is taken when the folder
+already answers to it. On a folder that keeps letter case apart that is the
+exact name only, so `A SPACE.txt` is returned as it is beside an existing
+`a space.txt`; on a folder that folds case it is any spelling, and the same
+request returns `A SPACE (1).txt`. Pending names that differ only in letter
+case receive distinct names as well, because no file answers for them yet, so
+they cannot collide on a case-insensitive destination. The chooser
 returns local file URIs; it does not create, overwrite or truncate files.
 The requesting application performs the actual read or write.
 
