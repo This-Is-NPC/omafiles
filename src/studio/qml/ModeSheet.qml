@@ -12,6 +12,7 @@ Rectangle {
     Accessible.ignored: true
 
     readonly property Item focusTarget: bits && bits.editable ? bits.firstControl : cancelButton
+    readonly property var hints: [{ key: "Esc", label: "cancel" }, { key: "Enter", label: "apply" }, { key: "Space", label: "flip" }, { key: "Tab", label: "next" }]
     property var paths: []
     property int value: 0
     /// Why the bits cannot be set from here, or empty where they can.

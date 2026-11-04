@@ -8,6 +8,7 @@ Rectangle {
     id: sheet
     objectName: "previewSheet"
     readonly property Item focusTarget: scroller
+    readonly property var hints: [{ key: "Esc / i", label: "close" }, { key: "j k", label: "next, previous" }, { key: "PgDn PgUp", label: "scroll" }]
     property string path: ""
     property bool frontmost: true
     property bool initialized: false

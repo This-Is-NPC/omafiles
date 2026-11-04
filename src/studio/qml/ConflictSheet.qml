@@ -11,6 +11,7 @@ Loader {
     readonly property ConflictPanel loaded: item as ConflictPanel
     visible: false
     readonly property Item focusTarget: loaded !== null ? loaded.focusTarget : null
+    readonly property var hints: [{ key: "Esc", label: "cancel" }, { key: "Tab", label: "next" }, { key: "Enter / Space", label: "press" }]
     readonly property bool applyAll: loaded !== null && loaded.applyAll
 
     function openFor(source, destination) {

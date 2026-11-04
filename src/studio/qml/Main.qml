@@ -99,6 +99,8 @@ Window {
             id: receiptDialog
             property string receipt: ""
             readonly property Item focusTarget: propertyText
+            readonly property var hints: [{ key: "Esc", label: "close" }, { key: "PgDn PgUp", label: "page" },
+                { key: "Tab", label: "next" }]
             objectName: "propertiesDialog"
             parent: win.contentItem
             anchors.centerIn: parent
@@ -470,6 +472,12 @@ Window {
     // footer drops them from the end when the window narrows and keeps the
     // first, `?` wherever a mode has it.
     readonly property var hintsForRegion: {
+        // A sheet or a menu takes the keys, so the footer names its keys.
+        for (let i = overlayStack.length - 1; i >= 0; --i) {
+            const overlay = overlayStack[i].overlay
+            if (!inlineOverlay(overlay))
+                return overlay.hints
+        }
         if (editingPath)
             return [{ key: "Esc", label: "cancel" }, { key: "Enter", label: "go" }]
         if (filtering)

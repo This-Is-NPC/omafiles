@@ -641,6 +641,8 @@ private slots:
     void presentsWithTheCallersActivationToken();
     void restoresInterruptedOverlays_data();
     void restoresInterruptedOverlays();
+    void footerHintsFollowOpenSheet_data();
+    void footerHintsFollowOpenSheet();
     void restoresTheTopOverlayWhenOthersClose();
     void stacksAsynchronousReceipts();
     void preservesFocusInCommandsOpenedByOverlays();
@@ -16891,6 +16893,53 @@ void TestStudio::opensFreshOverlaysOnTheirFirstControl()
         QCOMPARE(window()->activeFocusItem(), first);
     }
     QVERIFY(QMetaObject::invokeMethod(overlay.data(), "close"));
+}
+
+void TestStudio::footerHintsFollowOpenSheet_data()
+{
+    QTest::addColumn<QString>("name");
+    for (const char *name : {"tagSheet", "helpSheet", "propertiesDialog"})
+        QTest::newRow(name) << QString::fromLatin1(name);
+}
+
+void TestStudio::footerHintsFollowOpenSheet()
+{
+    QFETCH(QString, name);
+    focusRow("one.txt");
+    auto *status = itemsNamed("statusBar").first();
+    const auto footer = [&] { return status->property("hints").toList(); };
+    const QVariantList listHints = footer();
+    QVERIFY(!listHints.isEmpty());
+    QPointer<QObject> sheet;
+    if (name == "tagSheet") {
+        sheet = itemsNamed("tagSheet").first();
+        QVERIFY(QMetaObject::invokeMethod(sheet, "openFor",
+            Q_ARG(QVariant, QStringList{m_tree.filePath("one.txt")}),
+            Q_ARG(QVariant, "add"), Q_ARG(QVariant, "")));
+        settle();
+    } else if (name == "helpSheet") {
+        key('?');
+        sheet = itemsNamed("helpSheet").first();
+    } else {
+        FileManager manager;
+        manager.setWorkspace(m_workspace);
+        manager.ShowItemProperties({QUrl::fromLocalFile(m_tree.filePath("one.txt")).toString()}, "");
+        settle();
+        sheet = window()->findChild<QObject *>("propertiesDialog");
+    }
+    QVERIFY(sheet && sheet->property("visible").toBool());
+    QVERIFY(footer() != listHints);
+    const QVariantList sheetHints = sheet->property("hints").toList();
+    QVERIFY(!sheetHints.isEmpty());
+    QVERIFY(sheetHints != listHints);
+    QCOMPARE(footer(), sheetHints);
+    // A control inside the sheet keeps the sheet's keys.
+    key(Qt::Key_Tab);
+    QTRY_VERIFY(window()->activeFocusItem() != nullptr);
+    QCOMPARE(footer(), sheetHints);
+    key(Qt::Key_Escape);
+    QTRY_VERIFY(!sheet || !sheet->property("visible").toBool());
+    QTRY_COMPARE(footer(), listHints);
 }
 
 void TestStudio::restoresKeyRoutingAfterTabRoundTrips_data()
