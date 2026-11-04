@@ -9,6 +9,8 @@ Chip {
     id: button
 
     property string iconKind: ""
+    /// The mark's ink: the label's, unless the host marks a chosen one.
+    property color iconInk: button.ink
 
     Accessible.name: caption
 
@@ -18,6 +20,6 @@ Chip {
     Icon {
         anchors.centerIn: parent
         kind: button.iconKind
-        ink: button.ink
+        ink: button.iconInk
     }
 }

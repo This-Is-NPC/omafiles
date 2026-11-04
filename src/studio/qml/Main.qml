@@ -204,14 +204,17 @@ Window {
                     || insideOverlay(activeTagsList, item)) return "tags"
             if (item === activeSidebar.viewsFocusTarget || insideOverlay(activeViewsList, item)) return "views"
         }
-        // A button, chip, tab or the path. A footer hint is a key of the list,
+        // A button, chip, tab or the view mode switch. A footer hint is a key of the list,
         // and keeps the list's hints while it has the focus.
         if ((item instanceof FocusableControl && item.objectName !== "hintAction")
-                || item instanceof TabHandle || item === crumbs)
+                || item instanceof TabHandle || item instanceof ViewModeSwitch)
             return "control"
         return "list"
     }
     property bool pendingG: false
+    /// Whether the details panel is shown where it fits; the Details toggle and
+    /// `I` flip it.
+    property bool detailsShown: true
     /// Where the last menu was opened, so a second page of one lands on it.
     property real menuX: 0
     property real menuY: 0
@@ -394,6 +397,7 @@ Window {
             { key: "h / Bksp", label: "parent folder" },
             { key: "←", label: "parent folder (list, details)" },
             { key: "~", label: "home folder" },
+            { key: "H L", label: "back, forward" },
             { key: "Ctrl l", label: "type a path" },
             { key: "F5 / Ctrl r", label: "reload index" } ] },
         { title: "preview", keys: [
@@ -418,6 +422,7 @@ Window {
             { key: "2", label: "details" },
             { key: "3", label: "icons" },
             { key: ". / Ctrl h", label: "hidden files" },
+            { key: "I", label: "details panel" },
             { key: "s", label: "name, tags, type, size, modified, each the way it reads" },
             { key: "S", label: "flip the direction" } ] },
         { title: "edit", keys: [
@@ -589,6 +594,22 @@ Window {
         if (row < 0) return
         moveCursorTo(row)
         previewSheet.openFor(activeFolder.pathAt(row))
+    }
+
+    // Back and forward through the folders the focused tab stood in.
+    function goBack() {
+        if (onDirectory)
+            activeTab.goBack()
+    }
+    function goForward() {
+        if (onDirectory)
+            activeTab.goForward()
+    }
+
+    // What the sort button and `s` do: the next sort key.
+    function chooseSort() {
+        if (activeTab)
+            activeTab.cycleSortRole()
     }
 
     function startFilter() {
@@ -1683,6 +1704,9 @@ Window {
         case "i": openPreview(""); return true
         case "h": folder.goUp(); return true
         case "~": folder.goHome(); return true
+        case "H": goBack(); return true
+        case "L": goForward(); return true
+        case "I": detailsShown = !detailsShown; return true
         case "t": focusTags(); return true
         case "v": focusViews(); return true
         case "p": focusPlaces(); return true
@@ -1698,7 +1722,7 @@ Window {
         // without the thumb going back and forth.
         case "J": folder.toggleMarkAt(listing.currentIndex); moveCursor(1); return true
         case "K": folder.toggleMarkAt(listing.currentIndex); moveCursor(-1); return true
-        case "s": if (activeTab) activeTab.cycleSortRole(); return true
+        case "s": chooseSort(); return true
         case "S": if (activeTab) activeTab.toggleSortDirection(); return true
         case "1": if (activeTab) activeTab.viewMode = "list"; return true
         case "2": if (activeTab) activeTab.viewMode = "details"; return true
@@ -1917,12 +1941,170 @@ Window {
             anchors.fill: parent
             spacing: 0
 
-            // -------------------------------------------------------- header
+            // ----------------------------------------------------- tab strip
+            // Every pane's tabs, side by side in pane order: each pane keeps
+            // its own tabs and its own `+`, and the keys sheet sits at the right.
             Rectangle {
-                id: header
+                id: tabStrip
+                objectName: "tabStrip"
+                width: parent.width
+                height: Theme.stripHeight
+                color: Theme.chrome
+
+                Row {
+                    id: tabGroups
+                    anchors.left: parent.left
+                    anchors.right: keysButton.left
+                    anchors.rightMargin: Theme.spacingS
+                    height: parent.height
+                    readonly property real share: width / Math.max(1, Workspace.paneCount)
+
+                    Repeater {
+                        model: Workspace.panes
+                        delegate: Item {
+                            id: tabGroup
+                            objectName: "tabGroup"
+                            required property var paneState
+                            required property int index
+                            width: tabGroups.share
+                            height: tabGroups.height
+                            clip: true
+
+                            // The tabs share what the `+` leaves, and elide
+                            // their titles when that is short.
+                            readonly property real tabRoom: width - newTab.width - 2 * Theme.spacingXs
+                            readonly property int tabCount: Math.max(1, tabGroup.paneState?.tabs.length ?? 0)
+
+                            Row {
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                spacing: 0
+
+                                Repeater {
+                                    model: tabGroup.paneState.tabs
+                                    delegate: TabHandle {
+                                        id: tabHandle
+                                        objectName: "tabHandle"
+                                        required property var modelData
+                                        required property int index
+                                        title: modelData.title
+                                        // A tab showing a tag is not a folder:
+                                        // it shows the tag's colour, and a tags
+                                        // tab at its vocabulary the tag mark.
+                                        kind: modelData.kind === "tags"
+                                              || (modelData.kind === "files"
+                                                  && modelData.selectedTag !== "")
+                                              ? "tag" : modelData.kind
+                                        tag: modelData.kind === "files" ? modelData.selectedTag
+                                           : modelData.kind === "tags" && modelData.facets.length > 0
+                                             ? modelData.facets[modelData.facets.length - 1] : ""
+                                        // Optional, because closing a pane
+                                        // leaves the delegate alive one
+                                        // evaluation longer than the pane:
+                                        // under `ComponentBehavior: Bound` the
+                                        // enclosing scope is kept, so this runs
+                                        // once more with `paneState` null.
+                                        current: tabGroup.paneState?.currentIndex === index
+                                        focusedPane: Workspace.focusedPane === tabGroup.index
+                                        width: Math.min(implicitWidth, Math.max(minimumWidth,
+                                                                                tabGroup.tabRoom / tabGroup.tabCount))
+                                        FileDropArea {
+                                            anchors.fill: parent
+                                            directory: win.isFolderTab(tabHandle.modelData) ? tabHandle.modelData.cwd : ""
+                                            blocked: win.blocked
+                                        }
+                                        onActivated: {
+                                            Workspace.focusedPane = tabGroup.index
+                                            tabGroup.paneState.currentIndex = index
+                                        }
+                                        onClosed: {
+                                            Workspace.focusedPane = tabGroup.index
+                                            Workspace.closeTab(tabGroup.index, index)
+                                        }
+                                        Keys.onPressed: function (event) {
+                                            if (event.key === Qt.Key_Menu
+                                                    || (event.key === Qt.Key_F10
+                                                        && (event.modifiers & Qt.ShiftModifier))) {
+                                                const pos = mapToItem(root, width / 2, height)
+                                                win.openTabMenuAt(tabGroup.index, index, pos.x, pos.y)
+                                                event.accepted = true
+                                            }
+                                        }
+                                        onMenuRequested: function (x, y) {
+                                            const pos = mapToItem(root, x, y)
+                                            win.openTabMenuAt(tabGroup.index, index, pos.x, pos.y)
+                                        }
+                                    }
+                                }
+
+                                Item { width: Theme.spacingXs; height: 1 }
+
+                                Chip {
+                                    id: newTab
+                                    objectName: "newTabButton"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    label: "+"
+                                    caption: "New tab"
+                                    key: "Ctrl t"
+                                    showsKey: true
+                                    onClicked: {
+                                        Workspace.focusedPane = tabGroup.index
+                                        newTabMenu.targetPaneIndex = tabGroup.index
+                                        const pos = mapToItem(root, 0, height + 4)
+                                        newTabMenu.openAt(pos.x, pos.y)
+                                    }
+                                }
+                            }
+
+                            // The edge between two panes' tabs.
+                            Rectangle {
+                                visible: tabGroup.index < Workspace.paneCount - 1
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 1
+                                color: Theme.line
+                            }
+                        }
+                    }
+                }
+
+                Chip {
+                    id: keysButton
+                    objectName: "keysButton"
+                    anchors.right: parent.right
+                    anchors.rightMargin: Theme.inset
+                    anchors.verticalCenter: parent.verticalCenter
+                    label: "Keys"
+                    caption: "Show keys"
+                    key: "?"
+                    showsKey: true
+                    onClicked: helpSheet.open()
+                }
+            }
+
+            Rule {}
+
+            // ------------------------------------------------------- toolbar
+            // Where the focused pane's tab is and how its list is drawn: the
+            // way back, forward and up, undo, the path, the filter, the sort,
+            // the view mode and the details panel.
+            Rectangle {
+                id: toolbar
+                objectName: "toolbar"
                 width: parent.width
                 height: Theme.barHeight
                 color: Theme.chrome
+
+                readonly property var tab: win.activeTab
+                /// A folder listing: what the view mode and the sort belong to.
+                readonly property bool onFolder: win.onFiles && toolbar.tab.kind === "files"
+                /// What the controls at the right take without the filter.
+                readonly property real fixedRight: (sortButton.visible ? sortButton.width + controls.spacing : 0)
+                                                   + (viewModes.visible ? viewModes.width + controls.spacing : 0)
+                                                   + (detailsToggle.visible ? detailsToggle.width + controls.spacing : 0)
+                /// The path keeps at least this much before the filter shows.
+                readonly property int pathRoom: 240
 
                 Row {
                     id: navRow
@@ -1932,8 +2114,23 @@ Window {
                     spacing: Theme.spacingXs
 
                     ToolButton {
+                        objectName: "backButton"
+                        iconKind: "back"
+                        caption: "Back"
+                        key: "H"
+                        usable: win.onDirectory && toolbar.tab.canGoBack
+                        onClicked: win.goBack()
+                    }
+                    ToolButton {
+                        objectName: "forwardButton"
+                        iconKind: "forward"
+                        caption: "Forward"
+                        key: "L"
+                        usable: win.onDirectory && toolbar.tab.canGoForward
+                        onClicked: win.goForward()
+                    }
+                    ToolButton {
                         objectName: "parentFolderButton"
-                        anchors.verticalCenter: parent.verticalCenter
                         iconKind: "up"
                         caption: "Parent folder"
                         key: "h"
@@ -1941,132 +2138,131 @@ Window {
                         onClicked: if (win.activeFolder) win.activeFolder.goUp()
                     }
                     ToolButton {
-                        anchors.verticalCenter: parent.verticalCenter
-                        iconKind: "home"
-                        caption: "Home folder"
-                        key: "~"
-                        usable: win.onFiles
-                        onClicked: if (win.activeFolder) win.activeFolder.goHome()
-                    }
-                    ToolButton {
                         objectName: "undoButton"
-                        anchors.verticalCenter: parent.verticalCenter
                         iconKind: "undo"
                         caption: IndexModel.undoLabel
                         key: "Ctrl z"
                         usable: IndexModel.canUndo
                         onClicked: IndexModel.undo()
                     }
-                    ToolButton {
-                        anchors.verticalCenter: parent.verticalCenter
-                        iconKind: "reload"
-                        caption: "Reload index"
-                        key: "F5"
-                        onClicked: win.reloadIndex()
-                    }
                 }
 
-                // The path, and the box you type one into, in the same place.
-                // Clicking the path opens the box; Ctrl+L is the same door.
+                // The path, one button per folder, and the box you type one
+                // into, in the same place. The current folder's button opens
+                // the box; Ctrl+L is the same door.
+                // Clipped, so a current folder wider than the bar stays out of
+                // the controls; the focus ring's width is kept clear inside
+                // the clip on every side.
                 Item {
                     id: pathArea
                     anchors.left: navRow.right
-                    anchors.leftMargin: Theme.spacingM
-                    anchors.right: counts.left
-                    anchors.rightMargin: Theme.spacingL
+                    anchors.leftMargin: Theme.spacingM - Theme.focusRing
+                    anchors.right: controls.left
+                    anchors.rightMargin: Theme.spacingM - Theme.focusRing
                     anchors.verticalCenter: parent.verticalCenter
-                    height: Theme.controlHeight
+                    height: Theme.controlHeight + 2 * Theme.focusRing
+                    clip: true
 
-                    FocusRing { focused: crumbs.activeFocus }
-
-                    Row {
-                        id: crumbs
-                        objectName: "pathCrumbs"
-                        visible: !win.editingPath
-                        anchors.fill: parent
-                        spacing: 0
-                        Accessible.role: Accessible.Button
-                        Accessible.name: crumbs.full
-                        Accessible.focusable: win.onFiles && crumbs.full !== ""
-                        activeFocusOnTab: win.onFiles && crumbs.full !== ""
-                        signal activated()
-                        onActivated: win.startPathEdit()
-                        Keys.onReturnPressed: function (event) {
-                            crumbs.activated()
-                            event.accepted = true
+                    // A folder is spelled one button per directory, each
+                    // holding the path it goes to. A tag listing, a tags tab,
+                    // a search and the recent list are not somewhere in the
+                    // tree, so they are one button reading the question:
+                    // `#tag`, `#work/#draft`, the pattern or `(recent)`.
+                    readonly property var segments: {
+                        const tab = toolbar.tab
+                        if (!tab || !win.onFiles)
+                            return []
+                        if (tab.kind === "tags")
+                            return [{ label: win.facetPath(tab.facets, tab.untagged), path: "" }]
+                        if (tab.recent)
+                            return [{ label: "(recent)", path: "" }]
+                        if (tab.pattern !== "")
+                            return [{ label: tab.pattern, path: "" }]
+                        if (tab.selectedTag !== "")
+                            return [{ label: "#" + tab.selectedTag, path: "" }]
+                        const names = tab.cwd.split("/").filter(name => name !== "")
+                        const list = [{ label: "/", path: "/" }]
+                        let path = ""
+                        for (const name of names) {
+                            path += "/" + name
+                            list.push({ label: name, path: path })
                         }
-                        Keys.onSpacePressed: function (event) {
-                            crumbs.activated()
-                            event.accepted = true
-                        }
-
-                        // A tag listing spans the index, so there is no path to
-                        // print: it is spelled `#tag`, the way the graph and
-                        // the tab strip spell it, rather than as a folder the
-                        // window is not standing in. A tags tab spells the
-                        // whole query the same way -- `#work/#draft` -- which
-                        // is a path you can type as readily as a folder.
-                        readonly property string full: {
-                            if (!win.activeTab)
-                                return ""
-                            if (win.activeTab.kind === "tags")
-                                return win.facetPath(win.activeTab.facets,
-                                                     win.activeTab.untagged)
-                            if (win.activeTab.kind !== "files")
-                                return ""
-                            // A search spans the roots the way a tag spans
-                            // the index, so it is spelled as the pattern
-                            // and not as a folder the window is not in.
-                            if (win.activeTab.recent)
-                                return "(recent)"
-                            if (win.activeTab.pattern !== "")
-                                return win.activeTab.pattern
-                            return win.activeTab.selectedTag !== ""
-                                   ? "#" + win.activeTab.selectedTag : win.activeTab.cwd
-                        }
-                        readonly property int cut: full.lastIndexOf("/")
-                        readonly property string stem: cut > 0 ? full.substring(0, cut + 1)
-                                                               : (cut === 0 ? "/" : "")
-                        readonly property string leaf: cut >= 0 ? full.substring(cut + 1) : full
-
-                        Text {
-                            // Elided from the left: the end of a path is the
-                            // part that says where you are. Sized to its own
-                            // text while that fits, so the leaf sits against
-                            // the stem instead of being pushed to the far edge.
-                            width: Math.max(0, Math.min(implicitWidth,
-                                                        crumbs.width - leafText.implicitWidth))
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: crumbs.stem
-                            color: Theme.dim
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontBody
-                            elide: Text.ElideLeft
-                            renderType: Text.NativeRendering
-                        }
-                        Text {
-                            id: leafText
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: crumbs.leaf
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontBody
-                            renderType: Text.NativeRendering
-                        }
+                        return list
                     }
 
-                    MouseArea {
-                        anchors.fill: parent
+                    FontMetrics {
+                        id: segmentMetrics
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontBody
+                    }
+                    function segmentWidth(label) {
+                        return Math.max(Theme.controlHeight,
+                                        Math.ceil(segmentMetrics.advanceWidth(label)) + 2 * Theme.spacingS)
+                    }
+                    // The first segment shown. The stem gives way from the left
+                    // behind one `…` button; the current folder never does.
+                    readonly property int firstShown: {
+                        const list = pathArea.segments
+                        const gap = segmentRow.spacing
+                        const ellipsis = pathArea.segmentWidth("…") + gap
+                        let room = pathArea.width - 2 * Theme.focusRing
+                        let at = list.length
+                        while (at > 0) {
+                            const width = pathArea.segmentWidth(list[at - 1].label)
+                                          + (at < list.length ? gap : 0)
+                            if (at < list.length && room - width - (at > 1 ? ellipsis : 0) < 0)
+                                break
+                            room -= width
+                            at -= 1
+                        }
+                        return at
+                    }
+                    function open(at) {
+                        const next = pathArea.segments[at + 1]
+                        if (next && win.activeFolder)
+                            win.activeFolder.goTo(next.path)
+                    }
+
+                    Row {
+                        id: segmentRow
                         visible: !win.editingPath
-                        cursorShape: Qt.IBeamCursor
-                        onClicked: win.startPathEdit()
+                        x: Theme.focusRing
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: Theme.spacingXs
+
+                        Chip {
+                            objectName: "pathEllipsis"
+                            visible: pathArea.firstShown > 0
+                            label: "…"
+                            caption: visible ? "Go to " + pathArea.segments[pathArea.firstShown - 1].path : ""
+                            onClicked: pathArea.open(pathArea.firstShown - 1)
+                        }
+                        Repeater {
+                            model: pathArea.segments
+                            Chip {
+                                id: segment
+                                required property var modelData
+                                required property int index
+                                readonly property bool leaf: segment.index === pathArea.segments.length - 1
+                                readonly property string path: segment.modelData.path
+                                objectName: "pathSegment"
+                                visible: segment.index >= pathArea.firstShown
+                                label: segment.modelData.label
+                                on: segment.leaf
+                                caption: segment.leaf ? "Type a path" : "Go to " + segment.path
+                                key: segment.leaf ? "Ctrl l" : ""
+                                onClicked: if (segment.leaf) win.startPathEdit()
+                                           else pathArea.open(segment.index)
+                            }
+                        }
                     }
 
                     Entry {
                         id: pathField
-                    nextFocus: status.firstHint || pathField.focusTarget
-                    previousFocus: status.lastHint || pathField.focusTarget
+                        nextFocus: status.firstHint || pathField.focusTarget
+                        previousFocus: status.lastHint || pathField.focusTarget
                         anchors.fill: parent
+                        anchors.margins: Theme.focusRing
                         visible: win.editingPath
                         placeholder: "path"
                         onAccepted: function (value) { win.finishPathEdit(true, value) }
@@ -2074,13 +2270,97 @@ Window {
                     }
                 }
 
-                Label {
-                    id: counts
+                Row {
+                    id: controls
                     anchors.right: parent.right
                     anchors.rightMargin: Theme.inset
                     anchors.verticalCenter: parent.verticalCenter
-                    quiet: true
-                    text: Counted.of(IndexModel.tagCount, "tag") + " · " + IndexModel.fileCount + " tagged"
+                    spacing: Theme.spacingS
+
+                    // Reads the filter, and takes the keyboard to the filter
+                    // bar, where it is typed.
+                    FocusableControl {
+                        id: filterButton
+                        objectName: "filterButton"
+                        readonly property string filter: toolbar.tab ? toolbar.tab.filter : ""
+                        visible: win.onFiles && toolbar.width - 2 * Theme.inset - navRow.width - 2 * Theme.spacingM
+                                 - toolbar.fixedRight - toolbar.pathRoom >= width
+                        width: 240
+                        height: Theme.controlHeight
+                        hasChrome: true
+                        radius: Theme.rounding
+                        color: hovered ? Theme.hoverRaised : Theme.raised
+                        border.width: 1
+                        border.color: Theme.line
+                        tooltipCaption: "Filter this folder"
+                        tooltipKey: "/"
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Filter this folder"
+                        Accessible.description: filterButton.filter
+                        onActivated: win.startFilter()
+
+                        Icon {
+                            id: filterMark
+                            anchors.left: parent.left
+                            anchors.leftMargin: Theme.spacingS
+                            anchors.verticalCenter: parent.verticalCenter
+                            kind: "filter"
+                            ink: Theme.dim
+                        }
+                        Text {
+                            anchors.left: filterMark.right
+                            anchors.leftMargin: Theme.iconGap
+                            anchors.right: filterKey.left
+                            anchors.rightMargin: Theme.spacingS
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: filterButton.filter !== "" ? filterButton.filter : "Filter this folder"
+                            textFormat: Text.PlainText
+                            color: filterButton.filter !== "" ? Theme.foreground : Theme.dim
+                            elide: Text.ElideRight
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontBody
+                            renderType: Text.NativeRendering
+                        }
+                        KeyCaps {
+                            id: filterKey
+                            anchors.right: parent.right
+                            anchors.rightMargin: Theme.spacingXs
+                            anchors.verticalCenter: parent.verticalCenter
+                            keys: "/"
+                        }
+                    }
+
+                    // The sort key and direction; it does what `s` does.
+                    Chip {
+                        id: sortButton
+                        objectName: "sortButton"
+                        visible: toolbar.onFolder
+                        label: toolbar.tab ? win.columnLabel(toolbar.tab.sortRole)
+                                             + (toolbar.tab.sortAscending ? " ↑" : " ↓") + " ⌄" : ""
+                        caption: "Sort"
+                        key: "s"
+                        showsKey: true
+                        onClicked: win.chooseSort()
+                    }
+
+                    ViewModeSwitch {
+                        id: viewModes
+                        visible: toolbar.onFolder
+                        tab: toolbar.tab
+                    }
+
+                    Chip {
+                        id: detailsToggle
+                        objectName: "detailsToggle"
+                        visible: details.fits
+                        label: "Details"
+                        caption: details.visible ? "Hide details" : "Show details"
+                        key: "I"
+                        showsKey: true
+                        on: win.detailsShown
+                        Accessible.checkable: true
+                        onClicked: win.detailsShown = !win.detailsShown
+                    }
                 }
             }
 
@@ -2092,11 +2372,11 @@ Window {
             // window, both acting on the focused pane.
             RowLayout {
                 width: parent.width
-                // Less the two Rule hairlines between the three bars. Named,
-                // because a third divider added above would otherwise push the
-                // pane off the bottom of the window with nothing to say why.
-                readonly property int dividers: 2
-                height: parent.height - header.height - status.height
+                // Less the three Rule hairlines between the four bars. Named,
+                // because a divider added above would otherwise push the pane
+                // off the bottom of the window with nothing to say why.
+                readonly property int dividers: 3
+                height: parent.height - tabStrip.height - toolbar.height - status.height
                         - criteriaBar.height - filterBar.height - dividers
                 spacing: 0
 
@@ -2190,8 +2470,10 @@ Window {
                     Layout.preferredWidth: 264
                     // Dropped whole in a pane too narrow to hold it and a list
                     // at the same time: splitting the window is asking for two
-                    // lists, not for less of each.
-                    visible: sidebar.holdsTags && win.paneShare >= 640
+                    // lists, not for less of each. Where it fits, the Details
+                    // toggle shows or hides it.
+                    readonly property bool fits: sidebar.holdsTags && win.paneShare >= 640
+                    visible: fits && win.detailsShown
                     entry: win.activeFilesRoot ? win.activeFilesRoot.entry : ({})
                     onTagActivated: function (tag) { win.startTagEdit("remove", details.entry.path, tag) }
                 }
@@ -2341,6 +2623,8 @@ Window {
                 { id: "reload", label: "Reload index", key: "F5" },
                 { id: "home", label: "Go to home folder", key: "~" },
                 { id: "up", label: "Go to parent folder", key: "h" },
+                { id: "back", label: "Go back", key: "H" },
+                { id: "forward", label: "Go forward", key: "L" },
                 { id: "path", label: "Type a path", key: "Ctrl l" },
                 { id: "filter", label: "Filter this folder", key: "/" },
                 { id: "find", label: "Find by name across the roots", key: "f" },
@@ -2367,6 +2651,7 @@ Window {
                 { id: "view-details", label: "View as details", key: "2" },
                 { id: "view-icons", label: "View as icons", key: "3" },
                 { id: "hidden", label: "Show hidden files", key: "." },
+                { id: "toggle-details", label: "Show or hide details", key: "I" },
                 { id: "sort-name", label: "Sort by name", key: "s" },
                 { id: "sort-tags", label: "Sort by tag, untagged last", key: "s" },
                 { id: "sort-type", label: "Sort by type", key: "s" },
@@ -2400,6 +2685,9 @@ Window {
                 case "reload": win.reloadIndex(); break
                 case "home": if (win.activeFolder) win.activeFolder.goHome(); break
                 case "up": if (win.activeFolder) win.activeFolder.goUp(); break
+                case "back": win.goBack(); break
+                case "forward": win.goForward(); break
+                case "toggle-details": win.detailsShown = !win.detailsShown; break
                 case "path": Qt.callLater(win.startPathEdit); break
                 case "filter": Qt.callLater(win.startFilter); break
                 case "find": Qt.callLater(win.startFinding); break
@@ -3096,195 +3384,18 @@ Window {
             }
         }
 
-        ColumnLayout {
+        Loader {
+            id: content
             anchors.fill: parent
-            spacing: 0
-
-            // The tab strip, and on its right the controls that say how the
-            // list is drawn. They sit here rather than in a bar of their own,
-            // which spends a whole strip of window on two controls that belong
-            // beside the tabs.
-            Rectangle {
-                id: strip
-                Layout.fillWidth: true
-                Layout.preferredHeight: Theme.stripHeight
-                color: Workspace.focusedPane === paneRoot.paneIndex ? Theme.chrome : Theme.base
-                clip: true
-
-                // The tabs share what the new-tab chip and the view controls
-                // leave, so the controls stay in a narrow pane and the titles
-                // elide instead.
-                readonly property real tabRoom: width - tabRow.anchors.leftMargin - tabGap.width - newTab.width
-                                                - (viewRow.wanted ? viewRow.room : 0)
-
-                Row {
-                    id: tabRow
-                    readonly property int tabCount: Math.max(1, paneRoot.pane?.tabs.length ?? 0)
-                    anchors.left: parent.left
-                    anchors.leftMargin: Theme.spacingXs
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    spacing: 0
-
-                    Repeater {
-                        model: paneRoot.pane.tabs
-                        delegate: TabHandle {
-                            id: tabHandle
-                            objectName: "tabHandle"
-                            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
-                            required property var modelData
-                            required property int index
-                            title: modelData.title
-                            // A tab showing a tag is not a folder, and a folder
-                            // icon beside `#work` says it is. A tags tab is
-                            // never a folder at all.
-                            kind: modelData.kind === "tags"
-                                  || (modelData.kind === "files"
-                                      && modelData.selectedTag !== "")
-                                  ? "tag" : modelData.kind
-                            // Optional, because closing a pane leaves the
-                            // delegate alive one evaluation longer than the
-                            // pane: under `ComponentBehavior: Bound` the
-                            // enclosing scope is kept, so this runs once more
-                            // with `pane` already null.
-                            current: paneRoot.pane?.currentIndex === index
-                            width: Math.min(implicitWidth, Math.max(minimumWidth,
-                                                                    strip.tabRoom / tabRow.tabCount))
-                            FileDropArea {
-                                anchors.fill: parent
-                                directory: win.isFolderTab(tabHandle.modelData) ? tabHandle.modelData.cwd : ""
-                                blocked: win.blocked
-                            }
-                            onActivated: {
-                                Workspace.focusedPane = paneRoot.paneIndex
-                                paneRoot.pane.currentIndex = index
-                            }
-                            onClosed: {
-                                Workspace.focusedPane = paneRoot.paneIndex
-                                Workspace.closeTab(paneRoot.paneIndex, index)
-                            }
-                            Keys.onPressed: function (event) {
-                                if (event.key === Qt.Key_Menu
-                                        || (event.key === Qt.Key_F10
-                                            && (event.modifiers & Qt.ShiftModifier))) {
-                                    const pos = mapToItem(root, width / 2, height)
-                                    win.openTabMenuAt(paneRoot.paneIndex, index, pos.x, pos.y)
-                                    event.accepted = true
-                                }
-                            }
-                            onMenuRequested: function (x, y) {
-                                const pos = mapToItem(root, x, y)
-                                win.openTabMenuAt(paneRoot.paneIndex, index, pos.x, pos.y)
-                            }
-                        }
-                    }
-
-                    Item { id: tabGap; width: Theme.spacingXs; height: 1 }
-
-                    Chip {
-                        id: newTab
-                        anchors.verticalCenter: parent.verticalCenter
-                        label: "+"
-                        caption: "New tab"
-                        key: "Ctrl t"
-                        onClicked: {
-                            Workspace.focusedPane = paneRoot.paneIndex
-                            newTabMenu.targetPaneIndex = paneRoot.paneIndex
-                            const pos = mapToItem(root, 0, height + 4)
-                            newTabMenu.openAt(pos.x, pos.y)
-                        }
-                    }
-                }
-
-                Row {
-                    id: viewRow
-
-                    property var tab: paneRoot.pane.current
-                    readonly property bool wanted: viewRow.tab !== null && viewRow.tab.kind === "files"
-                    // The width it needs beside the tabs, with its gap and margin.
-                    readonly property real room: implicitWidth + Theme.spacingL + anchors.rightMargin
-
-                    // Dropped whole when the pane is too narrow for it rather
-                    // than sliding under the tabs. Every one of these has a key.
-                    visible: viewRow.wanted && strip.width - tabRow.width > viewRow.room
-                    anchors.right: parent.right
-                    anchors.rightMargin: Theme.spacingS
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: Theme.spacingS
-
-                    // The view mode: one segmented control of three icons.
-                    Rectangle {
-                        objectName: "viewModes"
-                        width: modes.width
-                        height: Theme.controlHeight
-                        radius: Theme.rounding
-                        color: Theme.chrome
-                        border.width: 1
-                        border.color: Theme.line
-
-                        Row {
-                            id: modes
-                            Repeater {
-                                model: [{ mode: "list", caption: "List view", key: "1" },
-                                        { mode: "details", caption: "Details view", key: "2" },
-                                        { mode: "icons", caption: "Icons view", key: "3" }]
-                                ToolButton {
-                                    id: modeButton
-                                    required property var modelData
-                                    objectName: "viewMode"
-                                    iconKind: "view-" + modeButton.modelData.mode
-                                    caption: modeButton.modelData.caption
-                                    key: modeButton.modelData.key
-                                    on: viewRow.tab && viewRow.tab.viewMode === modeButton.modelData.mode
-                                    Accessible.checkable: true
-                                    Accessible.checked: on
-                                    onClicked: if (viewRow.tab) viewRow.tab.viewMode = modeButton.modelData.mode
-                                }
-                            }
-                        }
-                    }
-
-                    // The sort: the key does what `s` does, the arrow what `S`
-                    // does. Details view sorts by its column headings instead.
-                    Row {
-                        objectName: "sortControl"
-                        visible: viewRow.tab && viewRow.tab.viewMode !== "details"
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Chip {
-                            objectName: "sortKey"
-                            label: viewRow.tab ? win.columnLabel(viewRow.tab.sortRole) : ""
-                            caption: "Sort by the next key"
-                            key: "s"
-                            onClicked: viewRow.tab.cycleSortRole()
-                        }
-                        Chip {
-                            objectName: "sortDirection"
-                            label: viewRow.tab && !viewRow.tab.sortAscending ? "↓" : "↑"
-                            caption: "Flip the sort direction"
-                            key: "S"
-                            onClicked: viewRow.tab.toggleSortDirection()
-                        }
-                    }
-                }
-            }
-
-            Rule { Layout.fillWidth: true }
-
-            Loader {
-                id: content
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                sourceComponent: paneRoot.pane.current && paneRoot.pane.current.kind === "graph"
-                                  ? graphView : paneRoot.pane.current && paneRoot.pane.current.kind === "trash"
-                                  ? trashView : filesView
-                property var tab: paneRoot.pane.current
-                property int paneIndex: paneRoot.paneIndex
-                // A new view takes the keyboard when the old one held it, or
-                // when the destroyed view left it on this Loader.
-                onLoaded: if (win.activeFocusItem === root || win.activeFocusItem === content)
-                              Qt.callLater(win.takeFocus)
-            }
+            sourceComponent: paneRoot.pane.current && paneRoot.pane.current.kind === "graph"
+                              ? graphView : paneRoot.pane.current && paneRoot.pane.current.kind === "trash"
+                              ? trashView : filesView
+            property var tab: paneRoot.pane.current
+            property int paneIndex: paneRoot.paneIndex
+            // A new view takes the keyboard when the old one held it, or
+            // when the destroyed view left it on this Loader.
+            onLoaded: if (win.activeFocusItem === root || win.activeFocusItem === content)
+                          Qt.callLater(win.takeFocus)
         }
     }
 
@@ -4129,11 +4240,6 @@ Window {
                 anchors.margins: Theme.inset
                 quiet: true
                 text: "#tag is a tag · j k walks the map · l opens · m for the menu"
-            }
-
-            FocusRing {
-                focused: root.activeFocus && win.activeGraph === graph
-                inset: Theme.focusRing
             }
         }
     }

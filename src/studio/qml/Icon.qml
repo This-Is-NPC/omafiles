@@ -114,6 +114,18 @@ Item {
                 ctx.lineTo(8, 3.2)
                 ctx.lineTo(11.8, 7)
                 ctx.stroke()
+            } else if (k === "back" || k === "forward") {
+                // One arrow, drawn pointing left and mirrored for forward.
+                const x = k === "back" ? function (v) { return v } : function (v) { return 16 - v }
+                ctx.beginPath()
+                ctx.moveTo(x(2.6), 8)
+                ctx.lineTo(x(12.8), 8)
+                ctx.moveTo(x(6.4), 4.2)
+                ctx.lineTo(x(2.6), 8)
+                ctx.lineTo(x(6.4), 11.8)
+                ctx.stroke()
+            } else if (k === "filter") {
+                strokeClosed([[2, 3], [14, 3], [9.4, 8.6], [9.4, 13], [6.6, 11.6], [6.6, 8.6]])
             } else if (k === "chevron") {
                 ctx.beginPath()
                 ctx.moveTo(3.5, 10.5)
