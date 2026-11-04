@@ -19,7 +19,7 @@ Rectangle {
     signal tagActivated(string tag)
     readonly property bool has: entry && entry.path !== undefined
 
-    color: Theme.panel
+    color: Theme.chrome
 
     Accessible.role: Accessible.StaticText
     Accessible.name: "Details"
@@ -219,9 +219,10 @@ Rectangle {
                                 height: Theme.chipHeight
                                 width: mark.implicitWidth + 2 * Theme.spacingXs
                                 radius: Theme.rounding
-                                color: Theme.fill(Theme.accent, 0.16)
+                                hasChrome: true
+                                color: Theme.raised
                                 border.width: 1
-                                border.color: Theme.fill(Theme.accent, 0.45)
+                                border.color: Theme.line
                                 Text {
                                     id: mark
                                     anchors.centerIn: parent

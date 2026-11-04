@@ -61,7 +61,7 @@ Rectangle {
     }
 
     height: Theme.stripHeight
-    color: Theme.panel
+    color: Theme.chrome
 
     Accessible.role: Accessible.StaticText
     Accessible.name: bar.spoken

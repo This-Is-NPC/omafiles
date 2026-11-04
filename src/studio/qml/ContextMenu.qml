@@ -175,7 +175,7 @@ Item {
                         + 2 * Theme.spacingXs
                 onHeightChanged: menu.clampPanel()
                 radius: Theme.rounding
-                color: Theme.panel
+                color: Theme.raised
                 border.width: 1
                 border.color: Theme.accent
 
@@ -209,7 +209,7 @@ Item {
                         height: Theme.rowHeight
                         radius: Theme.rounding
                         color: list.currentIndex === itemRow.index
-                               ? Theme.fill(Theme.accent, 0.18) : "transparent"
+                               ? Theme.cursor : Theme.raised
                         Accessible.role: Accessible.MenuItem
                         Accessible.name: itemRow.modelData.label
 

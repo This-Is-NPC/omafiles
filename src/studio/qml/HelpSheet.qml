@@ -51,7 +51,7 @@ Rectangle {
     }
 
     visible: false
-    color: Theme.fill(Theme.background, 0.72)
+    color: Theme.scrim
     z: 95
 
     function open() {

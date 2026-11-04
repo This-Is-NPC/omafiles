@@ -13,9 +13,9 @@ Rectangle {
     width: capText.implicitWidth + Theme.spacingS
     height: Theme.chipHeight
     radius: Math.max(2, Theme.rounding - 2)
-    color: Theme.fill(Theme.foreground, 0.10)
+    color: Theme.raised
     border.width: 1
-    border.color: Theme.fill(Theme.foreground, 0.16)
+    border.color: Theme.line
 
     Text {
         id: capText

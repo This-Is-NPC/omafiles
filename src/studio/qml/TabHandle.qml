@@ -61,13 +61,12 @@ FocusScope {
         }
 
         radius: Theme.rounding
-        color: handle.current ? Theme.fill(Theme.accent, 0.18)
-             : body.hovered ? body.hoverChromeFill
-                            : Theme.fill(Theme.foreground, 0.04)
+        hasChrome: true
+        color: handle.current ? Theme.cursor
+             : body.hovered ? Theme.hoverRaised
+                            : Theme.raised
         border.width: 1
-        border.color: handle.current ? Theme.accent
-                    : body.hovered ? body.hoverChromeBorder
-                                   : Theme.fill(Theme.foreground, 0.18)
+        border.color: handle.current ? Theme.accent : Theme.line
 
         Icon {
             id: mark

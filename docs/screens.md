@@ -160,7 +160,7 @@ Picture: **img/04-graph.png**
 
 ## Marking
 
-**Space** marks the current row. **J K** mark the current row and move down or up. **a** marks all rows. **A** clears all marks. **\*** marks rows matching a pattern you type in the footer. Marked rows stay marked when you scroll or change tabs.
+**Space** marks the current row. **J K** mark the current row and move down or up. **a** marks all rows. **A** clears all marks. **\*** marks rows matching a pattern you type in the footer. A marked row has a dot before its name and a light accent fill; the cursor row has a stronger one. Marked rows stay marked when you scroll or change tabs.
 
 Reach it: Any screen in the file list.
 

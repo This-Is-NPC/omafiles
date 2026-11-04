@@ -76,6 +76,8 @@ Full keyboard controls are documented in the sections above. Pointer actions wor
 
 **GVfs FUSE bridge required.** Storage cannot be browsed without GVfs's FUSE bridge (`gvfs`), which must expose a local filesystem path. If a mount succeeds without the bridge, an explicit explanation appears instead of opening an invented path.
 
+**Omarchy's window opacity.** Omarchy's default window rule gives every window `opacity 0.985 0.96` with blur, so the whole window is dimmed slightly and the wallpaper shows faintly through it. `omarchy-hyprland-window-transparency-toggle` turns it off.
+
 ## Contributing
 
 [docs/design.md](docs/design.md) is the page for contributors: how omafiles is built, checked and tested.

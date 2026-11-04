@@ -13,6 +13,8 @@ Item {
     property alias iconInk: mark.ink
     property alias text: caption.text
     property alias textOpacity: caption.opacity
+    /// Whether the wash draws; it is opaque, so a row without one shows the panel.
+    property bool washed: false
     property alias color: wash.color
     property alias border: wash.border
     property alias trailing: trail.data
@@ -28,9 +30,10 @@ Item {
         anchors.leftMargin: Theme.spacingXs
         anchors.rightMargin: Theme.spacingXs
         radius: Theme.rounding
-        color: "transparent"
+        visible: row.washed
+        color: Theme.chrome
         border.width: 1
-        border.color: "transparent"
+        border.color: wash.color
     }
 
     Icon {

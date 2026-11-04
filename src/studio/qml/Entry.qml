@@ -34,9 +34,9 @@ Rectangle {
 
     implicitHeight: Theme.controlHeight
     radius: Theme.rounding
-    color: Theme.sunken
+    color: Theme.base
     border.width: 1
-    border.color: Theme.fill(Theme.foreground, 0.18)
+    border.color: Theme.line
 
     FocusRing {
         focused: entry.activeFocus
@@ -68,7 +68,7 @@ Rectangle {
         verticalAlignment: TextInput.AlignVCenter
         clip: true
         color: Theme.foreground
-        selectionColor: Theme.fill(Theme.accent, 0.35)
+        selectionColor: Theme.cursor
         selectedTextColor: Theme.foreground
         font.family: Theme.fontFamily
         font.pixelSize: Theme.fontBody

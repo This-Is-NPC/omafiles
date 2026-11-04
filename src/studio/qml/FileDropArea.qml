@@ -12,7 +12,8 @@ FileDropTarget {
     Rectangle {
         anchors.fill: parent
         visible: area.containsDrag
-        color: Theme.fill(Theme.accent, 0.12)
+        // An outline: the files under it stay readable while a drag hovers.
+        color: "transparent"
         border.width: 2
         border.color: Theme.accent
         radius: Theme.rounding

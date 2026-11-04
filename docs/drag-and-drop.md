@@ -8,7 +8,7 @@ outgoing drag.
 
 Drop local files from another application or this window onto a folder row,
 its parent row, a folder tab, or the open folder in either pane. The destination
-is highlighted for an offered file-URL drag; release validates the URLs and
+is outlined in the accent colour for an offered file-URL drag; release validates the URLs and
 paths and reports any refusal. Dropping onto an inactive tab uses
 that tab's folder without switching the current tab. Tag, search, recent and
 graph tabs have no background destination; a concrete folder row can still be

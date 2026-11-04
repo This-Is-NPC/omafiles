@@ -56,9 +56,9 @@ Column {
         width: parent.width
         height: Theme.controlHeight
         radius: Theme.rounding
-        color: Theme.sunken
+        color: Theme.base
         border.width: 1
-        border.color: Theme.fill(Theme.foreground, 0.18)
+        border.color: Theme.line
         FocusRing {
             focused: input.activeFocus
             inset: Theme.focusRing
@@ -72,7 +72,7 @@ Column {
             anchors.rightMargin: Theme.spacingS
             verticalAlignment: TextInput.AlignVCenter
             color: Theme.foreground
-            selectionColor: Theme.fill(Theme.accent, 0.35)
+            selectionColor: Theme.cursor
             selectedTextColor: Theme.foreground
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontBody
@@ -135,7 +135,8 @@ Column {
             width: ListView.view.width
             height: Theme.rowHeight
             tabFocusable: false
-            color: choices.currentIndex === index ? Theme.fill(Theme.accent, 0.18) : "transparent"
+            hasChrome: choices.currentIndex === index
+            color: Theme.cursor
             Accessible.role: Accessible.Button
             Accessible.name: "Complete " + modelData
             onActivated: {

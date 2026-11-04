@@ -30,14 +30,10 @@ FocusableControl {
     width: Theme.controlHeight
     height: Theme.controlHeight
     radius: Theme.rounding
-    color: !button.usable ? "transparent"
-         : button.on ? Theme.fill(Theme.accent, 0.18)
-         : button.hovered ? button.hoverChromeFill
-                         : "transparent"
+    hasChrome: button.usable && (button.on || button.hovered)
+    color: button.on ? Theme.cursor : Theme.hoverChrome
     border.width: 1
-    border.color: button.on ? Theme.accent
-                 : button.hovered ? button.hoverChromeBorder
-                                 : "transparent"
+    border.color: button.on ? Theme.accent : Theme.line
 
     Icon {
         anchors.centerIn: parent

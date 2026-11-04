@@ -81,9 +81,9 @@ Rectangle {
                         width: parent.width
                         height: Theme.controlHeight
                         radius: Theme.rounding
-                        color: Theme.sunken
+                        color: Theme.base
                         border.width: 1
-                        border.color: Theme.fill(Theme.foreground, 0.18)
+                        border.color: Theme.line
 
                         FocusRing {
                             focused: query.activeFocus
@@ -125,7 +125,7 @@ Rectangle {
                         anchors.rightMargin: Theme.spacingS
                         verticalAlignment: TextInput.AlignVCenter
                         color: Theme.foreground
-                        selectionColor: Theme.fill(Theme.accent, 0.35)
+                        selectionColor: Theme.cursor
                         selectedTextColor: Theme.foreground
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontBody
@@ -184,7 +184,7 @@ Rectangle {
                             height: Theme.rowHeight
                             radius: Theme.rounding
                             color: list.currentIndex === entryRow.index
-                                   ? Theme.fill(Theme.accent, 0.18) : "transparent"
+                                   ? Theme.cursor : Theme.chrome
 
                             Label {
                                 anchors.verticalCenter: parent.verticalCenter

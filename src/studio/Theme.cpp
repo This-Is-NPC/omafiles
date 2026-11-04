@@ -8,6 +8,8 @@
 #include <QRegularExpression>
 #include <QTextStream>
 
+#include <algorithm>
+#include <cmath>
 #include <optional>
 
 namespace omafiles {
@@ -95,7 +97,24 @@ QColor mix(const QColor &from, const QColor &toward, qreal amount)
                             from.blueF() + (toward.blueF() - from.blueF()) * amount);
 }
 
+// WCAG relative luminance of an opaque colour.
+qreal luminance(const QColor &colour)
+{
+    const auto channel = [](qreal value) {
+        return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel(colour.redF()) + 0.7152 * channel(colour.greenF())
+        + 0.0722 * channel(colour.blueF());
+}
+
 } // namespace
+
+qreal contrast(const QColor &a, const QColor &b)
+{
+    const qreal first = luminance(a);
+    const qreal second = luminance(b);
+    return (std::max(first, second) + 0.05) / (std::min(first, second) + 0.05);
+}
 
 Theme::Theme(QObject *parent)
     : QObject(parent)
@@ -153,44 +172,69 @@ void Theme::reload()
         return;
     }
 
-    m_dark = values.value(QStringLiteral("mode"), QStringLiteral("dark"))
-        != QLatin1String("light");
-    m_background = colourOr(values, QStringLiteral("background"), m_background);
+    m_base = colourOr(values, QStringLiteral("background"), m_base);
     m_foreground = colourOr(values, QStringLiteral("foreground"), m_foreground);
     m_accent = colourOr(values, QStringLiteral("accent"), m_accent);
     m_urgent = colourOr(values, QStringLiteral("red"), m_urgent);
-    m_muted = colourOr(values, QStringLiteral("muted"),
-                        colourOr(values, QStringLiteral("dark_foreground"), m_muted));
     emit changed();
 }
 
-QColor Theme::panel() const
+QColor Theme::chrome() const
 {
-    return mix(m_background, m_foreground, 0.05);
+    return mix(m_base, m_foreground, 0.05);
 }
 
-QColor Theme::sunken() const
+QColor Theme::raised() const
 {
-    return m_dark ? m_background.darker(130) : m_background.darker(112);
+    return mix(m_base, m_foreground, 0.10);
 }
 
 QColor Theme::line() const
 {
-    QColor edge = m_foreground;
-    edge.setAlphaF(0.18);
-    return edge;
+    return mix(m_base, m_foreground, 0.16);
+}
+
+QColor Theme::hoverBase() const
+{
+    return mix(m_base, m_foreground, 0.06);
+}
+
+QColor Theme::hoverChrome() const
+{
+    return mix(chrome(), m_foreground, 0.06);
+}
+
+QColor Theme::hoverRaised() const
+{
+    return mix(raised(), m_foreground, 0.06);
+}
+
+QColor Theme::cursor() const
+{
+    return mix(m_base, m_accent, 0.22);
+}
+
+QColor Theme::marked() const
+{
+    return mix(m_base, m_accent, 0.12);
 }
 
 QColor Theme::dim() const
 {
-    return m_muted.isValid() ? m_muted : m_foreground.darker(160);
+    // Foreground eased toward the base, by at most 45 %, and by less where that
+    // would read below 4.5:1 on chrome.
+    const QColor surface = chrome();
+    for (int step = 9; step > 0; --step) {
+        const QColor eased = mix(m_foreground, m_base, step * 0.05);
+        if (contrast(eased, surface) >= 4.5)
+            return eased;
+    }
+    return m_foreground;
 }
 
-QColor Theme::fill(const QColor &role, qreal alpha) const
+QColor Theme::scrim() const
 {
-    QColor wash = role;
-    wash.setAlphaF(qBound(0.0, alpha, 1.0));
-    return wash;
+    return mix(m_base, Qt::black, 0.35);
 }
 
 } // namespace omafiles
