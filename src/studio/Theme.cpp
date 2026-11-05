@@ -205,7 +205,7 @@ void Theme::reload()
     const QHash<QString, QString> values =
         readFlatToml(m_themePath + QStringLiteral("/colors.toml"));
     if (values.isEmpty()) {
-        emit changed();
+        paintTags();
         return;
     }
 
@@ -215,6 +215,14 @@ void Theme::reload()
     m_urgent = colourOr(values, QStringLiteral("red"), m_urgent);
     for (std::size_t slot = 0; slot < familyKeys.size(); ++slot)
         m_tagPalette[slot] = colourOr(values, QLatin1String(familyKeys[slot]), m_tagPalette[slot]);
+    paintTags();
+}
+
+void Theme::paintTags()
+{
+    m_tagColours.clear();
+    for (auto family = m_tagFamilies.cbegin(); family != m_tagFamilies.cend(); ++family)
+        m_tagColours.insert(family.key(), m_tagPalette[family.value()]);
     emit changed();
 }
 
@@ -273,8 +281,8 @@ QColor Theme::dim() const
 
 QColor Theme::tagColour(const QString &tag) const
 {
-    const auto found = m_tagFamilies.constFind(tag);
-    return found == m_tagFamilies.cend() ? dim() : m_tagPalette[*found];
+    const auto found = m_tagColours.constFind(tag);
+    return found == m_tagColours.cend() ? dim() : found->value<QColor>();
 }
 
 void Theme::meetTags(const QStringList &tags)
@@ -306,7 +314,7 @@ void Theme::meetTags(const QStringList &tags)
         state.setValue(tag, QLatin1String(familyKeys[slot]));
     }
     state.sync();
-    emit changed();
+    paintTags();
 }
 
 QColor Theme::scrim() const

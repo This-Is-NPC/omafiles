@@ -43,9 +43,10 @@ Rectangle {
     readonly property var entryTags: entry && entry.tags ? entry.tags : []
     /// The places, read again whenever the tab moves, so a folder made or
     /// removed since shows the next time.
-    readonly property var places: {
-        if (sidebar.tab) sidebar.tab.cwd
-        return Workspace.places()
+    property var places: Workspace.places()
+    Connections {
+        target: sidebar.tab
+        function onCwdChanged() { sidebar.places = Workspace.places() }
     }
 
     color: Theme.chrome
@@ -344,10 +345,7 @@ Rectangle {
                                     height: parent.height
                                     radius: Theme.rounding
                                     width: parent.width * tagRow.count / Math.max(1, IndexModel.largestTagCount)
-                                    color: {
-                                        Theme.raised
-                                        return Theme.tagColour(tagRow.tag)
-                                    }
+                                    color: Theme.tagColours[tagRow.tag] ?? Theme.dim
                                 }
                             },
                             Label {

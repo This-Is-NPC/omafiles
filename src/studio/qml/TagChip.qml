@@ -26,12 +26,7 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         width: Theme.tagSwatch
         height: Theme.tagSwatch
-        color: {
-            // tagColour is no binding dependency; `raised` changes with the
-            // theme, so reading it redraws the square on a theme switch.
-            Theme.raised
-            return Theme.tagColour(chip.tag)
-        }
+        color: Theme.tagColours[chip.tag] ?? Theme.dim
     }
 
     Text {

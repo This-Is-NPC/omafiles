@@ -91,12 +91,7 @@ FocusScope {
             anchors.centerIn: mark
             width: Theme.tagSwatch
             height: Theme.tagSwatch
-            color: {
-                // tagColour is no binding dependency; `raised` changes with
-                // the theme, so reading it redraws the square on a theme switch.
-                Theme.raised
-                return Theme.tagColour(handle.tag)
-            }
+            color: Theme.tagColours[handle.tag] ?? Theme.dim
         }
 
         Text {
