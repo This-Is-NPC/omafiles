@@ -143,7 +143,7 @@ Trash locations are managed by the freedesktop Trash specification. The user's t
 ### What is never written
 
 omafiles never writes files it doesn't own. It does not write to:
-- Configuration files beyond `$XDG_CONFIG_HOME/omafiles/scripts` (user scripts) and `$XDG_STATE_HOME/omafiles/studio.conf` (window state: sort order, column widths, recent folders, tag colours).
+- Configuration files beyond `$XDG_CONFIG_HOME/omafiles/scripts` (user scripts) and `$XDG_STATE_HOME/omafiles/studio.conf` (window state: the details columns and the tag colours, see [Window state](#window-state)).
 - Thumbnail caches (thumbnailers write those).
 - Desktop or system files outside the user's data home.
 - The target file's contents. Tagging a file writes only its `user.omafiles.tags` extended attribute, never the file's bytes.
