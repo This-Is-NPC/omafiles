@@ -28,6 +28,12 @@
 namespace omafiles {
 namespace {
 
+// The number of tags in a row's space-separated tags string.
+qsizetype tagCount(const QString &tags)
+{
+    return tags.isEmpty() ? 0 : tags.count(QLatin1Char(' ')) + 1;
+}
+
 // Rows a directory scan reads ahead: sorted rows point at scattered names.
 constexpr qsizetype prefetchDistance = 16;
 
@@ -1003,6 +1009,11 @@ bool FolderModel::lessThan(const Entry &a, const Entry &b, const QString &role, 
                 cmp = first.isEmpty() ? 1 : -1;
             else
                 cmp = QString::compare(first, other, Qt::CaseInsensitive);
+        } else if (role == QLatin1String("tagCount")) {
+            const qsizetype count = tagCount(a.tags);
+            const qsizetype otherCount = tagCount(b.tags);
+            if (count != otherCount)
+                cmp = count < otherCount ? -1 : 1;
         }
         if (cmp == 0)
             cmp = QString::compare(a.name, b.name, Qt::CaseInsensitive);
