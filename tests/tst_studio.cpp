@@ -17984,7 +17984,7 @@ void TestStudio::folderSizeShowsItemCount()
     QTemporaryDir counts(QDir(m_tree.path()).filePath("counts-XXXXXX"));
     QVERIFY(counts.isValid());
     const QDir dir(counts.path());
-    for (const QString &file : {"three/a", "three/b", "three/.c", "one/a"}) {
+    for (const char *file : {"three/a", "three/b", "three/.c", "one/a"}) {
         QVERIFY(dir.mkpath(QFileInfo(file).path()));
         QFile made(dir.filePath(file));
         QVERIFY(made.open(QIODevice::WriteOnly));
