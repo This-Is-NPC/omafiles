@@ -701,6 +701,7 @@ private slots:
     void givesTheNameColumnPriority();
     void tagChipsStartAtTheirColumn();
     void folderSizeShowsItemCount();
+    void folderCountFollowsOutsideChange();
     void columnsDropWholeWhenNarrow();
     void cancelsRowHoldOnMovement();
     void waitsForDelayedPlaybackAcknowledgement();
@@ -17823,6 +17824,19 @@ static QList<QQuickItem *> columnCellsOf(QQuickItem *row)
     return cells;
 }
 
+// The text of the size cell of the list row called `name`.
+static QString sizeCellOf(const QList<QQuickItem *> &rows, const QString &name)
+{
+    for (auto *row : rows) {
+        if (row->property("name").toString() != name) continue;
+        for (auto *cell : columnCellsOf(row))
+            if (cell->property("modelData").toString() == "size")
+                if (QObject *text = cell->property("item").value<QObject *>())
+                    return text->property("text").toString();
+    }
+    return QStringLiteral("<no size cell>");
+}
+
 void TestStudio::givesTheNameColumnPriority()
 {
     const QSize original = window()->size();
@@ -17992,19 +18006,32 @@ void TestStudio::folderSizeShowsItemCount()
     QVERIFY(dir.mkpath("none"));
     tab()->setCwd(counts.path());
     settle();
-    const auto sizeOf = [this](const QString &name) {
-        for (auto *row : shownListRows()) {
-            if (row->property("name").toString() != name) continue;
-            for (auto *cell : columnCellsOf(row))
-                if (cell->property("modelData").toString() == "size")
-                    if (QObject *text = cell->property("item").value<QObject *>())
-                        return text->property("text").toString();
-        }
-        return QStringLiteral("<no size cell>");
-    };
+    const auto sizeOf = [this](const QString &name) { return sizeCellOf(shownListRows(), name); };
     QTRY_COMPARE(sizeOf("three"), QStringLiteral("3 items"));
     QTRY_COMPARE(sizeOf("one"), QStringLiteral("1 item"));
     QTRY_COMPARE(sizeOf("none"), QStringLiteral("0 items"));
+}
+
+// A shown folder's count follows what is put in it from outside, with no
+// reload: the folder on screen does not change when a subfolder does.
+void TestStudio::folderCountFollowsOutsideChange()
+{
+    QTemporaryDir counts(QDir(m_tree.path()).filePath("counts-XXXXXX"));
+    QVERIFY(counts.isValid());
+    const QDir dir(counts.path());
+    QVERIFY(dir.mkpath("three"));
+    for (const char *file : {"three/a", "three/b", "three/c"}) {
+        QFile made(dir.filePath(file));
+        QVERIFY(made.open(QIODevice::WriteOnly));
+    }
+    tab()->setCwd(counts.path());
+    settle();
+    const auto sizeOf = [this](const QString &name) { return sizeCellOf(shownListRows(), name); };
+    QTRY_COMPARE(sizeOf("three"), QStringLiteral("3 items"));
+    QFile added(dir.filePath("three/d"));
+    QVERIFY(added.open(QIODevice::WriteOnly));
+    added.close();
+    QTRY_COMPARE(sizeOf("three"), QStringLiteral("4 items"));
 }
 
 // Past the room the name keeps, the list's columns go one at a time, last
