@@ -11,12 +11,14 @@
 #include "Verb.h"
 #include "UndoJournal.h"
 #include "Tag.h"
+#include "Theme.h"
 #include "Xattr.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QPointer>
+#include <QQmlEngine>
 
 #include <algorithm>
 #include <cerrno>
@@ -288,6 +290,11 @@ void IndexModel::publishPresence(const Presence &presence, bool clearReceipt)
     m_unknown = presence.unknown;
     m_error = error;
     m_tags->rebuild(presence.tags);
+    if (QQmlEngine *engine = qmlEngine(this)) {
+        if (auto *theme = engine->singletonInstance<Theme *>(QStringLiteral("omafiles"),
+                                                             QStringLiteral("Theme")))
+            theme->meetTags(presence.tags.keys());
+    }
     emit changed();
 }
 

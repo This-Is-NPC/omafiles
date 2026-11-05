@@ -7,11 +7,6 @@
 
 namespace omafiles {
 namespace {
-QString statePath()
-{
-    return stateHome() + QStringLiteral("/omafiles/studio.conf");
-}
-
 const QString kColumnsKey = QStringLiteral("details/columns");
 
 // Resolved by the kernel where it will, and otherwise kept as typed: a folder
@@ -421,7 +416,7 @@ Workspace::Workspace(QObject *parent)
 {
     adopt(new PaneState(QStringLiteral("files"), this), 0);
 
-    const QSettings state(statePath(), QSettings::IniFormat);
+    const QSettings state(studioStatePath(), QSettings::IniFormat);
     const QStringList fields = columnFields();
     if (!state.contains(kColumnsKey)) {
         m_columns = {QStringLiteral("tags"), QStringLiteral("type"), QStringLiteral("size"),
@@ -446,7 +441,7 @@ void Workspace::setColumns(const QStringList &columns)
     if (m_columns == columns)
         return;
     m_columns = columns;
-    QSettings state(statePath(), QSettings::IniFormat);
+    QSettings state(studioStatePath(), QSettings::IniFormat);
     state.setValue(kColumnsKey, m_columns);
     emit columnsChanged();
 }

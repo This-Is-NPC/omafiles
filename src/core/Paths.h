@@ -33,6 +33,8 @@ bool environmentNameable(QString *error);
 bool workingDirectoryNameable(QString *error);
 
 QString defaultIndexPath();
+/// `$XDG_STATE_HOME/omafiles/studio.conf`: the window's own state.
+QString studioStatePath();
 /// `$HOME` as text, or `/` where it is unset, relative or not valid UTF-8, the
 /// root `QDir::homePath` falls back to.
 QString homeDirectory();
