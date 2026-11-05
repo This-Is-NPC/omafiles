@@ -3,8 +3,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import omafiles
 
-// A heading in the details table: a click sorts by it, a right-click asks for
-// the column menu.
+// A heading in the details table: a click sorts by it, or flips the direction
+// when it already sorts; a right-click asks for the column menu.
 //
 // A heading is flush left, or flush right over a numeric column such as `size`,
 // as the cells under it are.
@@ -16,13 +16,15 @@ Item {
 
     property string label: ""
     property string role: ""
-    property string sortRole: ""
+    /// The column the tab sorts under, which lights the heading.
+    property string sortColumn: ""
     property bool ascending: true
     property bool alignRight: false
     signal picked
+    signal flipped
     signal menuAsked(real x, real y)
 
-    readonly property bool active: head.role !== "" && head.role === head.sortRole
+    readonly property bool active: head.role !== "" && head.role === head.sortColumn
 
     Accessible.role: Accessible.ColumnHeader
     Accessible.name: head.label
@@ -48,7 +50,7 @@ Item {
     }
     TapHandler {
         enabled: head.role !== ""
-        onTapped: head.picked()
+        onTapped: head.active ? head.flipped() : head.picked()
     }
     TapHandler {
         acceptedButtons: Qt.RightButton

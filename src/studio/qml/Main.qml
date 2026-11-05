@@ -607,16 +607,36 @@ Window {
             activeTab.goForward()
     }
 
-    /// The sort menu's keys, in its order; `label` is also the sort button's.
+    /// The sort menu's keys, in its order; `label` is also the sort button's
+    /// and the palette's. `column` is the details heading a key sorts under.
     readonly property var sortKeys: [
-        { role: "name", label: "Name", key: "n" },
-        { role: "type", label: "Type", key: "t" },
-        { role: "size", label: "Size", key: "z" },
-        { role: "mtime", label: "Modified", key: "m" },
-        { role: "tags", label: "Tags", key: "g" }
+        { role: "name", label: "Name", key: "n", column: "name" },
+        { role: "type", label: "Type", key: "t", column: "type" },
+        { role: "size", label: "Size", key: "z", column: "size" },
+        { role: "mtime", label: "Modified", key: "m", column: "mtime" },
+        { role: "tags", label: "First tag", key: "g", column: "tags" },
+        { role: "tagCount", label: "Tag count", key: "c", column: "tags" }
     ]
+    function sortKey(role) {
+        return sortKeys.find(function (entry) { return entry.role === role })
+    }
     function sortLabel(role) {
-        return sortKeys.find(function (entry) { return entry.role === role }).label
+        return sortKey(role).label
+    }
+    // A heading names its field, or the key it sorts by when that key is not
+    // the field itself.
+    function headingLabel(field, role) {
+        const entry = sortKey(role)
+        return entry.column === field && entry.role !== field ? entry.label.toLowerCase()
+                                                              : columnLabel(field)
+    }
+    // The sort keys as palette commands, reached in the menu with `s` and the
+    // key's letter.
+    function sortActions() {
+        return sortKeys.map(function (entry) {
+            return { id: "sort:" + entry.role, label: "Sort by " + entry.label.toLowerCase(),
+                     key: "s " + entry.key }
+        })
     }
 
     // What the sort button and `s` do: open the sort menu under the button,
@@ -2714,7 +2734,8 @@ Window {
                 { id: "make-default", label: "Make omafiles the default file manager", key: "" },
                 { id: "undo", label: IndexModel.undoLabel, key: "Ctrl z" },
                 { id: "keys", label: "Show keys", key: "?" }
-            ].concat(win.columnActions(Workspace.columns), win.filterActionsFor({}))
+            ].concat(win.sortActions(), win.columnActions(Workspace.columns),
+                     win.filterActionsFor({}))
             onChosen: function (id) {
                 // The filter entries are `narrow`'s; it passes over the rest.
                 win.narrow(id)
@@ -2773,7 +2794,12 @@ Window {
                         helpSheet.open()
                     })
                     break
-                default: win.runColumnAction(id)
+                default:
+                    if (id.startsWith("sort:")) {
+                        if (win.activeTab) win.activeTab.pickSortRole(id.slice(5))
+                    } else {
+                        win.runColumnAction(id)
+                    }
                 }
                 commandPalette.close()
             }
@@ -3374,7 +3400,7 @@ Window {
                 if (id === "ascending" || id === "descending")
                     sortMenu.tab.setSort(sortMenu.tab.sortRole, id === "ascending")
                 else
-                    sortMenu.tab.setSort(id, sortMenu.tab.ascendingByDefault(id))
+                    sortMenu.tab.pickSortRole(id)
             }
         }
 
@@ -3782,9 +3808,10 @@ Window {
                                 height: parent.height
                                 label: "name"
                                 role: "name"
-                                sortRole: filesRoot.tab ? filesRoot.tab.sortRole : ""
+                                sortColumn: filesRoot.tab ? win.sortKey(filesRoot.tab.sortRole).column : ""
                                 ascending: filesRoot.tab && filesRoot.tab.sortAscending
                                 onPicked: filesRoot.tab.pickSortRole("name")
+                                onFlipped: filesRoot.tab.toggleSortDirection()
                                 // Over the name, the menu moves every column.
                                 onMenuAsked: function (x, y) {
                                     const pos = nameHead.mapToItem(root, x, y)
@@ -3806,16 +3833,19 @@ Window {
                                         objectName: "columnHead"
                                         height: headColumns.height
                                         width: filesRoot.columnWidth(columnHead.modelData)
-                                        label: win.columnLabel(columnHead.modelData)
+                                        label: filesRoot.tab
+                                               ? win.headingLabel(columnHead.modelData, filesRoot.tab.sortRole)
+                                               : win.columnLabel(columnHead.modelData)
                                         alignRight: columnHead.modelData === "size"
                                         // A field the tab cannot sort by is a heading
                                         // and nothing more.
                                         role: filesRoot.tab && filesRoot.tab.validSortRole(
                                                   columnHead.modelData) === columnHead.modelData
                                               ? columnHead.modelData : ""
-                                        sortRole: filesRoot.tab ? filesRoot.tab.sortRole : ""
+                                        sortColumn: filesRoot.tab ? win.sortKey(filesRoot.tab.sortRole).column : ""
                                         ascending: filesRoot.tab && filesRoot.tab.sortAscending
                                         onPicked: filesRoot.tab.pickSortRole(columnHead.modelData)
+                                        onFlipped: filesRoot.tab.toggleSortDirection()
                                         onMenuAsked: function (x, y) {
                                             const pos = columnHead.mapToItem(root, x, y)
                                             win.openColumnMenu([columnHead.modelData], pos.x, pos.y)

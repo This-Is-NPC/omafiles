@@ -453,7 +453,8 @@ private slots:
     void refusesVirtualTabDropsWhileTheStripReflows();
     void drainsDropConflictsThatArriveDuringCleanup();
     void rejectsMixedClipboardFileUrls();
-    void pickSortRoleTogglesOnSameRole();
+    void pickSortRoleStartsTheWayTheKeyIsRead();
+    void tagsHeadingFollowsEitherTagKey();
     void keepsSingleWorkerDirectoryWorkInline();
     void runsDirectoryChunksWithinWorkerBudget();
     void bindsDirectoryChunksToDistinctCpus();
@@ -527,6 +528,7 @@ private slots:
     void readsOutTheRowUnderTheCursor();
     void namesTheRowUnderTheCursorForAssistiveTech();
     void sortsByTagWithTheUntaggedLast();
+    void sortsByTagCountMostFirst();
     void countsWhatIsInAFolder();
     void countsWhatIsTaggedInThisFolder();
     void listsEveryFileCarryingATagWhereverItIs();
@@ -550,6 +552,7 @@ private slots:
     void walksTheGraphWithTheKeyboard();
     void runsACommandFromThePalette();
     void commandPaletteOpensTheSortMenu();
+    void commandPaletteSortsByEachKey();
     void zoomsAndResetsTheGraph();
     void picksAGraphNodeWithTheMouse();
     void clickingARowFocusesItsPane();
@@ -1722,6 +1725,26 @@ void TestStudio::sortsByTagWithTheUntaggedLast()
     QCOMPARE(rows.first(), QStringLiteral("plain.txt"));
 }
 
+// The tag count key starts with the most tagged file, as size starts with the
+// biggest; files with as many tags read by name, and an untagged file counts
+// none.
+void TestStudio::sortsByTagCountMostFirst()
+{
+    key('s');
+    key('c');
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tagCount"));
+    QCOMPARE(tab()->sortAscending(), false);
+    QTRY_COMPARE(fileRowNames(),
+                 (QStringList{"six.md", "three.ods", "one.txt", "four.drawio", "five.zip",
+                              "two.md", "seven.txt", "plain.txt"}));
+
+    key('S');
+    QCOMPARE(tab()->sortAscending(), true);
+    QTRY_COMPARE(fileRowNames(),
+                 (QStringList{"plain.txt", "seven.txt", "two.md", "five.zip", "four.drawio",
+                              "one.txt", "three.ods", "six.md"}));
+}
+
 // The type column carries the suffix, not the mime description: `.drawio` is
 // `text/plain` to the mime database, and a column that called every diagram in
 // the index "Plain text document" would be losing the distinction the tags are
@@ -2360,7 +2383,7 @@ void TestStudio::sortMenuPicksKeyAndDirection()
     key('s');
     QVERIFY(menu->isVisible());
     QCOMPARE(menuLabels(QStringLiteral("sortMenu")),
-             (QStringList{"Name", "Type", "Size", "Modified", "Tags",
+             (QStringList{"Name", "Type", "Size", "Modified", "First tag", "Tag count",
                           "Ascending ↑", "Descending ↓"}));
     QCOMPARE(cursorLabel(), QStringLiteral("Type"));
     key('j');
@@ -3180,6 +3203,34 @@ void TestStudio::commandPaletteOpensTheSortMenu()
     QVERIFY(!menu->isVisible());
     QCOMPARE(tab()->sortRole(), QStringLiteral("mtime"));
     QVERIFY(!tab()->sortAscending());
+}
+
+// Every sort key is a palette command too, named with the keys that reach it
+// through the menu, and it starts the way the menu starts it.
+void TestStudio::commandPaletteSortsByEachKey()
+{
+    QHash<QString, QString> keys;
+    for (const QVariant &command :
+         itemsNamed(QStringLiteral("commandPalette")).first()->property("commands").toList())
+        keys.insert(command.toMap().value(QStringLiteral("label")).toString(),
+                    command.toMap().value(QStringLiteral("key")).toString());
+    QCOMPARE(keys.value(QStringLiteral("Sort by first tag")), QStringLiteral("s g"));
+    QCOMPARE(keys.value(QStringLiteral("Sort by tag count")), QStringLiteral("s c"));
+    QCOMPARE(keys.value(QStringLiteral("Sort by size")), QStringLiteral("s z"));
+
+    const auto run = [this](const QByteArray &query) {
+        key(':');
+        for (char ch : query)
+            key(ch);
+        key(Qt::Key_Return);
+        settle();
+    };
+    run("sort by tag count");
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tagCount"));
+    QVERIFY(!tab()->sortAscending());
+    run("sort by first tag");
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
+    QVERIFY(tab()->sortAscending());
 }
 
 // `0`, `+` and `-` are read back through GraphItem's `scale`.
@@ -5178,12 +5229,66 @@ void TestStudio::countsEveryNameAFolderHolds()
 }
 
 
-void TestStudio::pickSortRoleTogglesOnSameRole()
+// A pick starts the key the way it is read, whatever direction the tab had.
+void TestStudio::pickSortRoleStartsTheWayTheKeyIsRead()
 {
+    tab()->setSort(QStringLiteral("name"), false);
     tab()->pickSortRole(QStringLiteral("name"));
-    const bool before = tab()->sortAscending();
-    tab()->pickSortRole(QStringLiteral("name"));
-    QVERIFY(before != tab()->sortAscending());
+    QVERIFY(tab()->sortAscending());
+    tab()->pickSortRole(QStringLiteral("tagCount"));
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tagCount"));
+    QVERIFY(!tab()->sortAscending());
+    tab()->pickSortRole(QStringLiteral("tags"));
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
+    QVERIFY(tab()->sortAscending());
+}
+
+// Both tag keys sort under the one tags column: its heading is lit for either
+// and names the count when that is the key, a click on it flips the key it
+// has, and a click while another column sorts picks the first tag.
+void TestStudio::tagsHeadingFollowsEitherTagKey()
+{
+    tab()->setViewMode(QStringLiteral("details"));
+    settle();
+    const auto restore = qScopeGuard([this] {
+        tab()->setViewMode(QStringLiteral("list"));
+        settle();
+    });
+    const auto tagsHead = [this]() -> QQuickItem * {
+        for (QQuickItem *item : itemsNamed(QStringLiteral("columnHead")))
+            if (item->isVisible() && item->property("role").toString() == QLatin1String("tags"))
+                return item;
+        return nullptr;
+    };
+    const auto click = [this](QQuickItem *item) {
+        QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier,
+                          item->mapToScene({item->width() / 2, item->height() / 2}).toPoint());
+        settle();
+    };
+    QTRY_VERIFY(tagsHead());
+    QQuickItem *head = tagsHead();
+    QCOMPARE(head->property("label").toString(), QStringLiteral("tags"));
+    QVERIFY(!head->property("active").toBool());
+
+    tab()->pickSortRole(QStringLiteral("tagCount"));
+    settle();
+    QVERIFY(head->property("active").toBool());
+    QCOMPARE(head->property("label").toString(), QStringLiteral("tag count"));
+    click(head);
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tagCount"));
+    QVERIFY2(tab()->sortAscending(), "a click on the lit heading did not flip the tag count");
+
+    tab()->pickSortRole(QStringLiteral("size"));
+    settle();
+    QVERIFY(!head->property("active").toBool());
+    QCOMPARE(head->property("label").toString(), QStringLiteral("tags"));
+    click(head);
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
+    QVERIFY(tab()->sortAscending());
+    QVERIFY(head->property("active").toBool());
+    click(head);
+    QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
+    QVERIFY(!tab()->sortAscending());
 }
 
 
@@ -17700,7 +17805,10 @@ void TestStudio::sortButtonShowsKeyAndDirection()
     QCOMPARE(button->property("label").toString(), QStringLiteral("Size ↑ ⌄"));
     key('s');
     key('g');
-    QCOMPARE(button->property("label").toString(), QStringLiteral("Tags ↑ ⌄"));
+    QCOMPARE(button->property("label").toString(), QStringLiteral("First tag ↑ ⌄"));
+    key('s');
+    key('c');
+    QCOMPARE(button->property("label").toString(), QStringLiteral("Tag count ↓ ⌄"));
 }
 
 // A click on the sort button opens the menu under it, right edges together,
@@ -17783,7 +17891,7 @@ void TestStudio::keepsTheViewControlsInNarrowPanes()
     QVERIFY(tapItem(window(), sort)); settle();
     key('g');
     QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
-    QCOMPARE(sort->property("label").toString(), QStringLiteral("Tags ↑ ⌄"));
+    QCOMPARE(sort->property("label").toString(), QStringLiteral("First tag ↑ ⌄"));
     sort->forceActiveFocus(); key(Qt::Key_Return); settle();
     key('t');
     QCOMPARE(tab()->sortRole(), QStringLiteral("type"));
