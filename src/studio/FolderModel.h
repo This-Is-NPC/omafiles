@@ -8,6 +8,7 @@
 
 #include <QAbstractListModel>
 #include <QFileInfo>
+#include <QSet>
 #include "EntryWatcher.h"
 #include <QtQmlIntegration/qqmlintegration.h>
 #include <QString>
@@ -266,6 +267,15 @@ private:
         QString mode;
     };
 
+    /// A folder row's count and the watch on that folder, which goes when the
+    /// count leaves the cache.
+    struct FolderItems {
+        int items;
+        EntryWatcher *watcher;
+        QString path;
+        ~FolderItems() { watcher->removePath(path); }
+    };
+
     struct DirectoryResult {
         std::shared_ptr<const DirectoryListing> listing;
         QVector<int> visible;
@@ -310,7 +320,11 @@ private:
     /// an open() per folder, so it is read off the UI thread, for the rows the
     /// view asks about, one batch at a time.
     QString folderItemsText(int row, const QString &path) const;
+    /// Queues a count for `path`, last asked for at `row`, once.
+    void askFolderItems(int row, const QString &path) const;
     void countFolders();
+    /// Counts a shown folder again after its watch saw it change.
+    void recountFolder(const QString &path);
     /// Drops the counts, and any batch still out, for a folder or a reload.
     void forgetFolderItems();
 
@@ -346,20 +360,25 @@ private:
     int m_rangeSize = -1;
     bool m_rangeParent = false;
     mutable QCache<int, Entry> m_metadata{128};
+    /// The folder on screen, watched so it stays the folder on disk, and each
+    /// folder whose count is kept, watched so the count stays true. Never a
+    /// tree: an inotify watch is a per-user resource, and what a list has to
+    /// be honest about is the list. Declared before the counts, whose entries
+    /// remove their watches when they go.
+    EntryWatcher m_watcher;
+    QString m_watched;
     /// Items in each folder row counted so far, -1 for one that would not be
     /// read; the folders asked about and not yet counted, with the row each was
-    /// last asked for at; those not yet in a batch; whether a batch is out.
-    mutable QCache<QString, int> m_folderItems{4096};
+    /// last asked for at; those not yet in a batch; the batch out, and those in
+    /// it that changed while it was read; whether a batch is out.
+    mutable QCache<QString, FolderItems> m_folderItems{256};
     mutable QHash<QString, int> m_countAsked;
     mutable QStringList m_countWaiting;
+    QStringList m_countOut;
+    QSet<QString> m_countStale;
     mutable bool m_counting = false;
     int m_countGeneration = 0;
     QTimer m_query;
-    /// The folder on screen, watched so it stays the folder on disk. One
-    /// directory and never a tree: an inotify watch is a per-user resource, and
-    /// what a list has to be honest about is the list.
-    EntryWatcher m_watcher;
-    QString m_watched;
     /// Coalesces the watcher. A single copy or save is several filesystem
     /// events, and the list wants the state after them, once.
     QTimer m_settle;

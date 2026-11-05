@@ -136,6 +136,10 @@ FolderModel::FolderModel(QObject *parent, std::shared_ptr<const DirectoryWork> w
     connect(&m_settle, &QTimer::timeout, this, &FolderModel::reload);
     connect(&m_watcher, &EntryWatcher::directoryChanged, this,
             [this](const QString &path) {
+                if (path != m_watched) {
+                    recountFolder(path);
+                    return;
+                }
                 if (m_index) m_index->expireNoticeForDirectory(path);
                 m_settle.start();
             });
@@ -893,8 +897,14 @@ void FolderModel::reload()
 
 QString FolderModel::folderItemsText(int row, const QString &path) const
 {
-    if (const int *items = m_folderItems.object(path))
-        return *items < 0 ? QString() : countOf(*items, QStringLiteral("item"));
+    if (const FolderItems *known = m_folderItems.object(path))
+        return known->items < 0 ? QString() : countOf(known->items, QStringLiteral("item"));
+    askFolderItems(row, path);
+    return QString();
+}
+
+void FolderModel::askFolderItems(int row, const QString &path) const
+{
     const bool asked = m_countAsked.contains(path);
     m_countAsked.insert(path, row);
     if (!asked) {
@@ -905,7 +915,15 @@ QString FolderModel::folderItemsText(int row, const QString &path) const
                                       Qt::QueuedConnection);
         }
     }
-    return QString();
+}
+
+// The old count stays drawn until the new one is in.
+void FolderModel::recountFolder(const QString &path)
+{
+    if (m_countOut.contains(path))
+        m_countStale.insert(path);
+    else if (m_folderItems.contains(path))
+        askFolderItems(-1, path);
 }
 
 void FolderModel::countFolders()
@@ -915,6 +933,10 @@ void FolderModel::countFolders()
         m_counting = false;
         return;
     }
+    // Watched before the read, so a change after it is not missed.
+    for (const QString &path : paths)
+        m_watcher.addPath(path);
+    m_countOut = paths;
     const int generation = m_countGeneration;
     using Counts = QVector<std::pair<QString, int>>;
     auto *watcher = new QFutureWatcher<Counts>(this);
@@ -922,8 +944,16 @@ void FolderModel::countFolders()
         const Counts counts = watcher->result();
         watcher->deleteLater();
         if (generation == m_countGeneration) {
+            m_countOut.clear();
             for (const auto &[path, items] : counts) {
-                m_folderItems.insert(path, new int(items));
+                if (m_countStale.remove(path)) {
+                    m_countWaiting.append(path);
+                    continue;
+                }
+                if (FolderItems *known = m_folderItems.object(path))
+                    known->items = items;
+                else
+                    m_folderItems.insert(path, new FolderItems{items, &m_watcher, path});
                 const int hint = m_countAsked.take(path);
                 const int row = pathAt(hint) == path ? hint : rowForPath(path);
                 if (row >= 0)
@@ -945,6 +975,9 @@ void FolderModel::forgetFolderItems()
 {
     ++m_countGeneration;
     m_folderItems.clear();
+    for (const QString &path : std::exchange(m_countOut, {}))
+        m_watcher.removePath(path);
+    m_countStale.clear();
     m_countAsked.clear();
     m_countWaiting.clear();
 }

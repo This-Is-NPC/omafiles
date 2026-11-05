@@ -34,8 +34,17 @@ background, since those operations need information beyond their names.
 A folder row's size column is the number of names the folder holds, which costs
 one directory read per folder. `FolderModel` counts only the folders a drawn row
 asks about, in one batch at a time through `runBlocking`, off the UI thread; the
-cell stays empty until its count arrives. Counts are kept for up to 4,096
+cell stays empty until its count arrives. Counts are kept for up to 256
 folders and dropped when the listing changes folder or reloads.
+
+A kept count follows its folder. Each counted folder gets an inotify watch on
+its own entries, taken before the folder is read, so a name added, removed or
+moved inside it from outside counts it again; the old count stays drawn until
+the new one arrives. The watch goes when the count leaves the cache. A watch
+costs kernel memory and counts against `fs.inotify.max_user_watches`, which is
+8,192 on a small machine and shared by every program of the user, so the cache
+holds 256 counts per pane, several screens of rows, rather than thousands.
+Scrolling back to a folder whose count was dropped reads it again.
 
 Large name sorts and queries use contiguous chunks on a shared bounded worker
 pool. Each chunk contains at least 32,768 entries; small queries and a one-worker
