@@ -2714,6 +2714,7 @@ Window {
                 case "save-view": Qt.callLater(win.startNaming); break
                 case "views": Qt.callLater(win.focusViews); break
                 case "places": Qt.callLater(win.focusPlaces); break
+                case "devices": Qt.callLater(win.focusDevices); break
                 case "add-graph": Workspace.addTab("graph"); break
                 case "close-tab": Workspace.closeCurrentTab(); break
                 case "split": Workspace.splitRight("files"); break
