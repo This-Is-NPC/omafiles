@@ -1737,15 +1737,17 @@ void TestStudio::sortsByTagWithTheUntaggedLast()
     QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
     QCOMPARE(tab()->sortAscending(), true);
 
-    QStringList rows = fileRowNames();
-    QVERIFY(rows.size() > 2);
-    QCOMPARE(rows.last(), QStringLiteral("plain.txt"));
-    QCOMPARE(rows.first(), QStringLiteral("five.zip"));      // #archive sorts first
+    // Only the first tag counts: one, six and two all start with #notes and
+    // read by name, whatever follows it.
+    QTRY_COMPARE(fileRowNames(),
+                 (QStringList{"five.zip", "seven.txt", "four.drawio", "one.txt", "six.md",
+                              "two.md", "three.ods", "plain.txt"}));
 
     key('S');
     QCOMPARE(tab()->sortAscending(), false);
-    rows = fileRowNames();
-    QCOMPARE(rows.first(), QStringLiteral("plain.txt"));
+    QTRY_COMPARE(fileRowNames(),
+                 (QStringList{"plain.txt", "three.ods", "two.md", "six.md", "one.txt",
+                              "four.drawio", "seven.txt", "five.zip"}));
 }
 
 // The tag count key starts with the most tagged file, as size starts with the

@@ -34,6 +34,13 @@ qsizetype tagCount(const QString &tags)
     return tags.isEmpty() ? 0 : tags.count(QLatin1Char(' ')) + 1;
 }
 
+// A row's first tag, read in place from its space-separated tags string.
+QStringView firstTag(const QString &tags)
+{
+    const qsizetype space = tags.indexOf(QLatin1Char(' '));
+    return space < 0 ? QStringView(tags) : QStringView(tags).first(space);
+}
+
 // Rows a directory scan reads ahead: sorted rows point at scattered names.
 constexpr qsizetype prefetchDistance = 16;
 
@@ -1003,12 +1010,12 @@ bool FolderModel::lessThan(const Entry &a, const Entry &b, const QString &role, 
             // By the first tag, with the untagged after everything -- which is
             // the question this program exists to answer, and which reversing
             // the sort turns into "show me the untagged first".
-            const QString first = a.tags.section(QLatin1Char(' '), 0, 0);
-            const QString other = b.tags.section(QLatin1Char(' '), 0, 0);
+            const QStringView first = firstTag(a.tags);
+            const QStringView other = firstTag(b.tags);
             if (first.isEmpty() != other.isEmpty())
                 cmp = first.isEmpty() ? 1 : -1;
             else
-                cmp = QString::compare(first, other, Qt::CaseInsensitive);
+                cmp = first.compare(other, Qt::CaseInsensitive);
         } else if (role == QLatin1String("tagCount")) {
             const qsizetype count = tagCount(a.tags);
             const qsizetype otherCount = tagCount(b.tags);
