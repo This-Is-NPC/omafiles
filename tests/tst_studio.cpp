@@ -730,11 +730,13 @@ private slots:
     void barDoesNotCoverRows();
     void scrollJumpButtonsMatchHomeEnd();
     void sectionHeadingsAreNotTabStops();
+    void paletteFocusesTheDevices();
     void emptyStateTextWraps();
     void footerHintsHaveNoFillAtRest();
     void cursorRowCarriesTheOnlyRing();
     void markedRowHasNoStripe();
     void controlsHaveRestFill();
+    void keepsTheTooltipOfAControlThatTurnsUnusable();
     void placesListsExistingXdgDirs();
     void placesOpenInCurrentTab();
     void placesKeyReachesSection();
@@ -4799,6 +4801,12 @@ void TestStudio::writesTheDocumentationShots()
     // their own and the only options are to queue or to give up.
     QVERIFY2(held.tryLock(120000),
              "another run has held the documentation fixture for two minutes");
+    // Removed under the lock, whatever the outcome: the pictures are written to
+    // OMAFILES_SHOTS, and nothing reads the fixture after the run.
+    const auto removeFixture = qScopeGuard([&fixture] {
+        QDir(fixture).removeRecursively();
+        QVERIFY2(!QFileInfo::exists(fixture), "the documentation fixture outlives its run");
+    });
 
     const QString root = fixture + QStringLiteral("/workshop");
     QDir(fixture).removeRecursively();
@@ -9354,6 +9362,24 @@ void TestStudio::sectionHeadingsAreNotTabStops()
     key(Qt::Key_Escape);
 }
 
+// The palette's Devices does what `d` does: it shows the section, hidden while
+// no device is connected, and focuses it.
+void TestStudio::paletteFocusesTheDevices()
+{
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    QVERIFY(sidebar);
+    auto *heading = sidebar->findChild<QQuickItem *>(QStringLiteral("devicesHeading"));
+    QVERIFY(heading);
+    QCOMPARE(sidebar->property("devicesList").value<QQuickItem *>()->property("count").toInt(), 0);
+    QVERIFY(!heading->isVisible());
+    QVERIFY(QMetaObject::invokeMethod(itemsNamed(QStringLiteral("commandPalette")).first(),
+        "chosen", Q_ARG(QString, QStringLiteral("devices"))));
+    QTRY_COMPARE(window()->property("focusRegion").toString(), QStringLiteral("devices"));
+    QVERIFY(heading->isVisible());
+    QVERIFY(heading->hasActiveFocus());
+    key(Qt::Key_Escape);
+}
+
 // What an empty section says is help, and help wraps rather than being cut.
 void TestStudio::emptyStateTextWraps()
 {
@@ -9591,6 +9617,30 @@ void TestStudio::controlsHaveRestFill()
     QTest::mouseMove(window(), QPoint(window()->width() - 2, window()->height() - 2));
     QTRY_VERIFY(!tip->property("opened").toBool());
     focusRow("one.txt");
+}
+
+// A control that turns unusable under the pointer keeps its tooltip, which then
+// says why: "+ Tag" with the cursor moved off the files.
+void TestStudio::keepsTheTooltipOfAControlThatTurnsUnusable()
+{
+    focusRow("one.txt");
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    auto *add = itemNamedWithin(sidebar, QStringLiteral("editTagsButton"));
+    QVERIFY(add); QTRY_VERIFY(add->isEnabled());
+    const auto away = qScopeGuard([&] {
+        QTest::mouseMove(window(), QPoint(window()->width() - 2, window()->height() - 2));
+        focusRow("one.txt");
+    });
+    QTest::mouseMove(window(), add->mapToScene(QPointF(add->width() / 2, add->height() / 2)).toPoint());
+    QTRY_VERIFY(add->findChild<QObject *>(QStringLiteral("controlTooltip")));
+    auto *tip = add->findChild<QObject *>(QStringLiteral("controlTooltip"));
+    QTRY_VERIFY(tip->property("opened").toBool());
+    QVERIFY(tip->property("text").toString().startsWith(QStringLiteral("Add a tag to the row or marked files")));
+    QVERIFY(QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(0))));
+    QTRY_VERIFY(!add->isEnabled());
+    QVERIFY(tip->property("opened").toBool());
+    QTRY_VERIFY(tip->property("text").toString().startsWith(QStringLiteral("Select a file to tag it")));
+    QVERIFY(tip->property("opened").toBool());
 }
 
 // ------------------------------------------------------------- sidebar places
@@ -16870,11 +16920,9 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     window()->resize(1180, 300); settle();
     for (int activation = 0; activation < 3; ++activation) {
         auto *button = hint("menu"); QVERIFY(button);
-        window()->update(); QTest::qWait(30);
         const QPoint corner = button->mapToScene(QPointF(1, 1)).toPoint();
-        const QImage frame = window()->grabWindow();
-        QVERIFY(!frame.isNull());
-        QVERIFY2(std::abs(frame.pixelColor(corner).lightnessF() - m_theme->chrome().lightnessF()) < 0.15, "Footer actions keep theme chrome");
+        QTRY_VERIFY2(std::abs(window()->grabWindow().pixelColor(corner).lightnessF()
+                              - m_theme->chrome().lightnessF()) < 0.15, "Footer actions keep theme chrome");
         if (activation == 0) QVERIFY(tapItem(window(), button));
         else { button->forceActiveFocus(); key(activation == 1 ? Qt::Key_Return : Qt::Key_Space); }
         settle(); QVERIFY(menu->isVisible()); key(Qt::Key_Escape);

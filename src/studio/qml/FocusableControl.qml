@@ -50,7 +50,9 @@ Item {
     }
     onUsableChanged: if (!control.usable) handOnFocus()
 
-    onEnabledChanged: if (!enabled && control.tooltip) control.tooltip.cancel()
+    // Disabled with what holds it, as under an overlay, it takes its tip back;
+    // turned unusable itself, it keeps the tip, whose caption then says why.
+    onEnabledChanged: if (!enabled && control.usable && control.tooltip) control.tooltip.cancel()
     onVisibleChanged: if (!visible) {
         handOnFocus()
         if (control.tooltip) control.tooltip.cancel()
@@ -95,7 +97,6 @@ Item {
     onTooltipHoveredChanged: {
         if (tooltipHovered && tooltipCaption !== "") {
             tooltipLoader.active = true
-            tooltip.text = tooltipCaption + (tooltipKey === "" ? "" : "   " + tooltipKey)
             tooltip.request(control)
         } else if (tooltip) {
             tooltip.dismiss()
@@ -104,7 +105,9 @@ Item {
     Loader {
         id: tooltipLoader
         active: false
-        sourceComponent: Tooltip {}
+        sourceComponent: Tooltip {
+            text: control.tooltipCaption + (control.tooltipKey === "" ? "" : "   " + control.tooltipKey)
+        }
     }
 
     Item {
