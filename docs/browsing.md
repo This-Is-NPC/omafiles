@@ -31,6 +31,12 @@ when a visible row or the details dock needs them, with a bounded cache. Sorting
 by metadata or applying metadata criteria examines matching files in the
 background, since those operations need information beyond their names.
 
+A folder row's size column is the number of names the folder holds, which costs
+one directory read per folder. `FolderModel` counts only the folders a drawn row
+asks about, in one batch at a time through `runBlocking`, off the UI thread; the
+cell stays empty until its count arrives. Counts are kept for up to 4,096
+folders and dropped when the listing changes folder or reloads.
+
 Large name sorts and queries use contiguous chunks on a shared bounded worker
 pool. Each chunk contains at least 32,768 entries; small queries and a one-worker
 budget execute the same processing directly without extra tasks or merge

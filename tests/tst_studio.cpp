@@ -697,6 +697,9 @@ private slots:
     void keepsHintsBesideReceipts();
     void keepsTheViewControlsInNarrowPanes();
     void givesTheNameColumnPriority();
+    void tagChipsStartAtTheirColumn();
+    void folderSizeShowsItemCount();
+    void columnsDropWholeWhenNarrow();
     void cancelsRowHoldOnMovement();
     void waitsForDelayedPlaybackAcknowledgement();
     void boundsPreviewImageTransfers_data();
@@ -773,6 +776,7 @@ private:
     QStringList pathLabels() const;
     TabState *tab() const;
     QObject *filesRoot() const;
+    QList<QQuickItem *> shownListRows() const;
     int cursor() const;
     QString cwd() const;
     int rowOf(const QString &name) const;
@@ -1189,7 +1193,8 @@ void TestStudio::key(Key code, Qt::KeyboardModifiers mods)
     settle();
 }
 
-// Observe both the worker publication and the queued QML cursor/metadata refresh.
+// Observe the worker publication, the folder item counts and the queued QML
+// cursor/metadata refresh.
 void TestStudio::settle()
 {
     // Deliver Qt's deferred object retirement before inspecting the visual tree.
@@ -1211,7 +1216,7 @@ void TestStudio::settle()
         if (!folder) return false;
         const int row = root->property("cursor").toInt();
         const QVariantMap entry = root->property("entry").toMap();
-        return !folder->loading()
+        return !folder->loading() && !folder->countingFolders()
             && (folder->rowCount() == 0 || (row >= 0 && row < folder->rowCount()))
             && (folder->rowCount() == 0 || !entry.value(QStringLiteral("mime")).toString().isEmpty())
             && entry == folder->entryAt(row);
@@ -5185,10 +5190,7 @@ void TestStudio::tagStripSaysHowManyTagsDoNotFit()
 
     auto *strip = qobject_cast<QQuickItem *>(overflowing);
     QVERIFY(strip);
-    const bool alignRight = strip->property("alignRight").toBool();
-    const QString remainderName = alignRight
-            ? QStringLiteral("tagStripOverflowLeading")
-            : QStringLiteral("tagStripOverflowTrailing");
+    const QString remainderName = QStringLiteral("tagStripOverflowTrailing");
     QQuickItem *remainder = nullptr;
     QList<QQuickItem *> queue{strip};
     while (!queue.isEmpty()) {
@@ -5281,10 +5283,7 @@ void TestStudio::namesTheMenuRowTheOverflowAndTheTabClose()
 
     auto *strip = qobject_cast<QQuickItem *>(overflowing);
     QVERIFY(strip);
-    const bool alignRight = strip->property("alignRight").toBool();
-    const QString remainderName = alignRight
-            ? QStringLiteral("tagStripOverflowLeading")
-            : QStringLiteral("tagStripOverflowTrailing");
+    const QString remainderName = QStringLiteral("tagStripOverflowTrailing");
     QQuickItem *remainder = nullptr;
     QList<QQuickItem *> queue{strip};
     while (!queue.isEmpty()) {
@@ -17683,6 +17682,17 @@ void TestStudio::keepsTheViewControlsInNarrowPanes()
     }
 }
 
+// The cells one list row draws after its name, left to right.
+static QList<QQuickItem *> columnCellsOf(QQuickItem *row)
+{
+    QList<QQuickItem *> cells;
+    for (auto *child : row->childItems())
+        for (auto *cell : child->childItems())
+            if (cell->objectName() == "columnCell" && cell->isVisible()) cells.append(cell);
+    std::sort(cells.begin(), cells.end(), [](QQuickItem *a, QQuickItem *b) { return a->x() < b->x(); });
+    return cells;
+}
+
 void TestStudio::givesTheNameColumnPriority()
 {
     const QSize original = window()->size();
@@ -17719,12 +17729,9 @@ void TestStudio::givesTheNameColumnPriority()
             QStringList shown;
             for (auto *row : rows) {
                 QQuickItem *name = nullptr;
-                QList<QQuickItem *> cells;
-                for (auto *child : row->childItems()) {
+                for (auto *child : row->childItems())
                     if (child->objectName() == "rowName") name = child;
-                    for (auto *cell : child->childItems())
-                        if (cell->objectName() == "columnCell" && cell->isVisible()) cells.append(cell);
-                }
+                const QList<QQuickItem *> cells = columnCellsOf(row);
                 QVERIFY(name);
                 const QString where = QString("list %1 px, %2").arg(list).arg(row->property("name").toString());
                 QVERIFY2(name->width() >= minimum - 0.5, qPrintable(where + QString(": name %1 px").arg(name->width())));
@@ -17787,6 +17794,136 @@ void TestStudio::givesTheNameColumnPriority()
     QVERIFY(std::any_of(lists.begin(), lists.end(), [](qreal list) { return list <= 300; }));
     QVERIFY(std::any_of(lists.begin(), lists.end(), [](qreal list) { return list >= 1340; }));
     QVERIFY(std::any_of(lists.begin(), lists.end(), [](qreal list) { return qAbs(list - 548) <= 1; }));
+}
+
+// The rows of the list on screen, drawn and not waiting in the pool.
+QList<QQuickItem *> TestStudio::shownListRows() const
+{
+    QList<QQuickItem *> rows;
+    for (auto *row : itemsNamed("fileRow"))
+        if (row->isVisible() && row->property("details").isValid() && !row->property("pooled").toBool())
+            rows.append(row);
+    return rows;
+}
+
+// In the list and the details table alike, a row's tags start where the tags
+// column does, on every row, under its heading -- not pushed to the row's end.
+void TestStudio::tagChipsStartAtTheirColumn()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { tab()->setViewMode("list"); window()->resize(original); });
+    window()->resize(1600, 720);
+    for (const QString mode : {"list", "details"}) {
+        tab()->setViewMode(mode);
+        settle();
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        qreal column = -1;
+        int chipped = 0;
+        for (auto *row : shownListRows()) {
+            QQuickItem *tags = nullptr;
+            for (auto *cell : columnCellsOf(row))
+                if (cell->property("modelData").toString() == "tags") tags = cell;
+            QVERIFY2(tags, qPrintable(mode + ": no tags column on " + row->property("name").toString()));
+            const qreal x = tags->mapToScene({0, 0}).x();
+            if (column < 0) column = x;
+            QCOMPARE(x, column);
+            QQuickItem *first = nullptr;
+            for (auto *chip : itemsNamed("tagChip"))
+                if (tags->isAncestorOf(chip) && chip->property("index").toInt() == 0) first = chip;
+            if (!row->property("tags").toString().isEmpty()) {
+                QVERIFY(first);
+                QCOMPARE(first->mapToScene({0, 0}).x(), column);
+                ++chipped;
+            }
+        }
+        QVERIFY2(chipped >= 3, qPrintable(mode + QString(": %1 tagged rows").arg(chipped)));
+        if (mode == "details") {
+            qreal heading = -1;
+            for (auto *head : itemsNamed("columnHead"))
+                if (head->isVisible() && head->property("label").toString() == "tags")
+                    heading = head->mapToScene({0, 0}).x();
+            QCOMPARE(heading, column);
+        }
+    }
+}
+
+// A folder's size is what it holds, counted off the UI thread and spelled as
+// every count is: hidden names count, one is singular, none is "0 items".
+void TestStudio::folderSizeShowsItemCount()
+{
+    QTemporaryDir counts(QDir(m_tree.path()).filePath("counts-XXXXXX"));
+    QVERIFY(counts.isValid());
+    const QDir dir(counts.path());
+    for (const QString &file : {"three/a", "three/b", "three/.c", "one/a"}) {
+        QVERIFY(dir.mkpath(QFileInfo(file).path()));
+        QFile made(dir.filePath(file));
+        QVERIFY(made.open(QIODevice::WriteOnly));
+    }
+    QVERIFY(dir.mkpath("none"));
+    tab()->setCwd(counts.path());
+    settle();
+    const auto sizeOf = [this](const QString &name) {
+        for (auto *row : shownListRows()) {
+            if (row->property("name").toString() != name) continue;
+            for (auto *cell : columnCellsOf(row))
+                if (cell->property("modelData").toString() == "size")
+                    if (QObject *text = cell->property("item").value<QObject *>())
+                        return text->property("text").toString();
+        }
+        return QStringLiteral("<no size cell>");
+    };
+    QTRY_COMPARE(sizeOf("three"), QStringLiteral("3 items"));
+    QTRY_COMPARE(sizeOf("one"), QStringLiteral("1 item"));
+    QTRY_COMPARE(sizeOf("none"), QStringLiteral("0 items"));
+}
+
+// Past the room the name keeps, the list's columns go one at a time, last
+// first, each whole: a cell is drawn at its column's width or not at all.
+void TestStudio::columnsDropWholeWhenNarrow()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    QList<QStringList> seen;
+    for (int width = 1600; width >= 400; width -= 60) {
+        window()->resize(width, 600);
+        settle();
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        const QList<QQuickItem *> rows = shownListRows();
+        QVERIFY(!rows.isEmpty());
+        QStringList shown;
+        for (auto *row : rows) {
+            QQuickItem *name = nullptr;
+            for (auto *child : row->childItems())
+                if (child->objectName() == "rowName") name = child;
+            QVERIFY(name);
+            const QString where = QString("list %1 px").arg(row->width());
+            QVERIFY2(name->width() >= std::min(160.0, row->width() * 0.4) - 0.5, qPrintable(where));
+            qreal right = name->x() + name->width();
+            QStringList fields;
+            for (auto *cell : columnCellsOf(row)) {
+                const QString field = cell->property("modelData").toString();
+                fields.append(field);
+                QVariant whole;
+                QMetaObject::invokeMethod(filesRoot(), "baseWidth", Q_RETURN_ARG(QVariant, whole),
+                                          Q_ARG(QVariant, field));
+                if (field != "tags")
+                    QCOMPARE(cell->width(), whole.toReal());
+                QVERIFY2(cell->width() >= whole.toReal(), qPrintable(where + " " + field));
+                const QRectF rect = cell->mapRectToItem(row, QRectF(0, 0, cell->width(), cell->height()));
+                QVERIFY2(rect.left() >= right && rect.right() <= row->width(), qPrintable(where + " " + field));
+                right = rect.right();
+            }
+            if (row == rows.first()) shown = fields;
+            QCOMPARE(fields, shown);
+        }
+        if (!seen.contains(shown)) seen.append(shown);
+    }
+    qInfo() << "columns seen" << seen;
+    // The details panel and the sidebar go at their own widths and give the
+    // list room back, so the sets come in any order; each is one of these.
+    const QList<QStringList> drops{{"tags", "size", "mtime"}, {"tags", "size"}, {"tags"}, {}};
+    for (const QStringList &shown : seen) QVERIFY2(drops.contains(shown), qPrintable(shown.join(",")));
+    QVERIFY(seen.contains(drops.first()) && seen.size() >= 3);
 }
 
 void TestStudio::preservesTagsWrittenBeforeTheOperationLock()

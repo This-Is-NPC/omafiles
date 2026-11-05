@@ -74,6 +74,8 @@ public:
     int listingReads() const { return m_listingReads; }
     int queryEntriesExamined() const { return m_queryEntriesExamined; }
     int metadataReads() const { return m_metadataReads; }
+    /// Whether a folder row's item count is still to come.
+    bool countingFolders() const { return m_counting; }
     qsizetype directoryIndexCapacity() const { return m_visible.capacity(); }
 
     IndexModel *source() const { return m_index; }
@@ -304,6 +306,13 @@ private:
     bool admits(const Entry &row) const;
     void watch();
     void marksChanged();
+    /// "N items" for a folder row, or empty until its count is in: the count is
+    /// an open() per folder, so it is read off the UI thread, for the rows the
+    /// view asks about, one batch at a time.
+    QString folderItemsText(int row, const QString &path) const;
+    void countFolders();
+    /// Drops the counts, and any batch still out, for a folder or a reload.
+    void forgetFolderItems();
 
     const std::shared_ptr<const DirectoryWork> m_work;
     IndexModel *m_index = nullptr;
@@ -337,6 +346,14 @@ private:
     int m_rangeSize = -1;
     bool m_rangeParent = false;
     mutable QCache<int, Entry> m_metadata{128};
+    /// Items in each folder row counted so far, -1 for one that would not be
+    /// read; the folders asked about and not yet counted, with the row each was
+    /// last asked for at; those not yet in a batch; whether a batch is out.
+    mutable QCache<QString, int> m_folderItems{4096};
+    mutable QHash<QString, int> m_countAsked;
+    mutable QStringList m_countWaiting;
+    mutable bool m_counting = false;
+    int m_countGeneration = 0;
     QTimer m_query;
     /// The folder on screen, watched so it stays the folder on disk. One
     /// directory and never a tree: an inotify watch is a per-user resource, and

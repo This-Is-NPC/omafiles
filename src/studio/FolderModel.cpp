@@ -109,6 +109,20 @@ QString ownerOf(const QFileInfo &info)
     return *it;
 }
 
+// Every name the folder holds, hidden ones and the ones no path here can spell
+// included, read through the one reader the listing uses -- a count that
+// filters on what a stat says each entry is calls a folder of dangling symlinks
+// and fifos empty. -1 where the folder would not be read at all.
+int itemsIn(const QString &directory)
+{
+    int items = 0;
+    QStringList unnameable;
+    if (!visitDirectory(directory, [&items](QAnyStringView, unsigned char) { ++items; return true; },
+                        &unnameable, nullptr))
+        return -1;
+    return items + int(unnameable.size());
+}
+
 } // namespace
 
 FolderModel::FolderModel(QObject *parent, std::shared_ptr<const DirectoryWork> work)
@@ -382,7 +396,8 @@ QVariant FolderModel::data(const QModelIndex &index, int role) const
     case MarkedRole:
         return m_tab && m_tab->isMarked(row.path);
     case SizeTextRole:
-        return row.sizeText;
+        return row.kind == QLatin1String("dir") ? folderItemsText(index.row(), row.path)
+                                                : row.sizeText;
     case MtimeTextRole:
         return row.mtimeText;
     case CountRole:
@@ -782,22 +797,9 @@ QVariantMap FolderModel::entryAt(int row) const
         ? QStringLiteral("inode/directory")
         : mime.mimeTypeForFile(entry.path, QMimeDatabase::MatchDefault).name();
 
-    // Counted here and nowhere else: it costs an open() per directory, so it is
-    // paid for the one row under the cursor rather than for every row on every
-    // rebuild. On a big tree, or a network mount, the difference is the list
-    // being usable.
-    //
-    // Every name the folder holds, hidden ones and the ones no path here can
-    // spell included, read through the one reader the listing uses -- a count
-    // that filters on what a stat says each entry is calls a folder of dangling
-    // symlinks and fifos empty. -1 where the folder would not be read at all.
-    int items = -1;
-    if (directory && entry.kind != QLatin1String("parent")) {
-        QStringList names;
-        QStringList unnameable;
-        if (readDirectory(entry.path, &names, &unnameable, nullptr))
-            items = names.size() + unnameable.size();
-    }
+    // Counted again rather than read from the size column's cache: the panel
+    // says what the folder holds now, for the one row under the cursor.
+    const int items = directory && entry.kind != QLatin1String("parent") ? itemsIn(entry.path) : -1;
 
     return {{QStringLiteral("path"), entry.path},
             {QStringLiteral("items"), items},
@@ -885,7 +887,66 @@ void FolderModel::reload()
 {
     m_scanNeeded = true;
     m_metadata.clear();
+    forgetFolderItems();
     rebuild();
+}
+
+QString FolderModel::folderItemsText(int row, const QString &path) const
+{
+    if (const int *items = m_folderItems.object(path))
+        return *items < 0 ? QString() : countOf(*items, QStringLiteral("item"));
+    const bool asked = m_countAsked.contains(path);
+    m_countAsked.insert(path, row);
+    if (!asked) {
+        m_countWaiting.append(path);
+        if (!m_counting) {
+            m_counting = true;
+            QMetaObject::invokeMethod(const_cast<FolderModel *>(this), &FolderModel::countFolders,
+                                      Qt::QueuedConnection);
+        }
+    }
+    return QString();
+}
+
+void FolderModel::countFolders()
+{
+    const QStringList paths = std::exchange(m_countWaiting, {});
+    if (paths.isEmpty()) {
+        m_counting = false;
+        return;
+    }
+    const int generation = m_countGeneration;
+    using Counts = QVector<std::pair<QString, int>>;
+    auto *watcher = new QFutureWatcher<Counts>(this);
+    connect(watcher, &QFutureWatcher<Counts>::finished, this, [this, watcher, generation] {
+        const Counts counts = watcher->result();
+        watcher->deleteLater();
+        if (generation == m_countGeneration) {
+            for (const auto &[path, items] : counts) {
+                m_folderItems.insert(path, new int(items));
+                const int hint = m_countAsked.take(path);
+                const int row = pathAt(hint) == path ? hint : rowForPath(path);
+                if (row >= 0)
+                    emit dataChanged(index(row), index(row), {SizeTextRole});
+            }
+        }
+        countFolders();
+    });
+    watcher->setFuture(runBlocking([paths] {
+        Counts counts;
+        counts.reserve(paths.size());
+        for (const QString &path : paths)
+            counts.append({path, itemsIn(path)});
+        return counts;
+    }));
+}
+
+void FolderModel::forgetFolderItems()
+{
+    ++m_countGeneration;
+    m_folderItems.clear();
+    m_countAsked.clear();
+    m_countWaiting.clear();
 }
 
 bool FolderModel::lessThan(const Entry &a, const Entry &b, const QString &role, bool ascending)
@@ -1325,6 +1386,7 @@ void FolderModel::rebuild()
             m_rangeSize = -1;
             m_visible = atRoot() ? QVector<int>() : QVector<int>{-1};
             m_metadata.clear();
+            forgetFolderItems();
             m_directoryTagged = 0;
             m_error.clear();
             endResetModel();

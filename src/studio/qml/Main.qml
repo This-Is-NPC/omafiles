@@ -3530,10 +3530,14 @@ Window {
             readonly property bool keyboardHere: root.activeFocus
                                                  && Workspace.focusedPane === filesRoot.paneIndex
 
-            // The details table's geometry, in one place. A heading and the
-            // cells under it that each work out their own width are a heading
-            // and a column that do not line up.
+            // The columns' geometry, in one place, for the list and the details
+            // table alike. A heading and the cells under it that each work out
+            // their own width are a heading and a column that do not line up.
             readonly property real nameIndent: Theme.inset + Theme.iconSize + Theme.iconGap
+            // The list shows these after the name; the details table shows the
+            // ones chosen for it, under headings.
+            readonly property var chosenColumns: viewMode === "details"
+                                                 ? Workspace.columns : ["tags", "size", "mtime"]
             // The name has priority: it keeps at least `nameMinimum`, and the
             // chosen columns that do not fit beside it are dropped in
             // `dropOrder`. Past `nameMaximum` the extra goes to the tags.
@@ -3541,7 +3545,7 @@ Window {
             readonly property real nameMaximum: 420
             readonly property var dropOrder: ["mode", "owner", "mtime", "type", "size", "tags"]
             readonly property var shownColumns: {
-                let shown = Workspace.columns
+                let shown = filesRoot.chosenColumns
                 for (const field of filesRoot.dropOrder) {
                     if (filesRoot.nameWidthBeside(shown) >= filesRoot.nameMinimum)
                         break
@@ -3803,8 +3807,8 @@ Window {
                             required property int index
                             /// A facet row: a tag standing in for a folder. It
                             /// has no path, so nothing that acts on a file can
-                            /// reach it, and what it shows on the right is how
-                            /// many files it leads to rather than its own tags.
+                            /// reach it, and its size is how many files it
+                            /// leads to.
                             readonly property bool facet: row.kind === "tag"
                                                           || row.kind === "untagged"
                             readonly property string tally: row.count >= 0
@@ -3857,16 +3861,16 @@ Window {
                                 ink: row.kind === "file" ? Theme.dim : Theme.accent
                             }
 
-                            // Anchored between the icon and whatever is on the
-                            // right, rather than laid out in a Row: in a Row the
-                            // name takes a width guessed from the row width and
-                            // the tags run off the end of it.
+                            // Anchored between the icon and the columns, rather
+                            // than laid out in a Row: in a Row the name takes a
+                            // width guessed from the row width and the columns
+                            // run off the end of it.
                             Label {
                                 id: rowName
                                 objectName: "rowName"
                                 anchors.left: rowIcon.right
                                 anchors.leftMargin: Theme.iconGap
-                                anchors.right: row.details ? cells.left : tagArea.left
+                                anchors.right: cells.left
                                 anchors.rightMargin: Theme.spacingM
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: row.name
@@ -3877,14 +3881,13 @@ Window {
                             // each aligned as its heading is.
                             Row {
                                 id: cells
-                                visible: row.details
                                 anchors.right: parent.right
                                 anchors.rightMargin: Theme.inset
                                 anchors.verticalCenter: parent.verticalCenter
                                 spacing: Theme.spacingM
 
                                 Repeater {
-                                    model: row.details ? filesRoot.shownColumns : []
+                                    model: filesRoot.shownColumns
                                     Loader {
                                         id: columnCell
                                         objectName: "columnCell"
@@ -3899,7 +3902,6 @@ Window {
                                             id: tagCell
                                             TagStrip {
                                                 limit: filesRoot.tagsWidth
-                                                alignRight: false
                                                 tags: row.tagList
                                                 onActivated: function (tag) {
                                                     Workspace.focusedPane = filesRoot.paneIndex
@@ -3931,33 +3933,6 @@ Window {
                                             }
                                         }
                                     }
-                                }
-                            }
-
-                            // Floats at the end of the row rather than lining up
-                            // in a column: the list view has no columns to line
-                            // up with.
-                            Label {
-                                id: facetCount
-                                visible: !row.details && row.facet
-                                anchors.right: parent.right
-                                anchors.rightMargin: Theme.inset
-                                anchors.verticalCenter: parent.verticalCenter
-                                quiet: true
-                                text: row.tally
-                            }
-
-                            TagStrip {
-                                id: tagArea
-                                visible: !row.details && !row.facet
-                                anchors.right: parent.right
-                                anchors.rightMargin: Theme.inset
-                                anchors.verticalCenter: parent.verticalCenter
-                                limit: row.width * 0.4
-                                tags: row.tagList
-                                onActivated: function (tag) {
-                                    Workspace.focusedPane = filesRoot.paneIndex
-                                    Qt.callLater(win.startTagEdit, "remove", row.path, tag)
                                 }
                             }
 

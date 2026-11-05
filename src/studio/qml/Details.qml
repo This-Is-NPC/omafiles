@@ -188,8 +188,7 @@ Rectangle {
                     Value { text: details.has ? details.entry.mime : "" }
 
                     // A folder has no size, and the number worth having in its
-                    // place is what is in it. It is counted for this row only: a
-                    // column of them would be an open() per folder on every rebuild.
+                    // place is what is in it.
                     Fact { text: details.has && details.entry.directory ? "Items" : "Size" }
                     Value {
                         text: !details.has ? ""
