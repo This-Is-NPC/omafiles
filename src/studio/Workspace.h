@@ -133,7 +133,8 @@ public:
 
     Q_INVOKABLE void toggleHidden();
     Q_INVOKABLE void pickSortRole(const QString &role);
-    Q_INVOKABLE void cycleSortRole();
+    /// The sort menu's pick: a field and a direction in one change.
+    Q_INVOKABLE void setSort(const QString &role, bool ascending);
     Q_INVOKABLE void toggleSortDirection();
     /// Picking a new field starts it the way that field is usually read.
     Q_INVOKABLE static bool ascendingByDefault(const QString &role);
