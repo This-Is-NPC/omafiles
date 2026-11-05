@@ -2449,7 +2449,7 @@ Window {
                     id: sidebar
                     objectName: "sidebar"
                     Layout.fillHeight: true
-                    Layout.preferredWidth: 264
+                    Layout.preferredWidth: 268
                     // The panel belongs to both list tabs: the views in it are
                     // how you get anywhere, and a tags tab needs them as much
                     // as a folder does.
@@ -3441,25 +3441,25 @@ Window {
         }
     }
 
-    // A chevron at one end of a file view's scroll bar, pointing to the first
-    // row or, with `last`, the last. Not a Tab stop: Home and End are its keys.
-    component ScrollJump: Item {
+    // A button at one end of a file view's scroll bar, its chevron pointing to
+    // the first row or, with `last`, the last. Not a Tab stop: Home and End are
+    // its keys.
+    component ScrollJump: Chip {
         id: jump
         property bool last: false
-        signal activated
         width: parent.width
         height: Theme.chipHeight
-        Accessible.role: Accessible.Button
-        Accessible.name: jump.last ? "Last row" : "First row"
-        HoverHandler { id: jumpHover }
-        TapHandler { onTapped: jump.activated() }
+        tabFocusable: false
+        caption: jump.last ? "Last row" : "First row"
+        key: jump.last ? "End" : "Home"
+        Accessible.name: caption
         Icon {
             anchors.centerIn: parent
             width: jump.width
             height: jump.width
             kind: "chevron"
             rotation: jump.last ? 180 : 0
-            ink: jumpHover.hovered ? Theme.foreground : Theme.dim
+            ink: jump.ink
         }
     }
 
