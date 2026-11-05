@@ -19029,6 +19029,31 @@ void TestStudio::keepsTrashCursorOnReloadAndRestore()
     QVERIFY(list->property("currentIndex").toInt() > 0);
     key(Qt::Key_PageUp);
     QCOMPARE(list->property("currentIndex").toInt(), 0);
+    {
+        // A cursor moved while a refresh is in flight stays where it was moved.
+        QSemaphore entered, release;
+        std::atomic_bool hold = true;
+        auto releaseWorker = qScopeGuard([&] { release.release(); });
+        Trash::setMountProvider([&] {
+            if (hold.exchange(false)) {
+                entered.release();
+                release.acquire();
+            }
+            return QStringList{};
+        });
+        auto unhold = qScopeGuard([] { Trash::setMountProvider([] { return QStringList{}; }); });
+        model->reload();
+        QTRY_VERIFY(entered.available() > 0);
+        QVERIFY(model->loading());
+        QTest::keyClick(window(), Qt::Key_End);
+        QCOMPARE(list->property("currentIndex").toInt(), 46);
+        release.release();
+        QThreadPool::globalInstance()->waitForDone();
+    }
+    QTRY_VERIFY(!model->loading());
+    QCOMPARE(list->property("currentIndex").toInt(), 46);
+    key(Qt::Key_Home);
+    QCOMPARE(list->property("currentIndex").toInt(), 0);
     key('a');
     QCOMPARE(model->markedCount(), 47);
     key('A');
