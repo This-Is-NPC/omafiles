@@ -766,6 +766,7 @@ private slots:
     void detailsDockTogglesWithKey();
     void detailsPathBreaksAfterSlash();
     void detailsTagChipRemoveIsItsOwnTarget();
+    void detailsTagChipHandsOnFocusWhenRemoved();
     void dockActionsRunTheirCommands();
     void detailsDockYieldsInShortWindows();
     void detailsModeRowDropsWhenNarrow();
@@ -1266,10 +1267,12 @@ void TestStudio::shot(const QString &name, Shot kind)
     QTest::mouseMove(window(), QPoint(int(window()->width() * 0.35),
                                       int(window()->height() * 0.85)));
 
-    // Long enough for the colour transitions to land, and for a tooltip asked
-    // for earlier to have gone. Without the wait the picture catches every
-    // control mid-fade and reads as though the bindings were stale.
-    QTest::qWait(320);
+    // Taken once no tooltip asked for earlier is open or fading out.
+    QTRY_VERIFY([&] {
+        for (auto *tip : window()->findChildren<QObject *>(QStringLiteral("controlTooltip")))
+            if (tip->property("visible").toBool()) return false;
+        return true;
+    }());
     const QImage image = window()->grabWindow();
     QVERIFY(!image.isNull());
     QVERIFY(image.save(dir + QLatin1Char('/') + name + QStringLiteral(".png")));
@@ -2308,7 +2311,8 @@ void TestStudio::saysWhenNothingInTheIndexCanBeReached()
     settle();
     const auto graphShot = [this] {
         settle();
-        QTest::qWait(60);
+        QTest::qVerify(QQuickTest::qWaitForPolish(window(), asyncTimeout), "qWaitForPolish", "",
+                       __FILE__, __LINE__);
         const QImage shot = window()->grabWindow();
         return shot.copy(QRect(20, 110, qMax(10, shot.width() - 320),
                                qMax(10, shot.height() - 170)));
@@ -3243,9 +3247,9 @@ void TestStudio::picksAGraphNodeWithTheMouse()
     QVERIFY(item);
 
     // The layout is computed from the item's size, so a node's position is only
-    // meaningful once that size is final. Forcing a frame settles it, so the
-    // position read and the position clicked belong to the same layout.
-    QTest::qWait(80);
+    // meaningful once that size is final. Polishing and forcing a frame settle
+    // it, so the position read and the position clicked belong to the same layout.
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
     window()->grabWindow();
     QTRY_VERIFY(item->width() > 100 && item->height() > 100);
     const QSizeF laidOutAt(item->width(), item->height());
@@ -3302,7 +3306,8 @@ void TestStudio::drawsEveryView()
     // sidebar, above the details dock. Generous margins, so it holds no chrome.
     const auto contentInk = [this] {
         settle();
-        QTest::qWait(60);
+        QTest::qVerify(QQuickTest::qWaitForPolish(window(), asyncTimeout), "qWaitForPolish", "",
+                       __FILE__, __LINE__);
         const QImage shot = window()->grabWindow();
         auto *pane = itemsNamed(QStringLiteral("pane")).first();
         const QRect area(int(pane->mapToScene(QPointF()).x()) + 20, 110,
@@ -3408,7 +3413,7 @@ void TestStudio::clickingARowFocusesItsPane()
     // Aimed at the pane itself, not at a fraction of the window. The split is
     // laid out on a later frame than the one `settle` pumps, so a hardcoded
     // point could be measured against a layout that has not happened yet.
-    QTest::qWait(80);
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
     window()->grabWindow();
     const auto panes = [this] { return itemsNamed(QStringLiteral("pane")); };
     QTRY_COMPARE(panes().size(), 2);
@@ -3590,7 +3595,7 @@ void TestStudio::paintsTheGraphOnTheThemeBackground()
         root->property("activeGraph").value<QObject *>());
     QVERIFY(graph);
 
-    QTest::qWait(60);
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
     const QImage shot = window()->grabWindow();
     if (shot.isNull())
         QSKIP("grabWindow returned a null image");
@@ -3634,7 +3639,7 @@ void TestStudio::paintsTheFolderOnTheThemeBackground()
     QVERIFY2(!panes.isEmpty(), "no pane to sample");
     QQuickItem *pane = panes.first();
 
-    QTest::qWait(60);
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
     const QImage shot = window()->grabWindow();
     if (shot.isNull())
         QSKIP("grabWindow returned a null image");
@@ -4262,7 +4267,7 @@ void TestStudio::survivesClosingAPaneWithoutComplaint()
     // `settle` only spins the event loop, so the render is forced while still
     // listening.
     window()->grabWindow();
-    QTest::qWait(60);
+    QTRY_COMPARE(itemsNamed(QStringLiteral("pane")).size(), 1);
     settle();
     window()->grabWindow();
     settle();
@@ -10099,6 +10104,39 @@ void TestStudio::detailsTagChipRemoveIsItsOwnTarget()
     QMetaObject::invokeMethod(window(), "takeFocus");
 }
 
+// A dock tag chip that has the keyboard and goes with the row under the cursor
+// hands the keyboard on to the next control, which draws the one ring.
+void TestStudio::detailsTagChipHandsOnFocusWhenRemoved()
+{
+    const auto restore = qScopeGuard([&] { QMetaObject::invokeMethod(window(), "takeFocus"); settle(); });
+    const auto shownRings = [&] {
+        int shown = 0;
+        for (auto *ring : itemsNamed(QStringLiteral("focusRing")))
+            if (ring->isVisible()) ++shown;
+        return shown;
+    };
+    for (const QString &next : {QStringLiteral("two.md"), QStringLiteral("plain.txt")}) {
+        focusRow(QStringLiteral("six.md"));
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        QQuickItem *chip = nullptr;
+        for (auto *item : itemsNamed(QStringLiteral("detailsTagChip")))
+            if (item->isVisible() && item->property("modelData").toString() == QLatin1String("work"))
+                chip = item;
+        QVERIFY(chip);
+        chip->forceActiveFocus(Qt::TabFocusReason);
+        QTRY_VERIFY(chip->hasActiveFocus());
+        QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(rowOf(next))));
+        settle();
+        QCOMPARE(filesRoot()->property("entry").toMap().value(QStringLiteral("name")).toString(), next);
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        QQuickItem *focus = window()->activeFocusItem();
+        QVERIFY2(focus && focus != window()->contentItem() && focus->isVisible(), qPrintable(next));
+        QCOMPARE(focus->objectName(), QStringLiteral("detailsAddTag"));
+        QCOMPARE(shownRings(), 1);
+        QTRY_VERIFY(hasFocusOutline(window(), focus, m_theme->accent()));
+    }
+}
+
 // A window too short to keep `listLeast` of panes above the details dock drops
 // the dock, and it comes back when the window is tall again.
 void TestStudio::detailsDockYieldsInShortWindows()
@@ -11198,6 +11236,7 @@ static bool tapItem(QQuickWindow *window, QQuickItem *item, bool hold = false, b
     if (!QQuickTest::qWaitForPolish(window, asyncTimeout) || !target)
         return false;
     const QPoint at = target->mapToScene(QPointF(target->width() / 2, target->height() / 2)).toPoint();
+    // How long the point stays down: past the press-and-hold interval, or a tap.
     const int delay = hold ? QGuiApplication::styleHints()->mousePressAndHoldInterval() + 150 : 30;
     const auto tablet = [&](bool pressed) {
         QTabletEvent event(pressed ? QEvent::TabletPress : QEvent::TabletRelease, &pen,
@@ -11285,7 +11324,10 @@ void TestStudio::exportsNativeFileDragsWithoutDeletingSources()
             QInputDevice::Capability::Position | QInputDevice::Capability::Pressure, 1, 1);
         for (int input = 0; input < 3; ++input) {
             urls.clear();
-            QTest::qWait(20);
+            // The last drag has let go of the grip.
+            QTRY_VERIFY(std::none_of(grip->children().cbegin(), grip->children().cend(), [](QObject *handler) {
+                return handler->inherits("QQuickDragHandler") && handler->property("active").toBool();
+            }));
             if (input == 0) {
                 pressAndDrag(window(), start, start + QPointF(60, 15));
                 settle();
@@ -11295,6 +11337,7 @@ void TestStudio::exportsNativeFileDragsWithoutDeletingSources()
                 sequence.press(0, start.toPoint(), window()).commit();
                 for (int distance : {10, 30, 60}) {
                     sequence.move(0, (start + QPointF(distance, 15)).toPoint(), window()).commit();
+                    // The drag's pace: 20 ms between moves, as a finger moves.
                     QTest::qWait(20);
                 }
                 sequence.release(0, (start + QPointF(60, 15)).toPoint(), window()).commit();
@@ -11312,6 +11355,7 @@ void TestStudio::exportsNativeFileDragsWithoutDeletingSources()
                 sendPen(QEvent::TabletPress, start, 0);
                 for (int distance : {10, 30, 60}) {
                     sendPen(QEvent::TabletMove, start + QPointF(distance, 15), distance);
+                    // The drag's pace: 20 ms between moves, as a pen moves.
                     QTest::qWait(20);
                 }
                 sendPen(QEvent::TabletRelease, start + QPointF(60, 15), 70);
@@ -12010,6 +12054,7 @@ static void dragOverlayContent(QQuickWindow *window, QQuickItem *view, qreal y =
     sequence.press(0, start, window).commit();
     for (int distance : {20, 50, 90, 140}) {
         sequence.move(0, start - QPoint(0, distance), window).commit();
+        // The drag's pace: 20 ms between moves, as a finger moves.
         QTest::qWait(20);
     }
     sequence.release(0, start - QPoint(0, 140), window).commit();
@@ -13300,6 +13345,7 @@ void TestStudio::scrollsBoundedSheetsAndTooltips()
     QVERIFY(tipScroll);
     const QPoint inTip = tipScroll->mapToScene(QPointF(tipScroll->width() / 2, tipScroll->height() / 2)).toPoint();
     QTest::mouseMove(window(), inTip);
+    // Past the tip's 200 ms exit delay, which closes it unless the pointer is in it.
     QTest::qWait(250);
     QVERIFY(hoverTip->property("opened").toBool());
     QWheelEvent tipWheel(inTip, window()->mapToGlobal(inTip), {}, QPoint(0, -120),
@@ -13319,6 +13365,7 @@ void TestStudio::scrollsBoundedSheetsAndTooltips()
     control->setEnabled(true);
     QMetaObject::invokeMethod(hoverTip, "request", Q_ARG(QVariant, QVariant::fromValue(control.data())));
     control->setEnabled(false);
+    // Past the tip's 480 ms open delay, so a request that was not taken back shows.
     QTest::qWait(500);
     QVERIFY(!hoverTip->property("visible").toBool());
     m_workspace->propertiesRequested(QString("A property with a detailed value.\n").repeated(200));
@@ -13424,7 +13471,7 @@ void TestStudio::keepsSidebarSelectionVisibleInSmallWindows()
     settle();
     QTRY_VERIFY(visible(list->property("currentItem").value<QQuickItem *>()));
     QVERIFY(visible(heading));
-    QTest::qWait(400);
+    QTRY_VERIFY(!scroll->property("moving").toBool());
     QVERIFY(sidebar->isVisible());
     scroll->setProperty("contentY", 0);
     const QPoint point = scroll->mapToScene(QPointF(20, 30)).toPoint();
@@ -13434,6 +13481,7 @@ void TestStudio::keepsSidebarSelectionVisibleInSmallWindows()
     QTRY_VERIFY(scroll->property("contentY").toReal() > 0);
     scroll->setProperty("contentY", 0);
     QMetaObject::invokeMethod(scroll, "cancelFlick");
+    // Long enough for a flick that was not cancelled to move the list a frame.
     QTest::qWait(30);
     QCOMPARE(scroll->property("contentY").toReal(), 0);
     verbRuns().clear();
@@ -16983,7 +17031,7 @@ void TestStudio::activatesFooterHintsByTouchAndKeyboard()
     auto *cancel = hint("cancel"); QVERIFY(cancel);
     QVERIFY(tapItem(window(), cancel)); settle();
     QVERIFY(window()->property("prompt").toString().isEmpty());
-    QTest::qWait(150);
+    QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
     for (auto *item : itemsNamed("hintAction")) {
         if (!item->isVisible()) continue;
         QVERIFY(item->isEnabled());
@@ -17003,10 +17051,12 @@ void TestStudio::cancelsRowHoldOnMovement()
     QPoint at = row->mapToScene(QPointF(row->width() - 80, row->height() / 2)).toPoint();
     sequence.press(0, at, window()).commit();
     sequence.move(0, at - QPoint(40, 0), window()).commit();
+    // Held past the press-and-hold interval.
     QTest::qWait(QGuiApplication::styleHints()->mousePressAndHoldInterval() + 150);
     sequence.release(0, at - QPoint(40, 0), window()).commit(); settle();
     QVERIFY(!itemsNamed("fileMenu").first()->isVisible());
     QTest::mousePress(window(), Qt::LeftButton, {}, at);
+    // Held past the press-and-hold interval.
     QTest::qWait(QGuiApplication::styleHints()->mousePressAndHoldInterval() + 150);
     QVERIFY(!itemsNamed("fileMenu").first()->isVisible());
     QTest::mouseRelease(window(), Qt::LeftButton, {}, at);
