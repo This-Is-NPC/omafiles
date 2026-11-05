@@ -289,16 +289,10 @@ void TabState::setSortAscending(bool ascending)
     emit sortChanged();
 }
 
-// The keyboard equivalent of clicking the sort chips in turn.
-//
-// It walks the fields in the order the table lays them out, left to right: the
-// key, the row of chips and the columns are one ordering of the same five
-// things, so pressing the key twice lands where the eye expects.
-//
-// Which way each one starts is not a detail: name, tags and type go up, because
-// that is the reading order of a directory, a vocabulary and an alphabet; size
-// and date go down, because the row you want from those is the biggest or the
-// newest one.
+// A column heading's click: the same field flips the direction, and a new one
+// starts the way that field is read. Name, tags and type go up, because that is
+// the reading order of a directory, a vocabulary and an alphabet; size and date
+// go down, because the row you want from those is the biggest or the newest one.
 void TabState::pickSortRole(const QString &role)
 {
     const QString valid = validSortRole(role);
@@ -311,14 +305,14 @@ void TabState::pickSortRole(const QString &role)
     emit sortChanged();
 }
 
-void TabState::cycleSortRole()
+void TabState::setSort(const QString &role, bool ascending)
 {
-    const QString next = m_sortRole == QLatin1String("name")  ? QStringLiteral("tags")
-                       : m_sortRole == QLatin1String("tags")  ? QStringLiteral("type")
-                       : m_sortRole == QLatin1String("type")  ? QStringLiteral("size")
-                       : m_sortRole == QLatin1String("size")  ? QStringLiteral("mtime")
-                                                              : QStringLiteral("name");
-    pickSortRole(next);
+    const QString valid = validSortRole(role);
+    if (m_sortRole == valid && m_sortAscending == ascending)
+        return;
+    m_sortRole = valid;
+    m_sortAscending = ascending;
+    emit sortChanged();
 }
 
 bool TabState::ascendingByDefault(const QString &role)

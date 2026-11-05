@@ -249,7 +249,7 @@ Window {
                                     && activeTab.kind === "graph" && activeGraph !== null
     readonly property var overlays: [filterBar, pathField, commandPalette, helpSheet, previewSheet,
         fileMenu, tabMenu, openWithMenu, scriptsMenu, viewMenu, deviceMenu, tagMenu, modeSheet, tagSheet, conflictSheet, archiveSheet,
-        filterMenu, columnMenu, newTabMenu, trashMenu, trashEmptyMenu].concat(receiptDialogs)
+        filterMenu, columnMenu, newTabMenu, sortMenu, trashMenu, trashEmptyMenu].concat(receiptDialogs)
     property var overlayStack: []
     property Item overlayOrigin: null
     property int overlayRevision: 0
@@ -423,7 +423,7 @@ Window {
             { key: "3", label: "icons" },
             { key: ". / Ctrl h", label: "hidden files" },
             { key: "I", label: "details dock" },
-            { key: "s", label: "name, tags, type, size, modified, each the way it reads" },
+            { key: "s", label: "sort menu" },
             { key: "S", label: "flip the direction" } ] },
         { title: "edit", keys: [
             { key: "Ctrl z", label: "undo the last operation" },
@@ -546,6 +546,7 @@ Window {
                 { key: "Space", label: "mark" },
                 { key: "v", label: "views" },
                 { key: "t", label: "tags" },
+                { key: "s", label: "sort menu" },
                 { key: "/", label: "filter" },
                 { key: "m", label: "menu" },
                 { key: "h", label: "up" },
@@ -606,10 +607,28 @@ Window {
             activeTab.goForward()
     }
 
-    // What the sort button and `s` do: the next sort key.
+    /// The sort menu's keys, in its order; `label` is also the sort button's.
+    readonly property var sortKeys: [
+        { role: "name", label: "Name", key: "n" },
+        { role: "type", label: "Type", key: "t" },
+        { role: "size", label: "Size", key: "z" },
+        { role: "mtime", label: "Modified", key: "m" },
+        { role: "tags", label: "Tags", key: "g" }
+    ]
+    function sortLabel(role) {
+        return sortKeys.find(function (entry) { return entry.role === role }).label
+    }
+
+    // What the sort button and `s` do: open the sort menu under the button,
+    // its right edge on the button's.
     function chooseSort() {
-        if (activeTab)
-            activeTab.cycleSortRole()
+        if (!activeTab)
+            return
+        const anchor = sortButton.visible ? sortButton : toolbar
+        const at = anchor.mapToItem(root, anchor.width, 0)
+        sortMenu.openBelow(at.x, at.y, at.y + anchor.height)
+        sortMenu.panel.x = at.x - sortMenu.panel.width
+        sortMenu.clampPanel()
     }
 
     function startFilter() {
@@ -2336,16 +2355,17 @@ Window {
                         }
                     }
 
-                    // The sort key and direction; it does what `s` does.
+                    // The sort key and direction; it opens the sort menu, as `s` does.
                     Chip {
                         id: sortButton
                         objectName: "sortButton"
                         visible: toolbar.onFolder
-                        label: toolbar.tab ? win.columnLabel(toolbar.tab.sortRole)
+                        label: toolbar.tab ? win.sortLabel(toolbar.tab.sortRole)
                                              + (toolbar.tab.sortAscending ? " ↑" : " ↓") + " ⌄" : ""
-                        caption: "Sort"
+                        caption: "Sort menu"
                         key: "s"
                         showsKey: true
+                        on: sortMenu.visible
                         onClicked: win.chooseSort()
                     }
 
@@ -2689,11 +2709,7 @@ Window {
                 { id: "view-icons", label: "View as icons", key: "3" },
                 { id: "hidden", label: "Show hidden files", key: "." },
                 { id: "toggle-details", label: "Show or hide details", key: "I" },
-                { id: "sort-name", label: "Sort by name", key: "s" },
-                { id: "sort-tags", label: "Sort by tag, untagged last", key: "s" },
-                { id: "sort-type", label: "Sort by type", key: "s" },
-                { id: "sort-size", label: "Sort by size", key: "s" },
-                { id: "sort-mtime", label: "Sort by modified", key: "s" },
+                { id: "sort-menu", label: "Sort menu", key: "s" },
                 { id: "sort-flip", label: "Flip sort direction", key: "S" },
                 { id: "make-default", label: "Make omafiles the default file manager", key: "" },
                 { id: "undo", label: IndexModel.undoLabel, key: "Ctrl z" },
@@ -2749,11 +2765,7 @@ Window {
                 case "view-details": if (win.activeTab) win.activeTab.viewMode = "details"; break
                 case "view-icons": if (win.activeTab) win.activeTab.viewMode = "icons"; break
                 case "hidden": if (win.activeTab) win.activeTab.toggleHidden(); break
-                case "sort-name": if (win.activeTab) win.activeTab.pickSortRole("name"); break
-                case "sort-type": if (win.activeTab) win.activeTab.pickSortRole("type"); break
-                case "sort-size": if (win.activeTab) win.activeTab.pickSortRole("size"); break
-                case "sort-mtime": if (win.activeTab) win.activeTab.pickSortRole("mtime"); break
-                case "sort-tags": if (win.activeTab) win.activeTab.pickSortRole("tags"); break
+                case "sort-menu": Qt.callLater(win.chooseSort); break
                 case "sort-flip": if (win.activeTab) win.activeTab.toggleSortDirection(); break
                 case "make-default": IndexModel.makeDefaultFileManager(); break
                 case "keys":
@@ -3335,6 +3347,34 @@ Window {
             ] : []
             onChosen: function (id) {
                 if (id === "empty" && win.onTrash) win.activeTrash.model.empty()
+            }
+        }
+
+        // The focused tab's sort: a key with the direction it reads in, or a
+        // direction for the key it has.
+        ContextMenu {
+            id: sortMenu
+            objectName: "sortMenu"
+            anchors.fill: parent
+            heading: "Sort by"
+            picksByKey: true
+            readonly property var tab: win.activeTab
+            actions: sortMenu.tab ? win.sortKeys.map(function (entry) {
+                return { id: entry.role, label: entry.label, key: entry.key,
+                         checked: sortMenu.tab.sortRole === entry.role }
+            }).concat([
+                { id: "ascending", label: "Ascending ↑", key: "a",
+                  checked: sortMenu.tab.sortAscending, opensGroup: true },
+                { id: "descending", label: "Descending ↓", key: "d",
+                  checked: !sortMenu.tab.sortAscending }
+            ]) : []
+            onChosen: function (id) {
+                if (!sortMenu.tab)
+                    return
+                if (id === "ascending" || id === "descending")
+                    sortMenu.tab.setSort(sortMenu.tab.sortRole, id === "ascending")
+                else
+                    sortMenu.tab.setSort(id, sortMenu.tab.ascendingByDefault(id))
             }
         }
 

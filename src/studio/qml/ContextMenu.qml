@@ -7,6 +7,10 @@ Item {
     id: menu
 
     property var actions: []
+    /// A caption above the rows, not a row of its own.
+    property string heading: ""
+    /// A letter that is a shown row's key chooses that row.
+    property bool picksByKey: false
     property ListView list: null
     property Rectangle panel: null
     property TextMetrics labelRuler: null
@@ -21,7 +25,8 @@ Item {
     visible: false
     z: 90
 
-    // An action with `opensGroup` starts a group. The first entry shown from
+    // An action with `checked` is a radio item, and the menu opens on the
+    // first checked one. An action with `opensGroup` starts a group. The first entry shown from
     // a group after another group carries `separated`, and its row draws the
     // separator, so a separator is never a row of its own.
     readonly property var shown: {
@@ -50,6 +55,16 @@ Item {
         panel.y = Math.max(margin, Math.min(panel.y, menu.height - panel.height - margin))
     }
 
+    /// The row the cursor opens on: the first checked radio item, else the first row.
+    function openingRow() {
+        const checked = menu.shown.findIndex(function (item) { return item.checked === true })
+        return checked >= 0 ? checked : (menu.shown.length > 0 ? 0 : -1)
+    }
+
+    readonly property real radioSpace: menu.shown.some(function (item) { return item.checked !== undefined })
+                                       ? Theme.iconSize + Theme.iconGap : 0
+    readonly property real headingSpace: menu.heading !== "" ? Theme.headingHeight : 0
+
     // Measure labels without instantiating offscreen delegates; the keys are
     // measured by the key ruler, which holds only their caps.
     function panelWidth() {
@@ -59,7 +74,7 @@ Item {
             widest = Math.max(widest, labelRuler.advanceWidth)
         }
         const keys = keyRuler.implicitWidth
-        return Math.max(200, Math.ceil(widest + (keys > 0 ? keys + Theme.spacingL : 0))
+        return Math.max(200, Math.ceil(menu.radioSpace + widest + (keys > 0 ? keys + Theme.spacingL : 0))
                              + 2 * (Theme.spacingXs + Theme.spacingS) + Theme.scrollBarWidth)
     }
 
@@ -69,7 +84,7 @@ Item {
         panel.x = x
         panel.y = y
         menu.lastPointer = Qt.point(-1, -1)
-        list.currentIndex = menu.shown.length > 0 ? 0 : -1
+        list.currentIndex = menu.openingRow()
         visible = true
         clampPanel()
         focusTarget.forceActiveFocus()
@@ -87,6 +102,15 @@ Item {
 
     function close() {
         visible = false
+    }
+
+    function chooseKey(text) {
+        const row = menu.shown.findIndex(function (item) { return item.key === text })
+        if (row < 0)
+            return false
+        list.currentIndex = row
+        menu.chooseCurrent()
+        return true
     }
 
     function chooseCurrent() {
@@ -147,7 +171,11 @@ Item {
             Keys.onPressed: function (event) {
                 if (list.handleKey(event))
                     return
-                if (event.key === Qt.Key_Escape) {
+                if (menu.picksByKey && event.text !== ""
+                    && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier))
+                    && menu.chooseKey(event.text)) {
+                    event.accepted = true
+                } else if (event.key === Qt.Key_Escape) {
                     menu.close()
                     event.accepted = true
                 } else if (event.key === Qt.Key_Down
@@ -171,8 +199,8 @@ Item {
                 id: panel
                 z: 1
                 width: 200
-                height: list.wholeRows(menu.height - 2 * (Theme.inset + Theme.spacingXs))
-                        + 2 * Theme.spacingXs
+                height: list.wholeRows(menu.height - 2 * (Theme.inset + Theme.spacingXs) - menu.headingSpace)
+                        + 2 * Theme.spacingXs + menu.headingSpace
                 onHeightChanged: menu.clampPanel()
                 radius: Theme.rounding
                 color: Theme.raised
@@ -187,6 +215,26 @@ Item {
                     onClicked: function (mouse) { mouse.accepted = true }
                 }
 
+                Text {
+                    id: headingText
+                    objectName: "menuHeading"
+                    visible: menu.heading !== ""
+                    anchors.top: parent.top
+                    anchors.topMargin: Theme.spacingXs
+                    anchors.left: parent.left
+                    anchors.leftMargin: Theme.spacingXs + Theme.spacingS
+                    height: menu.headingSpace
+                    verticalAlignment: Text.AlignVCenter
+                    text: menu.heading
+                    textFormat: Text.PlainText
+                    color: Theme.dim
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontHeading
+                    font.weight: Font.DemiBold
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: menu.heading
+                }
+
                 OverlayList {
                     highlightMoveDuration: 0
                     highlightResizeDuration: 0
@@ -194,10 +242,11 @@ Item {
                     id: list
                     anchors.fill: parent
                     anchors.margins: Theme.spacingXs
+                    anchors.topMargin: Theme.spacingXs + menu.headingSpace
                     clip: true
                     model: menu.visible ? menu.shown : []
                     currentIndex: 0
-                    onModelChanged: currentIndex = menu.shown.length > 0 ? 0 : -1
+                    onModelChanged: currentIndex = menu.openingRow()
                     onContentHeightChanged: menu.clampPanel()
                     Accessible.role: Accessible.List
 
@@ -212,11 +261,36 @@ Item {
                                ? Theme.cursor : Theme.raised
                         Accessible.role: Accessible.MenuItem
                         Accessible.name: itemRow.modelData.label
+                        Accessible.checkable: itemRow.radio
+                        Accessible.checked: itemRow.modelData.checked === true
+                        readonly property bool radio: itemRow.modelData.checked !== undefined
 
                         Rule {
                             objectName: "menuSeparator"
                             visible: itemRow.modelData.separated
                             anchors.top: parent.top
+                        }
+
+                        Rectangle {
+                            objectName: "menuRadio"
+                            visible: itemRow.radio
+                            anchors.left: parent.left
+                            anchors.leftMargin: Theme.spacingS
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Theme.iconSize - Theme.spacingXs
+                            height: width
+                            radius: width / 2
+                            color: Theme.base
+                            border.width: 1
+                            border.color: itemRow.modelData.checked === true ? Theme.accent : Theme.dim
+                            Rectangle {
+                                anchors.centerIn: parent
+                                visible: itemRow.modelData.checked === true
+                                width: parent.width / 2
+                                height: width
+                                radius: width / 2
+                                color: Theme.accent
+                            }
                         }
 
                         Text {
@@ -227,7 +301,7 @@ Item {
                             elide: Text.ElideRight
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.left: parent.left
-                            anchors.leftMargin: Theme.spacingS
+                            anchors.leftMargin: Theme.spacingS + menu.radioSpace
                             text: itemRow.modelData.label
                             color: Theme.foreground
                             font.family: Theme.fontFamily
