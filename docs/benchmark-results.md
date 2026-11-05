@@ -8,14 +8,14 @@ timings are diagnostic only.
 
 | | |
 |---|---|
-| Product | `162a1d8` |
-| Date | 2026-11-03, 18:29–18:43 UTC |
+| Product | `e5484bd` |
+| Date | 2026-11-05, 22:12–22:25 UTC |
 | CPU | AMD Ryzen AI 5 340 w/ Radeon 840M, CPUs 0 (A) and 0–1 (B); memory observer on CPU 2 |
 | Kernel | 7.2.8-9-omarchy, x86_64 |
-| Host load | 1.83–5.98 one-minute host-wide average when each of the 100 sessions started, median 3.63 |
+| Host load | 2.13–5.96 one-minute host-wide average when each of the 100 sessions started, median 3.44 |
 
 ```sh
-scripts/bench --output /tmp/omafiles-bench/head-result.json.gz
+scripts/bench --build build/bin --output /tmp/omafiles-bench/head-result.json.gz
 ```
 
 The defaults chose CPUs 0 and 1, a load threshold of 6.0 and the memory
@@ -23,44 +23,44 @@ observer on CPU 2.
 
 | Fixture | Metric | A: 1 CPU, 512 MB | B: 2 CPU, 1 GB |
 |---|---|---:|---:|
-| 1000 | first complete frame (ms) | 62.9 (59.5–76.4) | 59.9 (57.0–133.3) |
-| 1000 | filter (ms) | 9.4 (6.5–16.5) | 6.1 (5.0–7.1) |
-| 1000 | wheel scroll (ms) | 8.2 (7.6–9.0) | 7.9 (7.1–8.4) |
-| 1000 | GUI peak RSS (MiB) | 78.9 (78.7–78.9) | 78.9 (78.5–79.1) |
-| 1000 | process-tree peak RSS (MiB) | 87.8 (87.6–87.9) | 87.8 (87.5–88.1) |
-| 1000 | settle (ms) | 623.2 (597.5–785.3) | 686.7 (595.1–761.9) |
+| 1000 | first complete frame (ms) | 72.7 (72.0–84.5) | 70.6 (68.4–71.2) |
+| 1000 | filter (ms) | 7.1 (5.7–9.5) | 6.7 (5.6–8.5) |
+| 1000 | wheel scroll (ms) | 8.4 (7.6–11.2) | 7.9 (7.5–8.3) |
+| 1000 | GUI peak RSS (MiB) | 81.7 (81.4–81.9) | 81.6 (81.4–81.8) |
+| 1000 | process-tree peak RSS (MiB) | 90.6 (90.4–90.8) | 90.5 (90.3–90.8) |
+| 1000 | settle (ms) | 619.4 (615.3–782.5) | 618.3 (615.6–783.2) |
 | 1000 | idle CPU (%) | 0.0 (0.0–0.0) | 0.0 (0.0–0.0) |
-| 10000 | first complete frame (ms) | 61.4 (59.4–117.4) | 57.3 (56.3–58.0) |
-| 10000 | filter (ms) | 8.5 (5.4–15.4) | 7.0 (5.8–11.3) |
-| 10000 | wheel scroll (ms) | 8.3 (7.5–8.8) | 7.9 (7.6–9.1) |
-| 10000 | GUI peak RSS (MiB) | 79.0 (78.6–79.5) | 79.1 (79.0–79.2) |
-| 10000 | process-tree peak RSS (MiB) | 88.0 (87.5–88.4) | 88.1 (87.9–88.1) |
-| 10000 | settle (ms) | 764.6 (599.6–831.4) | 761.0 (595.2–762.5) |
+| 10000 | first complete frame (ms) | 72.7 (69.6–73.8) | 71.3 (66.8–103.3) |
+| 10000 | filter (ms) | 7.4 (6.0–8.1) | 6.3 (5.9–7.7) |
+| 10000 | wheel scroll (ms) | 8.6 (8.1–9.2) | 8.9 (7.9–9.3) |
+| 10000 | GUI peak RSS (MiB) | 81.7 (81.6–82.0) | 82.0 (81.8–82.0), 4 of 5 |
+| 10000 | process-tree peak RSS (MiB) | 90.7 (90.5–91.0) | 90.9 (90.6–91.0), 4 of 5 |
+| 10000 | settle (ms) | 782.2 (620.1–785.8) | 781.2 (597.6–807.7) |
 | 10000 | idle CPU (%) | 0.0 (0.0–0.0) | 0.0 (0.0–0.0) |
-| 100000 | first complete frame (ms) | 75.1 (65.8–107.9) | 69.4 (59.4–107.7) |
-| 100000 | filter (ms) | 9.7 (9.5–12.3) | 9.7 (6.1–16.2) |
-| 100000 | wheel scroll (ms) | 8.1 (7.8–8.5) | 7.7 (7.5–9.0) |
-| 100000 | GUI peak RSS (MiB) | 80.7 (80.5–81.0) | 81.0 (80.7–81.2) |
-| 100000 | process-tree peak RSS (MiB) | 89.8 (89.6–142.1) | 90.0 (89.5–142.2) |
-| 100000 | settle (ms) | 619.2 (617.6–806.1) | 779.5 (682.8–785.6) |
+| 100000 | first complete frame (ms) | 95.1 (78.8–147.6) | 79.3 (72.5–161.3) |
+| 100000 | filter (ms) | 14.0 (9.9–15.1) | 6.2 (6.0–13.7) |
+| 100000 | wheel scroll (ms) | 8.2 (7.8–9.9) | 8.2 (7.7–11.0) |
+| 100000 | GUI peak RSS (MiB) | 83.9 (83.7–84.2), 3 of 5 | 83.9 (83.7–84.0), 4 of 5 |
+| 100000 | process-tree peak RSS (MiB) | 92.8 (92.7–93.0), 3 of 5 | 148.6 (92.8–149.3), 4 of 5 |
+| 100000 | settle (ms) | 807.7 (707.2–823.9) | 789.8 (782.1–903.9) |
 | 100000 | idle CPU (%) | 0.0 (0.0–0.0) | 0.0 (0.0–0.0) |
-| 1000000 | first complete frame (ms) | 69.9 (67.5–71.5) | 60.6 (59.1–64.2) |
-| 1000000 | filter (ms) | 14.3 (11.6–16.1) | 11.7 (9.9–18.6) |
-| 1000000 | wheel scroll (ms) | 8.0 (7.2–8.6) | 8.0 (7.7–9.7) |
-| 1000000 | GUI peak RSS (MiB) | 98.1 (97.9–98.3) | 98.1 (97.9–98.4) |
-| 1000000 | process-tree peak RSS (MiB) | 107.0 (106.9–142.7) | 107.0 (107.0–107.5) |
-| 1000000 | settle (ms) | 802.5 (782.6–803.6) | 761.7 (724.7–868.3) |
+| 1000000 | first complete frame (ms) | 88.0 (83.1–137.8) | 92.3 (70.0–96.0) |
+| 1000000 | filter (ms) | 17.0 (12.4–27.4) | 18.9 (10.5–21.7) |
+| 1000000 | wheel scroll (ms) | 8.6 (7.8–9.7) | 9.5 (7.3–9.9) |
+| 1000000 | GUI peak RSS (MiB) | 100.7 (100.4–101.0), 3 of 5 | 100.7 (100.6–101.2), 4 of 5 |
+| 1000000 | process-tree peak RSS (MiB) | 109.9 (109.4–151.4), 3 of 5 | 109.7 (109.6–110.2), 4 of 5 |
+| 1000000 | settle (ms) | 828.0 (823.3–912.2) | 848.3 (763.0–867.5) |
 | 1000000 | idle CPU (%) | 0.0 (0.0–0.0) | 0.0 (0.0–0.0) |
-| images-2000 | first complete frame (ms) | 62.8 (60.9–119.6) | 59.3 (58.2–79.4) |
-| images-2000 | filter (ms) | 14.5 (5.4–22.0) | 7.3 (6.0–10.3) |
-| images-2000 | wheel scroll (ms) | 8.6 (7.1–9.5) | 7.7 (6.9–8.6) |
-| images-2000 | GUI peak RSS (MiB) | 87.4 (87.2–87.5) | 87.8 (87.5–88.0) |
-| images-2000 | process-tree peak RSS (MiB) | 123.6 (123.4–125.1) | 125.0 (114.2–125.9) |
-| images-2000 | settle (ms) | 783.9 (781.2–965.5) | 780.2 (761.7–805.8) |
+| images-2000 | first complete frame (ms) | 72.3 (70.1–139.3) | 68.8 (68.4–74.7) |
+| images-2000 | filter (ms) | 7.6 (6.0–9.6) | 7.2 (6.0–13.8) |
+| images-2000 | wheel scroll (ms) | 8.4 (7.6–8.5) | 8.3 (7.9–9.7) |
+| images-2000 | GUI peak RSS (MiB) | 91.5 (91.3–91.7), 4 of 5 | 92.1 (91.9–92.3) |
+| images-2000 | process-tree peak RSS (MiB) | 118.0 (117.9–118.5), 4 of 5 | 122.4 (118.6–123.4) |
+| images-2000 | settle (ms) | 803.8 (779.8–898.6) | 780.3 (780.1–801.1) |
 | images-2000 | idle CPU (%) | 0.0 (0.0–0.0) | 0.0 (0.0–0.0) |
-| images-2000 | thumbnails (ms) | 170.6 (169.4–177.0) | 171.4 (171.2–172.1) |
-| images-2000 | all visible thumbnails (ms) | 235.4 (230.8–339.2) | 206.7 (205.3–214.0) |
-| images-2000 | preview (ms) | 33.9 (31.7–62.3) | 18.7 (16.3–23.1) |
+| images-2000 | thumbnails (ms) | 183.9 (181.6–184.2) | 183.1 (181.3–185.3) |
+| images-2000 | all visible thumbnails (ms) | 258.1 (253.5–335.4) | 233.9 (222.1–270.4) |
+| images-2000 | preview (ms) | 32.1 (30.1–51.8) | 28.0 (15.9–30.5) |
 
 Thumbnails, all visible thumbnails and preview apply only to the images
 fixture. Thumbnails ends at the first ready thumbnail; all visible thumbnails
@@ -70,8 +70,27 @@ levels, near 600 and 780 ms, come from whether the first thumbnail pass lands
 inside that window. The A→B ratios and per-run evidence remain in the report
 the command writes beside its Markdown table.
 
-Since `01ae599`, measured on this machine with the same method, the median
-filter on 1,000,000 files fell from 27.3 to 14.3 ms on A and from 22.9 to
-11.7 ms on B; preview fell from 52.0 to 33.9 ms on A and from 35.4 to 18.7 ms
-on B; the first complete frame on 1,000,000 files fell from 79.9 to 69.9 ms on
-A and from 78.9 to 60.6 ms on B.
+A cell marked "N of 5" kept N sessions: in the others the memory observer
+missed its 5 ms resolution budget while the host was busy, and the command
+reports that session's RSS as missing rather than guessing it. The command
+therefore marks the whole report incomplete.
+
+The 0.2.2 release was measured on this machine with the same method just
+before this run (21:43–22:12 UTC, host load median 4.30). Against it, the
+window this release adds (tab strip, toolbar, places, tag bars, the details
+dock and the tag, size and date columns) costs memory and first-frame time:
+
+- GUI peak RSS rose by 2.6 to 4.0 MiB in every cell (1,000,000 files on A:
+  98.1 to 100.7 MiB).
+- The first complete frame on 1,000,000 files went from
+  75.6 to 88.0 ms on A and from 71.3 to 92.3 ms on B; on
+  100,000 files from 81.2 to 95.1 ms on A.
+- Filtering 1,000,000 files went from 16.3 to 17.0 ms on A and from
+  11.9 to 18.9 ms on B.
+- Preview went from 34.6 to 32.1 ms on A and from
+  16.2 to 28.0 ms on B.
+
+Filtering 1,000 to 100,000 files on B got faster (9.5 to 6.2 ms on
+100,000). Wheel scroll moved by less than 1 ms except on 1,000,000 files on
+B (7.5 to 9.5 ms). Settle medians moved between its two levels, and idle CPU
+stayed at 0.
