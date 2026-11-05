@@ -128,7 +128,7 @@ FocusScope {
             model: contents
             refreshing: contents.loading
             onCurrentIndexChanged: {
-                if (!contents.loading && currentIndex >= 0 && currentIndex < contents.count) {
+                if (currentIndex >= 0 && currentIndex < contents.count) {
                     trash.cursorPath = contents.pathAt(currentIndex)
                     trash.lastCursor = currentIndex
                 }
