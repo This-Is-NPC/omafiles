@@ -50,11 +50,11 @@ Picture: No picture yet.
 
 ## Sorting
 
-Press **s**, or click the sort button in the toolbar, to open the **Sort by** menu under the button. It lists the keys **Name n**, **Type t**, **Size z**, **Modified m** and **Tags g**, a line, then **Ascending ↑ a** and **Descending ↓ d**. A round mark shows the current key and direction, and the cursor starts on the current key. Move with **j k** or **↓ ↑** and pick with **Enter** or **Space**, press a row's letter, or click a row. A key starts in the direction it is usually read: name, type and tags go up, size and modified go down, so the biggest or newest row is first. **Tags** orders the files by their first tag, with untagged files last. A direction keeps the key and sets the direction. Either one closes the menu; **Esc** closes it and changes nothing. Press **S** to flip the direction without the menu. The sort button reads the key and the direction, such as **Size ↓ ⌄**, in every view. In details view you can also click a column header to sort by that column directly; click it again to flip the direction.
+Press **s**, or click the sort button in the toolbar, to open the **Sort by** menu under the button. It lists the keys **Name n**, **Type t**, **Size z**, **Modified m**, **First tag g** and **Tag count c**, a line, then **Ascending ↑ a** and **Descending ↓ d**. A round mark shows the current key and direction, and the cursor starts on the current key. Move with **j k** or **↓ ↑** and pick with **Enter** or **Space**, press a row's letter, or click a row. A key starts in the direction it is usually read: name, type and first tag go up; size, modified and tag count go down, so the biggest, newest or most tagged row is first. **First tag** orders the files by their first tag, with untagged files last. **Tag count** orders them by how many tags they carry; an untagged file counts none. Files that tie on a key are ordered by name. A direction keeps the key and sets the direction. Either one closes the menu; **Esc** closes it and changes nothing. Press **S** to flip the direction without the menu. The sort button reads the key and the direction, such as **Size ↓ ⌄** or **Tag count ↓ ⌄**, in every view. In details view you can also click a column header to sort by that column directly; click it again to flip the direction. Both tag keys sort under the tags column: its header is lit for either one and reads **tag count** while that is the key, a click on it flips the direction of the tag key in use, and a click while another column sorts picks **First tag**.
 
-Reach it: Press **s**, click the sort button in the toolbar, choose **Sort menu** in the command palette, or click a column header in details view.
+Reach it: Press **s**, click the sort button in the toolbar, choose **Sort menu** in the command palette, or click a column header in details view. The palette also has one command per key, such as **Sort by first tag s g** and **Sort by tag count s c**, which picks that key in its usual direction.
 
-Keys: **s** (sort menu), **S** (flip direction); in the menu **n t z m g** (key), **a d** (direction), **j k / ↓ ↑** (move), **Enter / Space** (pick), **Esc** (close).
+Keys: **s** (sort menu), **S** (flip direction); in the menu **n t z m g c** (key), **a d** (direction), **j k / ↓ ↑** (move), **Enter / Space** (pick), **Esc** (close).
 
 Picture: **img/03-sort-menu.png**. The sort button is drawn on, with the menu open under it on **Name** and **Ascending**.
 
@@ -108,7 +108,7 @@ Picture: No picture yet.
 
 ## Command palette
 
-Press **:**, **Ctrl p**, or choose **Commands** to open the command palette. Type to search all commands: Quick preview, Mark all, Sort menu, Undo, Save this as a view, Open Trash, and many others. The list shows whole rows: as many as fit, and the rest scroll. Use **Ctrl Home / Ctrl End** to jump to the start or end of the list. **Enter** runs the selected command.
+Press **:**, **Ctrl p**, or choose **Commands** to open the command palette. Type to search all commands: Quick preview, Mark all, Sort menu, Sort by tag count, Undo, Save this as a view, Open Trash, and many others. The list shows whole rows: as many as fit, and the rest scroll. Use **Ctrl Home / Ctrl End** to jump to the start or end of the list. **Enter** runs the selected command.
 
 Reach it: Press **:**, **Ctrl p**, or click the **Cmd** button in the footer.
 

@@ -284,20 +284,10 @@ void TabState::setSortAscending(bool ascending)
     emit sortChanged();
 }
 
-// A column heading's click: the same field flips the direction, and a new one
-// starts the way that field is read. Name, tags and type go up, because that is
-// the reading order of a directory, a vocabulary and an alphabet; size and date
-// go down, because the row you want from those is the biggest or the newest one.
 void TabState::pickSortRole(const QString &role)
 {
     const QString valid = validSortRole(role);
-    if (m_sortRole == valid) {
-        toggleSortDirection();
-        return;
-    }
-    m_sortRole = valid;
-    m_sortAscending = ascendingByDefault(valid);
-    emit sortChanged();
+    setSort(valid, ascendingByDefault(valid));
 }
 
 void TabState::setSort(const QString &role, bool ascending)
@@ -310,6 +300,10 @@ void TabState::setSort(const QString &role, bool ascending)
     emit sortChanged();
 }
 
+// Name, first tag and type go up, because that is the reading order of a
+// directory, a vocabulary and an alphabet; size, date and tag count go down,
+// because the row you want from those is the biggest, the newest or the most
+// tagged one.
 bool TabState::ascendingByDefault(const QString &role)
 {
     return role == QLatin1String("name") || role == QLatin1String("tags")
@@ -319,7 +313,8 @@ bool TabState::ascendingByDefault(const QString &role)
 QString TabState::validSortRole(const QString &role)
 {
     if (role == QLatin1String("size") || role == QLatin1String("mtime")
-        || role == QLatin1String("tags") || role == QLatin1String("type"))
+        || role == QLatin1String("tags") || role == QLatin1String("tagCount")
+        || role == QLatin1String("type"))
         return role;
     return QStringLiteral("name");
 }

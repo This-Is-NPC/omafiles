@@ -132,12 +132,13 @@ public:
     void setCursorPath(const QString &path) { m_cursorPath = path; }
 
     Q_INVOKABLE void toggleHidden();
+    /// A key picked from the sort menu, the palette or a heading: it starts
+    /// the way that key is usually read.
     Q_INVOKABLE void pickSortRole(const QString &role);
-    /// The sort menu's pick: a field and a direction in one change.
+    /// A key and a direction in one change.
     Q_INVOKABLE void setSort(const QString &role, bool ascending);
     Q_INVOKABLE void toggleSortDirection();
-    /// Picking a new field starts it the way that field is usually read.
-    Q_INVOKABLE static bool ascendingByDefault(const QString &role);
+    static bool ascendingByDefault(const QString &role);
     Q_INVOKABLE static QString validSortRole(const QString &role);
 
 signals:
