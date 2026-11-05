@@ -742,6 +742,9 @@ private slots:
     void troughMiddleOrShiftClickJumps();
     void barDoesNotCoverRows();
     void scrollJumpButtonsMatchHomeEnd();
+    void scrollThumbStandsOutOfItsTrough();
+    void scrollJumpButtonsLookLikeButtons();
+    void placeNamesFitWholeInTheSidebar();
     void sectionHeadingsAreNotTabStops();
     void paletteFocusesTheDevices();
     void emptyStateTextWraps();
@@ -9669,7 +9672,7 @@ void TestStudio::emptyStateTextWraps()
     });
     auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
     QVERIFY(sidebar && sidebar->isVisible());
-    QCOMPARE(sidebar->width(), qreal(264));
+    QCOMPARE(sidebar->width(), qreal(268));
     // The sidebar has no drag handle: its layout width is set to 220, where
     // the help needs two lines.
     QQmlProperty preferred(sidebar, QStringLiteral("Layout.preferredWidth"), qmlContext(sidebar));
@@ -12759,6 +12762,103 @@ void TestStudio::scrollJumpButtonsMatchHomeEnd()
     QTRY_COMPARE(state(), home);
 }
 
+// The thumb reads against its trough at rest and under the pointer: 3:1, the
+// WCAG floor for a control's shape.
+void TestStudio::scrollThumbStandsOutOfItsTrough()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    QTemporaryDir directory;
+    QVERIFY(openLongFolder(directory, 500));
+    QQuickItem *bar = nullptr;
+    QTRY_VERIFY((bar = shownFileBar(filesRoot())));
+    auto *thumb = bar->property("contentItem").value<QQuickItem *>();
+    auto *trough = itemNamedWithin(bar, QStringLiteral("scrollTrough"));
+    QVERIFY(thumb && trough && trough->isVisible());
+    const auto colour = [](QQuickItem *item) { return item->property("color").value<QColor>(); };
+    QCOMPARE(colour(trough).alpha(), 255);
+    const auto ratio = [&] { return omafiles::contrast(colour(thumb), colour(trough)); };
+    QTest::mouseMove(window(), QPoint(2, 2));
+    QTRY_VERIFY(!bar->property("lit").toBool());
+    QVERIFY2(ratio() >= 3, qPrintable(QStringLiteral("at rest %1:1").arg(ratio())));
+    // The strip and thumb of the chosen layout: a 12 px strip, an 8 px thumb.
+    QCOMPARE(qRound(bar->width()), 12);
+    QCOMPARE(qRound(thumb->width()), 8);
+    const QColor rest = colour(thumb);
+    QTest::mouseMove(window(), thumb->mapToScene(QPointF(thumb->width() / 2, thumb->height() / 2)).toPoint());
+    QTRY_VERIFY(bar->property("lit").toBool());
+    QVERIFY(colour(thumb) != rest);
+    QVERIFY2(ratio() >= 3, qPrintable(QStringLiteral("under the pointer %1:1").arg(ratio())));
+    QTest::mouseMove(window(), QPoint(2, 2));
+}
+
+// The buttons at the bar's ends have the button look: a raised box with a
+// line border, lighter under the pointer, filled and accent-bordered while
+// pressed. Home and End are their keys, so neither is a Tab stop.
+void TestStudio::scrollJumpButtonsLookLikeButtons()
+{
+    const QSize original = window()->size();
+    const auto restore = qScopeGuard([&] { window()->resize(original); });
+    QTemporaryDir directory;
+    QVERIFY(openLongFolder(directory, 500));
+    for (const QString &name : {QStringLiteral("scrollToStart"), QStringLiteral("scrollToEnd")}) {
+        auto *button = itemNamedWithin(qobject_cast<QQuickItem *>(filesRoot()), name);
+        QVERIFY(button);
+        QTRY_VERIFY(button->isVisible());
+        const auto colour = [&] { return button->property("color").value<QColor>(); };
+        const auto border = [&] { return button->property("border").value<QObject *>(); };
+        QVERIFY2(border(), qPrintable(name));
+        QVERIFY(!button->activeFocusOnTab());
+        QCOMPARE(qRound(button->width()), m_theme->scrollBarWidth());
+        QTest::mouseMove(window(), QPoint(2, 2));
+        QTRY_COMPARE(colour(), m_theme->raised());
+        QVERIFY(border()->property("width").toReal() >= 1);
+        QCOMPARE(border()->property("color").value<QColor>(), m_theme->line());
+        const QPoint centre = button->mapToScene(QPointF(button->width() / 2, button->height() / 2)).toPoint();
+        QTest::mouseMove(window(), centre);
+        QTRY_COMPARE(colour(), m_theme->hoverRaised());
+        QTest::mousePress(window(), Qt::LeftButton, Qt::NoModifier, centre);
+        QTRY_COMPARE(colour(), m_theme->cursor());
+        QCOMPARE(border()->property("color").value<QColor>(), m_theme->accent());
+        QTest::mouseRelease(window(), Qt::LeftButton, Qt::NoModifier, centre);
+        QTRY_COMPARE(colour(), m_theme->hoverRaised());
+    }
+    QTest::mouseMove(window(), QPoint(2, 2));
+}
+
+// At the sidebar's own width, beside its scroll bar's strip, every place
+// button shows its whole name.
+void TestStudio::placeNamesFitWholeInTheSidebar()
+{
+    const QDir home(m_tree.path());
+    const QStringList folders{QStringLiteral("Desktop"), QStringLiteral("Documents"), QStringLiteral("Downloads"),
+                              QStringLiteral("Music"), QStringLiteral("Pictures"), QStringLiteral("Videos")};
+    for (const QString &folder : folders)
+        QVERIFY(home.mkdir(folder));
+    const auto cleanup = qScopeGuard([&] {
+        for (const QString &folder : folders)
+            QDir(home.filePath(folder)).removeRecursively();
+        tab()->setCwd(home.filePath(QStringLiteral("alpha")));
+        tab()->setCwd(m_tree.path());
+        settle();
+    });
+    tab()->setCwd(home.filePath(QStringLiteral("alpha")));
+    tab()->setCwd(m_tree.path());
+    auto *sidebar = qobject_cast<QQuickItem *>(window()->property("activeSidebar").value<QObject *>());
+    QVERIFY(sidebar && sidebar->isVisible());
+    auto *grid = sidebar->property("placesList").value<QQuickItem *>();
+    QTRY_COMPARE(grid->property("count").toInt(), folders.size() + 2);
+    settle();
+    int names = 0;
+    for (auto *label : itemsNamed(QStringLiteral("placeName"))) {
+        if (!grid->isAncestorOf(label) || !label->isVisible())
+            continue;
+        ++names;
+        QVERIFY2(!label->property("truncated").toBool(), qPrintable(label->property("text").toString()));
+    }
+    QCOMPARE(names, folders.size() + 2);
+}
+
 void TestStudio::keepsTagEditorFocusAndSuggestionsVisible()
 {
     const QSize original = window()->size();
@@ -12817,10 +12917,10 @@ void TestStudio::routesSidebarKeysByScrollRange_data()
     QTest::addColumn<bool>("overflowing");
     QTest::addColumn<bool>("tooltip");
     QTest::addColumn<int>("navigationKey");
-    // At 920 the details dock keeps its tags column beside a sidebar of up to
-    // 264 px.
+    // At 924 the details dock keeps its tags column beside a sidebar of up to
+    // 268 px.
     for (bool pendingRefresh : {false, true})
-        for (int width : {1180, 920})
+        for (int width : {1180, 924})
             for (bool overflowing : {false, true})
                 for (bool tooltip : {false, true})
                     for (auto code : {Qt::Key_Up, Qt::Key_Down, Qt::Key_PageUp,
@@ -18163,9 +18263,9 @@ void TestStudio::givesTheNameColumnPriority()
     QVERIFY(chosen.contains("tags") && chosen.contains("size") && chosen.contains("mtime"));
     QList<qreal> lists;
     // Window widths and pane counts that give lists from 100 to 1340 px; the
-    // sidebar takes 265 px beside a single pane, and the list's scroll bar 8.
-    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(821, 1), qMakePair(1180, 1),
-                                         qMakePair(1328, 1), qMakePair(1613, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
+    // sidebar takes 269 px beside a single pane, and the list's scroll bar 12.
+    for (const QPair<int, int> layout : {qMakePair(420, 1), qMakePair(640, 1), qMakePair(829, 1), qMakePair(1180, 1),
+                                         qMakePair(1328, 1), qMakePair(1621, 1), qMakePair(420, 2), qMakePair(600, 2), qMakePair(1000, 2)}) {
         window()->resize(layout.first, 600);
         if (layout.second == 2 && m_workspace->paneCount() == 1) key(Qt::Key_Backslash, Qt::ControlModifier);
         QCOMPARE(m_workspace->paneCount(), layout.second);

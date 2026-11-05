@@ -6,9 +6,11 @@ import omafiles
 
 // The one scroll bar. Shown whenever the content is taller than the view, in a
 // strip the view reserves (`Theme.scrollBarWidth`), so it never covers a row.
-// It draws no track: the surface under it shows. Dragging the thumb scrolls, a
-// click in the trough pages toward the pointer, and a middle click or a Shift
-// click jumps there. It never takes the keyboard.
+// Its trough is `chrome` with a `line` edge, its thumb `dim`, and `foreground`
+// under the pointer: Theme keeps `dim` at 4.5:1 on `chrome` in every theme, so
+// the thumb stands out on whatever surface holds the bar. Dragging the thumb
+// scrolls, a click in the trough pages toward the pointer, and a middle click
+// or a Shift click jumps there. It never takes the keyboard.
 //
 // The pointer is handled here rather than by the template, whose press in the
 // trough jumps instead of paging.
@@ -18,6 +20,8 @@ T.ScrollBar {
     readonly property bool lit: pointer.containsMouse || pointer.pressed
 
     interactive: false
+    // Keeps the thumb off the trough's edge line, `scrollThumb` wide at rest.
+    horizontalPadding: (Theme.scrollBarWidth - Theme.scrollThumb) / 2
     visible: bar.size < 1
     minimumSize: bar.height > 0 ? Math.min(1, Theme.rowHeight / bar.height) : 0
     implicitWidth: bar.lit ? Theme.scrollBarHover : Theme.scrollBarWidth
@@ -29,7 +33,8 @@ T.ScrollBar {
 
     contentItem: Rectangle {
         objectName: "scrollThumb"
-        color: bar.lit ? Theme.dim : Theme.line
+        radius: Theme.rounding
+        color: bar.lit ? Theme.foreground : Theme.dim
     }
 
     background: MouseArea {
@@ -57,5 +62,12 @@ T.ScrollBar {
                 bar.moveTo(mouse.y / bar.height - grip)
         }
         onReleased: grip = -1
+
+        Rectangle {
+            objectName: "scrollTrough"
+            anchors.fill: parent
+            color: Theme.chrome
+            Rule { vertical: true; anchors.left: parent.left }
+        }
     }
 }
