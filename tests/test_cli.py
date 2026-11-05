@@ -10389,7 +10389,10 @@ def check_r7_a_value_is_split_before_it_is_decoded(data, workspace):
     os.setxattr(c, "user.omafiles.tags", b"foo,\xffa")
     added = run(home, "tag", "add", "-t", "z", c)
     assert added.returncode == 0, added
-    assert "(\\xffa)" in added.stderr and "foo" not in added.stderr, added.stderr
+    # The message names the path, which a random temporary name can make
+    # carry any word; only the rest of it must leave "foo" out.
+    told = added.stderr.replace(str(c), "")
+    assert "(\\xffa)" in told and "foo" not in told, added.stderr
     assert run(home, "tag", "ls", c).stdout == "foo\nz\n"
 
 
