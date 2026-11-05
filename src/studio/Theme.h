@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QVariantMap>
 #include <QtQmlIntegration/qqmlintegration.h>
 
 #include <array>
@@ -26,6 +27,7 @@ class Theme : public QObject
     QML_ELEMENT
     QML_SINGLETON
     Q_PROPERTY(int rounding READ rounding NOTIFY changed)
+    Q_PROPERTY(QVariantMap tagColours READ tagColours NOTIFY changed)
     // Every colour is opaque (docs/design.md §3): a surface never shows what
     // is under it.
     Q_PROPERTY(QColor base READ base NOTIFY changed)
@@ -100,9 +102,11 @@ public:
     /// The opaque surface behind a sheet or dialog, in place of the window.
     QColor scrim() const;
     /// The colour of the family `meetTags` gave a tag, or `dim` for a tag it
-    /// has not met. A call is no binding dependency: a QML binding also reads a
-    /// role, which changes with the theme and when a tag is given a family.
-    Q_INVOKABLE QColor tagColour(const QString &tag) const;
+    /// has not met.
+    QColor tagColour(const QString &tag) const;
+    /// Every met tag's colour by name, for QML: a binding that reads it is
+    /// redrawn on a theme switch and when a tag is given a family.
+    QVariantMap tagColours() const { return m_tagColours; }
     /// Gives each of `tags` without a family one, by name: the family fewest of
     /// `tags` have, the first in round order on a tie. A family once given is
     /// kept in `studio.conf` and never changes (docs/design.md §3).
@@ -156,6 +160,9 @@ signals:
 private:
     void reload();
     void watch();
+    /// Fills `m_tagColours` from the families and the palette, then emits
+    /// `changed`.
+    void paintTags();
 
     QFileSystemWatcher m_watcher;
     QString m_themePath;
@@ -179,6 +186,9 @@ private:
     QString m_statePath;
     /// Each tag's slot in `m_tagPalette`.
     QHash<QString, int> m_tagFamilies;
+    /// `tagColours`, made again by `paintTags` whenever a palette or a family
+    /// changes.
+    QVariantMap m_tagColours;
 };
 
 } // namespace omafiles

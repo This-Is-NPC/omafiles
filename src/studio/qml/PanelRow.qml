@@ -65,12 +65,7 @@ Item {
         width: Theme.spacingS
         height: Theme.spacingS
         radius: Theme.rounding
-        color: {
-            // tagColour is no binding dependency; `raised` changes with the
-            // theme, so reading it redraws the square on a theme switch.
-            Theme.raised
-            return Theme.tagColour(row.tag)
-        }
+        color: Theme.tagColours[row.tag] ?? Theme.dim
     }
     Label {
         id: caption
