@@ -765,6 +765,7 @@ private slots:
     void detailsDockTogglesWithKey();
     void detailsPathBreaksAfterSlash();
     void detailsTagChipRemoveIsItsOwnTarget();
+    void detailsTagChipHandsOnFocusWhenRemoved();
     void dockActionsRunTheirCommands();
     void detailsDockYieldsInShortWindows();
     void detailsModeRowDropsWhenNarrow();
@@ -10096,6 +10097,39 @@ void TestStudio::detailsTagChipRemoveIsItsOwnTarget()
     QCOMPARE(verbRuns().first(), removed);
     QCOMPARE(tab()->selectedTag(), QString());
     QMetaObject::invokeMethod(window(), "takeFocus");
+}
+
+// A dock tag chip that has the keyboard and goes with the row under the cursor
+// hands the keyboard on to the next control, which draws the one ring.
+void TestStudio::detailsTagChipHandsOnFocusWhenRemoved()
+{
+    const auto restore = qScopeGuard([&] { QMetaObject::invokeMethod(window(), "takeFocus"); settle(); });
+    const auto shownRings = [&] {
+        int shown = 0;
+        for (auto *ring : itemsNamed(QStringLiteral("focusRing")))
+            if (ring->isVisible()) ++shown;
+        return shown;
+    };
+    for (const QString &next : {QStringLiteral("two.md"), QStringLiteral("plain.txt")}) {
+        focusRow(QStringLiteral("six.md"));
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        QQuickItem *chip = nullptr;
+        for (auto *item : itemsNamed(QStringLiteral("detailsTagChip")))
+            if (item->isVisible() && item->property("modelData").toString() == QLatin1String("work"))
+                chip = item;
+        QVERIFY(chip);
+        chip->forceActiveFocus(Qt::TabFocusReason);
+        QTRY_VERIFY(chip->hasActiveFocus());
+        QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(rowOf(next))));
+        settle();
+        QCOMPARE(filesRoot()->property("entry").toMap().value(QStringLiteral("name")).toString(), next);
+        QVERIFY(QQuickTest::qWaitForPolish(window(), asyncTimeout));
+        QQuickItem *focus = window()->activeFocusItem();
+        QVERIFY2(focus && focus != window()->contentItem() && focus->isVisible(), qPrintable(next));
+        QCOMPARE(focus->objectName(), QStringLiteral("detailsAddTag"));
+        QCOMPARE(shownRings(), 1);
+        QTRY_VERIFY(hasFocusOutline(window(), focus, m_theme->accent()));
+    }
 }
 
 // A window too short to keep `listLeast` of panes above the details dock drops

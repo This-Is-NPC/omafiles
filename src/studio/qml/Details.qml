@@ -295,6 +295,9 @@ Rectangle {
 
                     Repeater {
                         model: details.onRow ? details.entry.tags : []
+                        // A chip that goes with its row hands the keyboard on
+                        // as a hidden one does: it leaves no focus behind.
+                        onItemRemoved: function (index, item) { (item as FocusableControl).handOnFocus() }
 
                         // The body opens the tag's view; the × at its end, and
                         // Delete while it has the keyboard, remove the tag.
