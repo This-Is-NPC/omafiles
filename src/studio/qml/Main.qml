@@ -2503,10 +2503,12 @@ Window {
                         orientation: Qt.Horizontal
 
                         readonly property int handleWidth: 3
+                        // An equal part of the split's width beside its handles.
+                        readonly property real share: (width - handleWidth * (Workspace.paneCount - 1))
+                                                      / Math.max(1, Workspace.paneCount)
                         // A pane's least width, unless the split cannot hold every
                         // pane at it: then they share the width and none passes the edge.
-                        readonly property real narrowest: Math.min(280,
-                            (width - handleWidth * (Workspace.paneCount - 1)) / Math.max(1, Workspace.paneCount))
+                        readonly property real narrowest: Math.min(280, share)
 
                         handle: Rectangle {
                             implicitWidth: split.handleWidth
@@ -2523,6 +2525,7 @@ Window {
                                 pane: paneState
                                 paneIndex: index
                                 narrowest: split.narrowest
+                                share: split.share
                             }
                         }
                     }
@@ -3471,7 +3474,7 @@ Window {
         property var pane
         property int paneIndex
         required property real narrowest
-        readonly property real share: win.width / Math.max(1, Workspace.paneCount)
+        required property real share
         C.SplitView.minimumWidth: narrowest
         C.SplitView.preferredWidth: share
 

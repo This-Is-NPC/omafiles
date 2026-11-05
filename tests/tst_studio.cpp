@@ -5582,6 +5582,9 @@ void TestStudio::resizesTheSplitWithCtrlComma()
             panes[index] = item;
     }
     QVERIFY2(panes[0] && panes[1], "no QML pane items for the split");
+    // A split gives both panes an equal share of the room beside the sidebar.
+    QTRY_VERIFY2(qAbs(panes[0]->width() - panes[1]->width()) < 1,
+                 qPrintable(QStringLiteral("panes %1 and %2 px").arg(panes[0]->width()).arg(panes[1]->width())));
 
     for (const int focused : {0, 1}) {
         m_workspace->setFocusedPane(focused);
