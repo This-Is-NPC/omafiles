@@ -320,7 +320,7 @@ Picture: No picture yet.
 
 ### Split panes
 
-Press **Ctrl \\** to split the current pane into two side by side. Each pane has its own tabs: the tab strip shows them side by side in pane order, each pane's group with its own **+** button. The focused pane's current tab has its name in bold, the other pane's does not; no ring is drawn around a pane, and the toolbar works the focused pane. Press **Alt h** or **Alt l** to switch panes. Press **Ctrl ,** and **Ctrl .** to narrow or widen the focused pane. Each step moves the divider beside it by 40 pixels, and no pane goes below 280 pixels. In a window too narrow for every pane at 280 pixels, the panes share its width. Press **Ctrl Shift w** to close a pane.
+Press **Ctrl \\** to split the current pane into two side by side. A split or a close gives every pane an equal part of the room beside the sidebar. Each pane has its own tabs: the tab strip shows them side by side in pane order, each pane's group with its own **+** button. The focused pane's current tab has its name in bold, the other pane's does not; no ring is drawn around a pane, and the toolbar works the focused pane. Press **Alt h** or **Alt l** to switch panes. Press **Ctrl ,** and **Ctrl .** to narrow or widen the focused pane. Each step moves the divider beside it by 40 pixels, and no pane goes below 280 pixels. In a window too narrow for every pane at 280 pixels, the panes share its width. Press **Ctrl Shift w** to close a pane.
 
 Keys: **Ctrl \\** (split), **Alt h l / Alt ← →** (switch panes), **Ctrl ,** (narrow focused pane), **Ctrl .** (widen focused pane), **Ctrl Shift w** (close pane).
 
