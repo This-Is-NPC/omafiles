@@ -84,9 +84,11 @@ or input handling. Decoder integration tests exercise the real helper separately
 and record the playback acknowledgement signal, which remains evidence even when
 the clip has already ended before the next assertion.
 
-Gesture durations simulate press-and-hold input. Hover timer checks, screenshot
-animation settling and explicit helper resource/deadline contracts have distinct
-purposes; they do not establish completion of directory or decoder work.
+A fixed wait in the studio suite is a duration under test, and a comment beside
+it names which: a press-and-hold, a tap, the pace of a drag, a tooltip's open or
+exit delay, or the time a cancelled flick must not move in. Everything else waits for its evidence; a screenshot waits until no
+tooltip is open. Explicit helper resource/deadline contracts have a distinct
+purpose; they do not establish completion of directory or decoder work.
 
 To exercise scheduling pressure, run the gate with CPU workers in a private scratch
 area, record that they remain alive throughout the run, and stop only those workers
