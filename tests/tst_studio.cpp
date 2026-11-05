@@ -536,7 +536,9 @@ private slots:
     void saysWhenNothingInTheIndexCanBeReached();
     void sortsByTypeOnTheSuffix();
     void sortsByModifiedWithinASecond();
-    void cyclesTheSortFieldAndItsOwnDirection();
+    void sortMenuPicksKeyAndDirection();
+    void sortButtonShowsKeyAndDirection();
+    void sortMenuOpensFromTheButton();
     void showsHiddenFilesOnlyWhenAsked();
     void movesBetweenTheListAndTheTagPanel();
     void reachesControlsWithTabAndComesBackWithEscape();
@@ -547,7 +549,7 @@ private slots:
     void typesAPathAndAFilter();
     void walksTheGraphWithTheKeyboard();
     void runsACommandFromThePalette();
-    void commandPaletteSortUsesPickSortRole();
+    void commandPaletteOpensTheSortMenu();
     void zoomsAndResetsTheGraph();
     void picksAGraphNodeWithTheMouse();
     void clickingARowFocusesItsPane();
@@ -793,6 +795,7 @@ private:
     /// different command the day an entry above it grew a `when`.
     bool chooseInMenu(const QString &objectName, const QString &label);
     QStringList menuLabels(const QString &objectName) const;
+    QStringList fileRowNames() const;
     template<typename Key>
     void key(Key code, Qt::KeyboardModifiers mods = Qt::NoModifier);
     void settle();
@@ -1170,6 +1173,23 @@ QStringList TestStudio::menuLabels(const QString &objectName) const
     return labels;
 }
 
+// The file rows of the focused listing, in the order it shows them.
+QStringList TestStudio::fileRowNames() const
+{
+    QObject *folder = filesRoot()->property("folder").value<QObject *>();
+    QStringList out;
+    for (int i = 0; i < folder->property("count").toInt(); ++i) {
+        QString kind;
+        QMetaObject::invokeMethod(folder, "kindAt", Q_RETURN_ARG(QString, kind), Q_ARG(int, i));
+        if (kind != QLatin1String("file"))
+            continue;
+        QString path;
+        QMetaObject::invokeMethod(folder, "pathAt", Q_RETURN_ARG(QString, path), Q_ARG(int, i));
+        out << QFileInfo(path).fileName();
+    }
+    return out;
+}
+
 bool TestStudio::chooseInMenu(const QString &objectName, const QString &label)
 {
     const QStringList labels = menuLabels(objectName);
@@ -1475,6 +1495,7 @@ void TestStudio::keepsTheKeyboardAfterEveryStateChange()
 
     key('1');
     key('s');                       // change sort
+    key('g');
     QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
     stillMoves("dead after re-sorting");
 
@@ -1681,47 +1702,21 @@ void TestStudio::namesTheRowUnderTheCursorForAssistiveTech()
 // still needs tagging.
 void TestStudio::sortsByTagWithTheUntaggedLast()
 {
-    // `s` walks the fields in the order the table lays out its columns, and
-    // comes back to where it started.
+    // The tags key starts going up.
     key('s');
+    key('g');
     QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
     QCOMPARE(tab()->sortAscending(), true);
 
-    const auto fileRows = [this] {
-        QObject *folder = filesRoot()->property("folder").value<QObject *>();
-        QStringList out;
-        for (int i = 0; i < folder->property("count").toInt(); ++i) {
-            QString kind;
-            QMetaObject::invokeMethod(folder, "kindAt", Q_RETURN_ARG(QString, kind),
-                                      Q_ARG(int, i));
-            if (kind != QLatin1String("file"))
-                continue;
-            QString path;
-            QMetaObject::invokeMethod(folder, "pathAt", Q_RETURN_ARG(QString, path),
-                                      Q_ARG(int, i));
-            out << QFileInfo(path).fileName();
-        }
-        return out;
-    };
-
-    QStringList rows = fileRows();
+    QStringList rows = fileRowNames();
     QVERIFY(rows.size() > 2);
     QCOMPARE(rows.last(), QStringLiteral("plain.txt"));
     QCOMPARE(rows.first(), QStringLiteral("five.zip"));      // #archive sorts first
 
     key('S');
     QCOMPARE(tab()->sortAscending(), false);
-    rows = fileRows();
+    rows = fileRowNames();
     QCOMPARE(rows.first(), QStringLiteral("plain.txt"));
-
-    key('s');
-    QCOMPARE(tab()->sortRole(), QStringLiteral("type"));
-    key('s');
-    QCOMPARE(tab()->sortRole(), QStringLiteral("size"));
-    key('s');
-    QCOMPARE(tab()->sortRole(), QStringLiteral("mtime"));
-    key('s');
-    QCOMPARE(tab()->sortRole(), QStringLiteral("name"));
 }
 
 // The type column carries the suffix, not the mime description: `.drawio` is
@@ -2333,33 +2328,66 @@ void TestStudio::saysWhenNothingInTheIndexCanBeReached()
     settle();
 }
 
-// `s` picks the field and the direction that field is read in -- A to Z for a
-// name, biggest first for a size, newest first for a date -- so it does not keep
-// the direction `S` set for the field before it. That is a decision and not a
-// slip: Dolphin and nnn both do it, and the key sheet says so. This is what
-// holds the program to what the sheet says.
-void TestStudio::cyclesTheSortFieldAndItsOwnDirection()
+// `s` opens the sort menu with its cursor on the key the tab sorts by. A key
+// starts the way that field is read -- A to Z for a name, biggest first for a
+// size -- so it does not keep the direction set for the field before it; `a`
+// and `d` set the direction of the key the tab has; Esc changes nothing.
+void TestStudio::sortMenuPicksKeyAndDirection()
 {
-    QCOMPARE(tab()->sortRole(), QStringLiteral("name"));
-    QCOMPARE(tab()->sortAscending(), true);
+    const QString bigPath = m_tree.filePath(QStringLiteral("zz-big.bin"));
+    const auto removeBig = qScopeGuard([&] { QFile::remove(bigPath); });
+    {
+        QFile big(bigPath);
+        QVERIFY(big.open(QIODevice::WriteOnly));
+        big.write(QByteArray(4096, 'x'));
+    }
+    QTRY_VERIFY(fileRowNames().contains(QStringLiteral("zz-big.bin")));
+    QCOMPARE(fileRowNames().last(), QStringLiteral("zz-big.bin"));
 
-    key('S');
-    QCOMPARE(tab()->sortAscending(), false);
+    QQuickItem *menu = itemsNamed(QStringLiteral("sortMenu")).value(0);
+    QVERIFY(menu);
+    const auto cursorLabel = [&] {
+        const int at = menu->property("list").value<QQuickItem *>()->property("currentIndex").toInt();
+        return menuLabels(QStringLiteral("sortMenu")).value(at);
+    };
 
-    key('s');                                   // name -> tags, a vocabulary reads A to Z
-    QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
-    QVERIFY2(tab()->sortAscending(), "s kept the direction set for the field before it");
+    tab()->setSortRole(QStringLiteral("type"));
+    settle();
+    key('s');
+    QVERIFY(menu->isVisible());
+    QCOMPARE(menuLabels(QStringLiteral("sortMenu")),
+             (QStringList{"Name", "Type", "Size", "Modified", "Tags",
+                          "Ascending ↑", "Descending ↓"}));
+    QCOMPARE(cursorLabel(), QStringLiteral("Type"));
+    key('j');
+    QCOMPARE(cursorLabel(), QStringLiteral("Size"));
+    key(Qt::Key_Escape);
+    QVERIFY(!menu->isVisible());
+    QCOMPARE(tab()->sortRole(), QStringLiteral("type"));
+    QVERIFY(tab()->sortAscending());
 
-    key('s');                                   // tags -> type
-    key('s');                                   // type -> size, biggest first
+    key('s');
+    key('z');
+    QVERIFY(!menu->isVisible());
     QCOMPARE(tab()->sortRole(), QStringLiteral("size"));
-    QVERIFY2(!tab()->sortAscending(), "s did not start size at the biggest row");
+    QVERIFY2(!tab()->sortAscending(), "z did not start size at the biggest row");
+    QTRY_COMPARE(fileRowNames().first(), QStringLiteral("zz-big.bin"));
 
-    key('S');
-    QCOMPARE(tab()->sortAscending(), true);
-    key('s');                                   // size -> modified, newest first
-    QCOMPARE(tab()->sortRole(), QStringLiteral("mtime"));
-    QVERIFY2(!tab()->sortAscending(), "s kept the direction set for the field before it");
+    key('s');
+    QCOMPARE(cursorLabel(), QStringLiteral("Size"));
+    key('a');
+    QVERIFY(!menu->isVisible());
+    QCOMPARE(tab()->sortRole(), QStringLiteral("size"));
+    QVERIFY(tab()->sortAscending());
+    QTRY_COMPARE(fileRowNames().last(), QStringLiteral("zz-big.bin"));
+
+    // Enter or Space picks the row under the cursor.
+    key('s');
+    key('k');
+    key(Qt::Key_Space);
+    QVERIFY(!menu->isVisible());
+    QCOMPARE(tab()->sortRole(), QStringLiteral("type"));
+    QVERIFY(tab()->sortAscending());
 }
 
 // Dotfiles are hidden until a key asks for them, and a filter is only a filter:
@@ -3134,28 +3162,20 @@ void TestStudio::runsACommandFromThePalette()
     QVERIFY2(cursor() != before, "the list stopped answering after the palette");
 }
 
-// Palette sort commands call pickSortRole, so repeating one toggles direction
-// instead of leaving the direction the previous field set.
-void TestStudio::commandPaletteSortUsesPickSortRole()
+// The palette's sort command opens the sort menu, as `s` does.
+void TestStudio::commandPaletteOpensTheSortMenu()
 {
-    QCOMPARE(tab()->sortRole(), QStringLiteral("name"));
-    QCOMPARE(tab()->sortAscending(), true);
-
+    QQuickItem *menu = itemsNamed(QStringLiteral("sortMenu")).value(0);
+    QVERIFY(menu);
     key(':');
-    for (char ch : QByteArray("sort-mtime"))
+    for (char ch : QByteArray("sort menu"))
         key(ch);
     key(Qt::Key_Return);
-
+    QTRY_VERIFY(menu->isVisible());
+    key('m');
+    QVERIFY(!menu->isVisible());
     QCOMPARE(tab()->sortRole(), QStringLiteral("mtime"));
-    QCOMPARE(tab()->sortAscending(), false);
-
-    key(':');
-    for (char ch : QByteArray("sort-mtime"))
-        key(ch);
-    key(Qt::Key_Return);
-
-    QCOMPARE(tab()->sortRole(), QStringLiteral("mtime"));
-    QCOMPARE(tab()->sortAscending(), true);
+    QVERIFY(!tab()->sortAscending());
 }
 
 // `0`, `+` and `-` are read back through GraphItem's `scale`.
@@ -4747,7 +4767,7 @@ void TestStudio::drawsItself()
     key(Qt::Key_Escape);
 
     key('?');
-    shot(QStringLiteral("03-keys"));
+    shot(QStringLiteral("04-keys"));
     key(Qt::Key_Escape);
 
     key(':');
@@ -4756,7 +4776,7 @@ void TestStudio::drawsItself()
 
     m_workspace->addTab(QStringLiteral("graph"));
     settle();
-    shot(QStringLiteral("04-graph"));
+    shot(QStringLiteral("05-graph"));
     m_workspace->closeCurrentTab();
     settle();
 
@@ -4921,13 +4941,17 @@ void TestStudio::writesTheDocumentationShots()
     shot(QStringLiteral("02-details"), Shot::Documentation);
     key('1');
 
+    key('s');
+    shot(QStringLiteral("03-sort-menu"), Shot::Documentation);
+    key(Qt::Key_Escape);
+
     key('?');
-    shot(QStringLiteral("03-keys"), Shot::Documentation);
+    shot(QStringLiteral("04-keys"), Shot::Documentation);
     key(Qt::Key_Escape);
 
     m_workspace->addTab(QStringLiteral("graph"));
     settle();
-    shot(QStringLiteral("04-graph"), Shot::Documentation);
+    shot(QStringLiteral("05-graph"), Shot::Documentation);
     m_workspace->closeCurrentTab();
     settle();
 }
@@ -13142,7 +13166,8 @@ void TestStudio::routesTooltipKeysOnlyWhenContentOverflows()
     const QPoint point = control->mapToScene(QPointF(control->width()/2, control->height()/2)).toPoint();
     QTest::mouseMove(window(), QPoint(2, 2));
     QTest::mouseMove(window(), point);
-    QTest::mouseClick(window(), Qt::LeftButton, Qt::NoModifier, point);
+    // The keyboard reaches the button as Tab would: a click opens the sort menu.
+    control->forceActiveFocus();
     QTRY_VERIFY(control->property("tooltip").value<QObject *>());
     auto *tip = control->property("tooltip").value<QObject *>();
     QTRY_VERIFY(tip->property("opened").toBool());
@@ -17611,6 +17636,59 @@ void TestStudio::keepsEveryFooterActionReachable()
     }
 }
 
+// The sort button reads the key's label and the direction of what was picked.
+void TestStudio::sortButtonShowsKeyAndDirection()
+{
+    QQuickItem *button = shownItem(window()->contentItem(), QStringLiteral("sortButton"));
+    QVERIFY(button);
+    QCOMPARE(button->property("label").toString(), QStringLiteral("Name ↑ ⌄"));
+    key('s');
+    key('z');
+    QCOMPARE(button->property("label").toString(), QStringLiteral("Size ↓ ⌄"));
+    key('s');
+    key('a');
+    QCOMPARE(button->property("label").toString(), QStringLiteral("Size ↑ ⌄"));
+    key('s');
+    key('g');
+    QCOMPARE(button->property("label").toString(), QStringLiteral("Tags ↑ ⌄"));
+}
+
+// A click on the sort button opens the menu under it, right edges together,
+// and a click on a row picks it.
+void TestStudio::sortMenuOpensFromTheButton()
+{
+    QQuickItem *button = shownItem(window()->contentItem(), QStringLiteral("sortButton"));
+    QVERIFY(button);
+    QQuickItem *menu = itemsNamed(QStringLiteral("sortMenu")).value(0);
+    QVERIFY(menu);
+    QVERIFY(tapItem(window(), button));
+    settle();
+    QVERIFY(menu->isVisible());
+    QVERIFY(button->property("on").toBool());
+    auto *panel = menu->property("panel").value<QQuickItem *>();
+    QVERIFY(panel);
+    const QRectF buttonRect = button->mapRectToScene(button->boundingRect());
+    const QRectF panelRect = panel->mapRectToScene(panel->boundingRect());
+    QCOMPARE(panelRect.right(), buttonRect.right());
+    QVERIFY(panelRect.top() >= buttonRect.bottom());
+
+    // The rows are laid out at the list's next polish, which a busy run delays.
+    QQuickItem *modified = nullptr;
+    const auto findModified = [&] {
+        for (auto *label : itemsNamed(QStringLiteral("menuLabel")))
+            if (menu->isAncestorOf(label) && label->isVisible()
+                && label->property("text").toString() == QStringLiteral("Modified"))
+                modified = label;
+        return modified != nullptr;
+    };
+    QTRY_VERIFY(findModified());
+    QVERIFY(tapItem(window(), modified));
+    settle();
+    QVERIFY(!menu->isVisible());
+    QCOMPARE(tab()->sortRole(), QStringLiteral("mtime"));
+    QVERIFY(!tab()->sortAscending());
+}
+
 void TestStudio::keepsTheViewControlsInNarrowPanes()
 {
     const QSize original = window()->size();
@@ -17648,14 +17726,16 @@ void TestStudio::keepsTheViewControlsInNarrowPanes()
         for (int other = 0; other < 3; ++other) QCOMPARE(buttons[other]->property("on").toBool(), other == at);
     }
     key('1'); settle();
-    QCOMPARE(sort->property("label").toString(), QStringLiteral("name ↑ ⌄"));
+    QCOMPARE(sort->property("label").toString(), QStringLiteral("Name ↑ ⌄"));
     key('S'); settle();
     QVERIFY(!tab()->sortAscending());
-    QCOMPARE(sort->property("label").toString(), QStringLiteral("name ↓ ⌄"));
+    QCOMPARE(sort->property("label").toString(), QStringLiteral("Name ↓ ⌄"));
     QVERIFY(tapItem(window(), sort)); settle();
+    key('g');
     QCOMPARE(tab()->sortRole(), QStringLiteral("tags"));
-    QCOMPARE(sort->property("label").toString(), QStringLiteral("tags ↑ ⌄"));
+    QCOMPARE(sort->property("label").toString(), QStringLiteral("Tags ↑ ⌄"));
     sort->forceActiveFocus(); key(Qt::Key_Return); settle();
+    key('t');
     QCOMPARE(tab()->sortRole(), QStringLiteral("type"));
     // In a split the toolbar works the focused pane, and each pane keeps its
     // own tabs in a group of its own.
@@ -17796,7 +17876,7 @@ void TestStudio::givesTheNameColumnPriority()
             for (auto *head : itemsNamed("columnHead"))
                 dropped |= head->isVisible() && head->property("role").toString() == "mtime";
             QVERIFY(!dropped);
-            while (tab()->sortRole() != "mtime") key('s');
+            key('s'); key('m');
             const bool ascending = tab()->sortAscending();
             key('S');
             QCOMPARE(tab()->sortAscending(), !ascending);

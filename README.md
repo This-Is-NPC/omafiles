@@ -4,7 +4,7 @@ Tags on files with a CLI and a Qt Quick window over the same text index. Nothing
 
 ![The studio window](docs/img/01-studio.png)
 
-![The graph view](docs/img/04-graph.png)
+![The graph view](docs/img/05-graph.png)
 
 ## Install
 
@@ -58,7 +58,7 @@ versions, a dry run and updates.
 
 ## Interface
 
-![Keys and shortcuts](docs/img/03-keys.png)
+![Keys and shortcuts](docs/img/04-keys.png)
 
 Full keyboard controls are documented in the sections above. Pointer actions work the same way: right-click or press-and-hold opens the row menu; drag in the list marks rows; drag files onto a folder to move them on the same device or copy them across devices, or hold Ctrl to copy, Shift to move, or Ctrl Shift to link (see [Drag and drop](docs/drag-and-drop.md)).
 
