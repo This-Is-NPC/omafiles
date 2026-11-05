@@ -771,6 +771,7 @@ private slots:
     void detailsTagChipRemoveIsItsOwnTarget();
     void detailsTagChipHandsOnFocusWhenRemoved();
     void dockActionsRunTheirCommands();
+    void opensWithFromTheKeyboard();
     void detailsDockYieldsInShortWindows();
     void detailsModeRowDropsWhenNarrow();
 
@@ -805,6 +806,7 @@ private:
     void settle();
     bool cancelPendingFileDrop();
     void writeIndex();
+    QDir registerReader();
     /// Walks one whole Tab cycle from the file list: "visited" or "skipped"
     /// says whether `item` took the keyboard on the way, "open" that the
     /// cycle never came back.
@@ -870,6 +872,23 @@ void TestStudio::writeIndex()
                              QString::fromLatin1(row.tags))
                         .toUtf8());
     }
+}
+
+// One application for text files, `Oma Reader`, in the suite's own data home,
+// so `Open with` has something to offer on a machine with none installed.
+// Returns the folder it is written in; the caller removes it.
+QDir TestStudio::registerReader()
+{
+    const QDir data(m_home.path());
+    data.mkpath(QStringLiteral("applications"));
+    const QDir apps(data.filePath(QStringLiteral("applications")));
+    QFile entry(apps.filePath(QStringLiteral("oma-reader.desktop")));
+    if (entry.open(QIODevice::WriteOnly | QIODevice::Text))
+        entry.write("[Desktop Entry]\nType=Application\nName=Oma Reader\nExec=oma-reader %f\n");
+    QFile cache(apps.filePath(QStringLiteral("mimeinfo.cache")));
+    if (cache.open(QIODevice::WriteOnly | QIODevice::Text))
+        cache.write("[MIME Cache]\ntext/plain=oma-reader.desktop;\n");
+    return apps;
 }
 
 // Set before the application exists: the suite runs as if the user raised Qt's
@@ -4625,6 +4644,7 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         {"J", ""},        {"K", ""},
         {"H", "back"},    {"L", "forward"}, // need a folder to go to
         {"I", ""},
+        {"o", "apps"},                     // needs an application and a text file
     };
 
     // The other half of the sheet: the rows spelled as words. The sweep below
@@ -4744,8 +4764,13 @@ void TestStudio::everyDocumentedKeyIsAnswered()
         }
         if (setup == QLatin1String("forward"))
             tab()->goBack();
+        QDir apps;
+        if (setup == QLatin1String("apps"))
+            apps = registerReader();
         settle();
-        QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(1)));
+        // Row 1 is the folder; the reader opens text files.
+        const int start = setup == QLatin1String("apps") ? rowOf(QStringLiteral("one.txt")) : 1;
+        QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(start)));
         settle();
 
         const QString cwdBefore = cwd();
@@ -4784,6 +4809,8 @@ void TestStudio::everyDocumentedKeyIsAnswered()
                                 .arg(QChar::fromLatin1(one.key[0]))));
 
         key(Qt::Key_Escape);
+        if (setup == QLatin1String("apps"))
+            apps.removeRecursively();
         settle();
     }
 
@@ -5924,13 +5951,9 @@ void TestStudio::worksTheTabMenu()
 // case says the same thing on a machine with no applications installed at all.
 void TestStudio::offersTheApplicationsRegisteredForTheFile()
 {
-    const QDir data(m_home.path());
-    QVERIFY(data.mkpath(QStringLiteral("applications")));
-    QDir apps(data.filePath(QStringLiteral("applications")));
+    QDir apps = registerReader();
 
     const struct { const char *file; const char *body; } entries[] = {
-        {"oma-reader.desktop",
-         "[Desktop Entry]\nType=Application\nName=Oma Reader\nExec=oma-reader %f\n"},
         {"oma-hidden.desktop",
          "[Desktop Entry]\nType=Application\nName=Oma Hidden\nNoDisplay=true\nExec=x %f\n"},
         {"oma-dropped.desktop",
@@ -10330,6 +10353,7 @@ void TestStudio::dockActionsRunTheirCommands()
     QCOMPARE(window()->property("prompt").toString(), QString());
 
     auto *openWith = itemsNamed(QStringLiteral("detailsOpenWith")).first();
+    QCOMPARE(openWith->property("key").toString(), QStringLiteral("o"));
     QCOMPARE(openWith->isEnabled(), m_index->canOpenWith());
     if (!m_index->canOpenWith())
         return;
@@ -10340,6 +10364,71 @@ void TestStudio::dockActionsRunTheirCommands()
                                : m_index->notice() == QStringLiteral("no application registered for two.md"),
              qPrintable(m_index->notice()));
     key(Qt::Key_Escape);
+}
+
+// `o` opens the applications for the cursor row, as the dock's Open with does,
+// under the row with the dock shown or hidden, and does nothing on a row the
+// dock's button cannot be pressed for.
+void TestStudio::opensWithFromTheKeyboard()
+{
+    if (!m_index->canOpenWith())
+        QSKIP("nothing here can launch an application with Open with");
+    QDir apps = registerReader();
+    const auto cleanup = qScopeGuard([&] {
+        apps.removeRecursively();
+        window()->setProperty("detailsShown", true);
+        settle();
+    });
+    QObject *root = m_engine->rootObjects().first();
+    auto *menu = itemsNamed(QStringLiteral("openWithMenu")).first();
+    const QString one = m_tree.filePath(QStringLiteral("one.txt"));
+
+    for (const bool shown : {true, false}) {
+        root->setProperty("detailsShown", shown);
+        focusRow(QStringLiteral("one.txt"));
+        key('o');
+        QTRY_VERIFY(menu->isVisible());
+        QCOMPARE(menu->property("targetPath").toString(), one);
+        QVERIFY2(menuLabels(QStringLiteral("openWithMenu")).contains(QStringLiteral("Oma Reader")),
+                 qPrintable(menuLabels(QStringLiteral("openWithMenu")).join(QLatin1String(" | "))));
+        // Under the row, where `m` opens the row menu.
+        auto *panel = menu->property("panel").value<QQuickItem *>();
+        QVERIFY(panel);
+        auto *listing = filesRoot()->property("view").value<QQuickItem *>();
+        QQuickItem *row = nullptr;
+        QMetaObject::invokeMethod(listing, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, row),
+                                  Q_ARG(int, cursor()));
+        QVERIFY(row);
+        QCOMPARE(panel->mapToScene(QPointF(0, 0)).y(),
+                 row->mapToScene(QPointF(0, row->height())).y());
+        key(Qt::Key_Escape);
+        QTRY_VERIFY(!menu->isVisible());
+    }
+
+    // The row menu's entry names the same key.
+    key('m');
+    auto *rowMenu = itemsNamed(QStringLiteral("fileMenu")).first();
+    QTRY_VERIFY(rowMenu->isVisible());
+    QString shownKey;
+    for (const QVariant &entry : rowMenu->property("shown").toList())
+        if (entry.toMap().value(QStringLiteral("id")).toString() == QLatin1String("open-with"))
+            shownKey = entry.toMap().value(QStringLiteral("key")).toString();
+    QCOMPARE(shownKey, QStringLiteral("o"));
+    key(Qt::Key_Escape);
+    QTRY_VERIFY(!rowMenu->isVisible());
+
+    // The `..` row is a way up, not a file: the dock's button is greyed there,
+    // and the key neither opens the menu nor says it found nothing.
+    QMetaObject::invokeMethod(filesRoot(), "setCursor", Q_ARG(QVariant, QVariant(0)));
+    settle();
+    QCOMPARE(filesRoot()->property("entry").toMap().value(QStringLiteral("kind")).toString(),
+             QStringLiteral("parent"));
+    QVERIFY(!itemsNamed(QStringLiteral("detailsOpenWith")).first()->isEnabled());
+    m_index->clearNotice();
+    key('o');
+    settle();
+    QVERIFY(!menu->isVisible());
+    QCOMPARE(m_index->notice(), QString());
 }
 
 QTEST_MAIN(TestStudio)

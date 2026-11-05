@@ -16,6 +16,7 @@ Rectangle {
     /// The keys of the "+ Tag" button and of the three actions.
     property string addTagKey: ""
     property string openKey: ""
+    property string openWithKey: ""
     property string renameKey: ""
     readonly property bool has: entry && entry.path !== undefined
     // A column the dock has no room for is dropped whole, the actions first:
@@ -26,6 +27,7 @@ Rectangle {
     readonly property bool roomForTags: width >= fileRoom + 1 + tagsWidth
     readonly property bool roomForActions: roomForTags && width >= fileRoom + 2 + tagsWidth + actionsWidth
     readonly property bool onRow: details.has && (details.entry.kind === "file" || details.entry.kind === "dir")
+    readonly property bool canOpenWith: details.onRow && IndexModel.canOpenWith
 
     signal tagOpened(string tag)
     signal tagRemoved(string tag)
@@ -400,7 +402,8 @@ Rectangle {
                 objectName: "detailsOpenWith"
                 label: "Open with"
                 caption: "Choose the application to open it"
-                usable: details.has && IndexModel.canOpenWith && details.onRow
+                key: details.openWithKey
+                usable: details.canOpenWith
                 onClicked: details.openWithRequested(openWith)
             }
             Action {

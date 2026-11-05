@@ -393,6 +393,7 @@ Window {
         { title: "go", keys: [
             { key: "i", label: "quick preview" },
             { key: "l / Enter", label: "open or enter" },
+            { key: "o", label: "open with an application" },
             { key: "→", label: "open or enter (list, details)" },
             { key: "h / Bksp", label: "parent folder" },
             { key: "←", label: "parent folder (list, details)" },
@@ -1349,25 +1350,39 @@ Window {
     function openFileMenuForListing() {
         const listing = activeListing
         const folder = activeFolder
-        if (!listing || !folder || listing.currentIndex < 0) {
-            fileMenu.targetPath = ""
-            fileMenu.targetKind = ""
-            openFileMenuAt(root.width / 2, root.height / 3, root.height / 3)
-            return
-        }
-        fileMenu.targetPath = folder.pathAt(listing.currentIndex)
-        fileMenu.targetKind = folder.kindAt(listing.currentIndex)
-        // Only rows the view has actually built have a position to point at,
-        // and a cursor that is off screen -- or past the end of a list that has
-        // just shrunk -- has none.
-        const item = listing.currentIndex < folder.count
+        const has = listing && folder && listing.currentIndex >= 0
+        fileMenu.targetPath = has ? folder.pathAt(listing.currentIndex) : ""
+        fileMenu.targetKind = has ? folder.kindAt(listing.currentIndex) : ""
+        const span = cursorRowSpan()
+        openFileMenuAt(span.x, span.top, span.bottom)
+    }
+
+    // The cursor row's name and height in `root`, or a point in the middle of
+    // the window where there is no row to point at. Only rows the view has
+    // actually built have a position, and a cursor that is off screen -- or
+    // past the end of a list that has just shrunk -- has none.
+    function cursorRowSpan() {
+        const listing = activeListing
+        const folder = activeFolder
+        const item = listing && folder && listing.currentIndex >= 0
+                     && listing.currentIndex < folder.count
                      ? listing.itemAtIndex(listing.currentIndex) : null
-        if (!item) {
-            openFileMenuAt(root.width / 2, root.height / 3, root.height / 3)
-            return
-        }
+        if (!item)
+            return { x: root.width / 2, top: root.height / 3, bottom: root.height / 3 }
         const top = item.mapToItem(root, 0, 0).y
-        openFileMenuAt(item.nameItem.mapToItem(root, 0, 0).x, top, top + item.height)
+        return { x: item.nameItem.mapToItem(root, 0, 0).x, top: top, bottom: top + item.height }
+    }
+
+    // `o`: the applications for the cursor row, under the row as `m` opens its
+    // menu, so it lands in the same place with the dock shown or hidden. Only
+    // where the dock's Open with can be pressed.
+    function openOpenWithMenuForCursor() {
+        if (!details.canOpenWith)
+            return
+        const span = cursorRowSpan()
+        menuX = span.x
+        menuY = span.bottom
+        openOpenWithMenu(details.entry.path)
     }
 
     function openViewMenuAt(row, x, y) {
@@ -1745,6 +1760,7 @@ Window {
         switch (text) {
         case "l": folder.activateRow(listing.currentIndex); return true
         case "i": openPreview(""); return true
+        case "o": openOpenWithMenuForCursor(); return true
         case "h": folder.goUp(); return true
         case "~": folder.goHome(); return true
         case "H": goBack(); return true
@@ -2531,6 +2547,7 @@ Window {
                         entry: win.activeFilesRoot ? win.activeFilesRoot.entry : ({})
                         addTagKey: "t a"
                         openKey: "l"
+                        openWithKey: "o"
                         renameKey: "r"
                         onTagOpened: function (tag) {
                             win.takeFocus()
@@ -2918,7 +2935,7 @@ Window {
             actions: [
                 { id: "open", label: "Open", key: "l", when: fileMenu.hasTarget },
                 { id: "preview", label: "Quick preview", key: "i", when: fileMenu.isFile },
-                { id: "open-with", label: "Open with…",
+                { id: "open-with", label: "Open with…", key: "o",
                   when: IndexModel.canOpenWith && fileMenu.isRow },
                 { id: "go-to", label: "Go to containing folder",
                   when: win.onFiles && fileMenu.elsewhere },
