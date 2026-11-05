@@ -727,7 +727,11 @@ private slots:
     void themeRolesAreOpaque();
     void dimTextHasContrast_data();
     void dimTextHasContrast();
-    void tagColourIsStable();
+    void tagFamiliesGoRoundBeforeRepeating();
+    void tagKeepsItsFamily();
+    void tagFamiliesFollowNamesNotOrder();
+    void freedTagFamilyIsGivenAgain();
+    void unmetTagIsDim();
     void tagColoursUseThePalette_data();
     void tagColoursUseThePalette();
     void chipShowsTagColour();
@@ -9241,100 +9245,203 @@ void TestStudio::themeRolesAreOpaque()
     QVERIFY(roles > 0);
 }
 
-// The twelve colours `paletteFile` writes, red through bright cyan: each one
-// distinct and opaque.
+// The thirteen colours `paletteFile` writes, red through bright magenta in
+// round order: each one distinct and opaque.
 static QList<QColor> paletteColours()
 {
     QList<QColor> colours;
-    for (int slot = 0; slot < 12; ++slot)
+    for (int slot = 0; slot < 13; ++slot)
         colours.append(QColor(16 + slot * 16, 200 - slot * 8, 40 + slot * 4));
     return colours;
 }
 
-// A colors.toml carrying paletteColours, under omarchy's terminal colour names
-// or under their numbers, 1..6 and 9..14; translucent, with an alpha of 0x80.
-static QByteArray paletteFile(bool numbered, bool translucent = false)
+// A colors.toml carrying paletteColours under omarchy's family names, without
+// `orange` where `withOrange` is false; translucent, with an alpha of 0x80.
+static QByteArray paletteFile(bool translucent = false, bool withOrange = true)
 {
-    static const char *const names[] = {"red", "green", "yellow", "blue", "magenta", "cyan",
-                                         "bright_red", "bright_green", "bright_yellow",
-                                         "bright_blue", "bright_magenta", "bright_cyan"};
+    static const char *const names[] = {"red", "yellow", "orange", "green", "cyan", "blue",
+                                         "magenta", "bright_red", "bright_yellow", "bright_green",
+                                         "bright_cyan", "bright_blue", "bright_magenta"};
     const QList<QColor> colours = paletteColours();
     QByteArray body = "background = \"#16161e\"\n";
-    for (int slot = 0; slot < 12; ++slot) {
-        const QByteArray key = numbered
-            ? "color" + QByteArray::number(slot < 6 ? slot + 1 : slot + 3)
-            : QByteArray(names[slot]);
+    for (int slot = 0; slot < 13; ++slot) {
+        if (!withOrange && slot == 2)
+            continue;
         QColor colour = colours[slot];
         if (translucent)
             colour.setAlpha(0x80);
-        body += key + " = \"" + colour.name(translucent ? QColor::HexArgb : QColor::HexRgb).toLatin1()
-            + "\"\n";
+        body += QByteArray(names[slot]) + " = \""
+            + colour.name(translucent ? QColor::HexArgb : QColor::HexRgb).toLatin1() + "\"\n";
     }
     return body;
 }
 
-// A tag's colour is a hash of its name, so it is the same in every view, in
-// every run and on every machine, and a change to the hash moves known tags.
-void TestStudio::tagColourIsStable()
+// `count` tag names, `t00`, `t01` and on.
+static QStringList numberedTags(int count, int from = 0)
+{
+    QStringList tags;
+    for (int i = from; i < from + count; ++i)
+        tags.append(QStringLiteral("t%1").arg(i, 2, 10, QLatin1Char('0')));
+    return tags;
+}
+
+// Tags met together are given families by name: the seven families first, one
+// each, then the bright round, and a family repeats only once all thirteen are
+// used.
+void TestStudio::tagFamiliesGoRoundBeforeRepeating()
 {
     QTemporaryDir state;
     QVERIFY(state.isValid());
-    const auto theme = themeFrom(state, paletteFile(false));
+    const auto theme = themeFrom(state, paletteFile());
     QVERIFY(theme);
-    const auto again = themeFrom(state, paletteFile(false));
-    QVERIFY(again);
     const QList<QColor> palette = paletteColours();
-    // FNV-1a of the UTF-8 name, modulo twelve.
-    const QList<QPair<QString, int>> known = {{QStringLiteral("work"), 0},
-                                              {QStringLiteral("plain"), 3},
-                                              {QStringLiteral("2024"), 5},
-                                              {QStringLiteral("\u00e9t\u00e9"), 7},
-                                              {QStringLiteral("photos"), 8}};
-    for (const auto &[tag, slot] : known) {
-        QCOMPARE(theme->tagColour(tag), theme->tagColour(tag));
-        QCOMPARE(again->tagColour(tag), theme->tagColour(tag));
-        QCOMPARE(theme->tagColour(tag), palette[slot]);
+    QStringList seven = numberedTags(7);
+    std::reverse(seven.begin(), seven.end());
+    theme->meetTags(seven);
+    QSet<QRgb> distinct;
+    for (int i = 0; i < 7; ++i) {
+        QCOMPARE(theme->tagColour(numberedTags(1, i).first()), palette[i]);
+        distinct.insert(theme->tagColour(numberedTags(1, i).first()).rgba());
     }
+    QCOMPARE(distinct.size(), 7);
+    theme->meetTags(numberedTags(8));
+    QCOMPARE(theme->tagColour(QStringLiteral("t07")), palette[7]);
+    theme->meetTags(numberedTags(14));
+    for (int i = 8; i < 13; ++i)
+        QCOMPARE(theme->tagColour(numberedTags(1, i).first()), palette[i]);
+    QCOMPARE(theme->tagColour(QStringLiteral("t13")), palette[0]);
+}
+
+// A tag keeps its family when other tags come and go, after the theme is read
+// again, in a theme made later from the same state, and in a second window that
+// met it first.
+void TestStudio::tagKeepsItsFamily()
+{
+    QTemporaryDir state;
+    QVERIFY(state.isValid());
+    const auto theme = themeFrom(state, paletteFile());
+    QVERIFY(theme);
+    const auto other = themeFrom(state, paletteFile());
+    QVERIFY(other);
+    const QStringList kept = {QStringLiteral("photos"), QStringLiteral("work")};
+    theme->meetTags(kept);
+    const QColor photos = theme->tagColour(QStringLiteral("photos"));
+    const QColor work = theme->tagColour(QStringLiteral("work"));
+    QVERIFY(photos != work);
+    const auto unchanged = [&](Theme *seen) {
+        return seen->tagColour(QStringLiteral("photos")) == photos
+            && seen->tagColour(QStringLiteral("work")) == work;
+    };
+    theme->meetTags(kept + QStringList{QStringLiteral("archive"), QStringLiteral("notes")});
+    QVERIFY(unchanged(theme.get()));
+    theme->meetTags({QStringLiteral("work")});
+    theme->meetTags(kept + numberedTags(20));
+    QVERIFY(unchanged(theme.get()));
+    // The second window met none of them, and meets them now: work alone,
+    // which in a window of its own would be red.
+    other->meetTags({QStringLiteral("work")});
+    QCOMPARE(other->tagColour(QStringLiteral("work")), work);
+    other->meetTags(QStringList{QStringLiteral("zoo")} + kept);
+    QVERIFY(unchanged(other.get()));
+    // Photos and work hold red and yellow; the other window's tags do not count.
+    QCOMPARE(other->tagColour(QStringLiteral("zoo")), paletteColours()[2]);
+    const auto again = themeFrom(state, paletteFile());
+    QVERIFY(again);
+    QVERIFY(unchanged(again.get()));
+    QCOMPARE(again->tagColour(QStringLiteral("t03")), theme->tagColour(QStringLiteral("t03")));
+    QCOMPARE(again->tagColour(QStringLiteral("zoo")), paletteColours()[2]);
+}
+
+// The families a set of tags met together is given depend on the names, not on
+// the order the set lists them in.
+void TestStudio::tagFamiliesFollowNamesNotOrder()
+{
+    const QStringList tags = {QStringLiteral("invoice"), QStringLiteral("finance"),
+                              QStringLiteral("home"), QStringLiteral("spreadsheet"),
+                              QStringLiteral("archive"), QStringLiteral("diagram"),
+                              QStringLiteral("notes"), QStringLiteral("work")};
+    QStringList reversed = tags;
+    std::reverse(reversed.begin(), reversed.end());
+    QTemporaryDir first;
+    QTemporaryDir second;
+    QVERIFY(first.isValid() && second.isValid());
+    const auto one = themeFrom(first, paletteFile());
+    const auto two = themeFrom(second, paletteFile());
+    QVERIFY(one && two);
+    one->meetTags(tags);
+    two->meetTags(reversed);
+    for (const QString &tag : tags)
+        QCOMPARE(two->tagColour(tag), one->tagColour(tag));
+    QCOMPARE(one->tagColour(QStringLiteral("archive")), paletteColours()[0]);
+}
+
+// Only the tags met now count: the family of a tag that is gone goes to the
+// next new tag before any family is used twice.
+void TestStudio::freedTagFamilyIsGivenAgain()
+{
+    QTemporaryDir state;
+    QVERIFY(state.isValid());
+    const auto theme = themeFrom(state, paletteFile());
+    QVERIFY(theme);
+    QStringList tags = numberedTags(13);
+    theme->meetTags(tags);
+    tags.removeOne(QStringLiteral("t04"));
+    theme->meetTags(tags + QStringList{QStringLiteral("zz")});
+    QCOMPARE(theme->tagColour(QStringLiteral("zz")), paletteColours()[4]);
+}
+
+// A tag the window has not met yet is drawn in the secondary text colour.
+void TestStudio::unmetTagIsDim()
+{
+    QTemporaryDir state;
+    QVERIFY(state.isValid());
+    const auto theme = themeFrom(state, paletteFile());
+    QVERIFY(theme);
+    QCOMPARE(theme->tagColour(QStringLiteral("work")), theme->dim());
+    theme->meetTags({QStringLiteral("work")});
+    QVERIFY(theme->tagColour(QStringLiteral("work")) != theme->dim());
 }
 
 void TestStudio::tagColoursUseThePalette_data()
 {
-    QTest::addColumn<bool>("numbered");
     QTest::addColumn<bool>("translucent");
-    QTest::newRow("named") << false << false;
-    QTest::newRow("numbered") << true << false;
-    QTest::newRow("translucent") << true << true;
+    QTest::newRow("opaque") << false;
+    QTest::newRow("translucent") << true;
 }
 
-// Every tag colour is one of the theme's twelve, all twelve are used, and each
-// is opaque, even where the theme gives an alpha; the built-in default theme has
-// twelve opaque ones too.
+// The thirteen families are the theme's colours, opaque even where the theme
+// gives an alpha; a family the theme lacks keeps the built-in default theme's,
+// which has thirteen distinct opaque ones.
 void TestStudio::tagColoursUseThePalette()
 {
-    QFETCH(bool, numbered);
     QFETCH(bool, translucent);
     QTemporaryDir state;
     QVERIFY(state.isValid());
-    const auto theme = themeFrom(state, paletteFile(numbered, translucent));
+    const auto theme = themeFrom(state, paletteFile(translucent));
     QVERIFY(theme);
     QTemporaryDir bare;
     QVERIFY(bare.isValid());
     const auto fallback = themeFrom(bare, QByteArray());
     QVERIFY(fallback);
+    QTemporaryDir orangeless;
+    QVERIFY(orangeless.isValid());
+    const auto lacking = themeFrom(orangeless, paletteFile(translucent, false));
+    QVERIFY(lacking);
+    const QStringList tags = numberedTags(13);
+    theme->meetTags(tags);
+    fallback->meetTags(tags);
+    lacking->meetTags(tags);
     const QList<QColor> palette = paletteColours();
-    QSet<QRgb> seen;
     QSet<QRgb> seenDefault;
-    for (int i = 0; i < 400; ++i) {
-        const QString tag = QStringLiteral("tag-%1").arg(i);
-        const QColor colour = theme->tagColour(tag);
-        QVERIFY2(palette.contains(colour), qPrintable(tag + " is " + colour.name()));
-        seen.insert(colour.rgba());
-        const QColor builtIn = fallback->tagColour(tag);
+    for (int slot = 0; slot < 13; ++slot) {
+        QCOMPARE(theme->tagColour(tags[slot]), palette[slot]);
+        const QColor builtIn = fallback->tagColour(tags[slot]);
         QCOMPARE(builtIn.alpha(), 255);
         seenDefault.insert(builtIn.rgba());
+        QCOMPARE(lacking->tagColour(tags[slot]),
+                 slot == 2 ? fallback->tagColour(tags[slot]) : palette[slot]);
     }
-    QCOMPARE(seen.size(), 12);
-    QCOMPARE(seenDefault.size(), 12);
+    QCOMPARE(seenDefault.size(), 13);
 }
 
 // A tag chip, in a file row and in the details panel, is raised and carries a
@@ -9353,6 +9460,7 @@ void TestStudio::chipShowsTagColour()
         const QString tag = chip->property("modelData").toString();
         QCOMPARE(chip->property("color").value<QColor>(), m_theme->raised());
         QCOMPARE(swatchOf(chip), m_theme->tagColour(tag));
+        QVERIFY2(swatchOf(chip) != m_theme->dim(), qPrintable(tag + " was not met"));
         ++rows;
     }
     QVERIFY(rows > 0);
@@ -9382,16 +9490,18 @@ void TestStudio::chipShowsTagColour()
         return ::rename(QFile::encodeName(scratch).constData(),
                         QFile::encodeName(colours).constData()) == 0;
     };
-    QVERIFY(paint(paletteFile(false)));
+    QVERIFY(paint(paletteFile()));
     const StateEnv scope(state.path());
     QQmlEngine engine;
+    engine.singletonInstance<Theme *>(QStringLiteral("omafiles"), QStringLiteral("Theme"))
+        ->meetTags({QStringLiteral("work")});
     QQmlComponent component(&engine, QUrl(QStringLiteral("qrc:/qml/TagChip.qml")));
     std::unique_ptr<QObject> made(component.createWithInitialProperties(
         {{QStringLiteral("tag"), QStringLiteral("work")}}));
     auto *chip = qobject_cast<QQuickItem *>(made.get());
     QVERIFY2(chip, qPrintable(component.errorString()));
     QCOMPARE(swatchOf(chip), paletteColours()[0]);
-    QByteArray switched = paletteFile(false);
+    QByteArray switched = paletteFile();
     switched.replace(paletteColours()[0].name().toLatin1(), "#ff00ff");
     QVERIFY(paint(switched));
     QTRY_COMPARE(swatchOf(chip), QColor(QStringLiteral("#ff00ff")));

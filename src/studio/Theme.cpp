@@ -1,10 +1,13 @@
 #include "Theme.h"
 
 #include "Paths.h"
+#include "Tag.h"
 
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QHash>
+#include <QLockFile>
+#include <QSettings>
 #include <QRegularExpression>
 #include <QTextStream>
 
@@ -101,19 +104,33 @@ QColor mix(const QColor &from, const QColor &toward, qreal amount)
                             from.blueF() + (toward.blueF() - from.blueF()) * amount);
 }
 
-// The keys of the tag palette in colors.toml: a terminal colour's number, and
-// the name omarchy writes it under.
-struct PaletteKey
+// The tag families in round order, as colors.toml names them: the key of each
+// slot of the tag palette, and the word `studio.conf` keeps a tag's family as.
+constexpr std::array<const char *, 13> familyKeys{
+    "red", "yellow", "orange", "green", "cyan", "blue", "magenta",
+    "bright_red", "bright_yellow", "bright_green", "bright_cyan", "bright_blue",
+    "bright_magenta"};
+
+const QString kFamiliesGroup = QStringLiteral("tagColours");
+
+// Each tag's slot as the state file at `path` keeps it; a word that names no
+// family is left out.
+QHash<QString, int> readFamilies(const QString &path)
 {
-    const char *number;
-    const char *name;
-};
-constexpr std::array<PaletteKey, 12> paletteKeys{{
-    {"color1", "red"}, {"color2", "green"}, {"color3", "yellow"},
-    {"color4", "blue"}, {"color5", "magenta"}, {"color6", "cyan"},
-    {"color9", "bright_red"}, {"color10", "bright_green"}, {"color11", "bright_yellow"},
-    {"color12", "bright_blue"}, {"color13", "bright_magenta"}, {"color14", "bright_cyan"},
-}};
+    QHash<QString, int> families;
+    QSettings state(path, QSettings::IniFormat);
+    state.beginGroup(kFamiliesGroup);
+    for (const QString &tag : state.childKeys()) {
+        const QString word = state.value(tag).toString();
+        for (std::size_t slot = 0; slot < familyKeys.size(); ++slot) {
+            if (word == QLatin1String(familyKeys[slot])) {
+                families.insert(tag, int(slot));
+                break;
+            }
+        }
+    }
+    return families;
+}
 
 // WCAG relative luminance of an opaque colour.
 qreal luminance(const QColor &colour)
@@ -138,6 +155,8 @@ Theme::Theme(QObject *parent)
     : QObject(parent)
     , m_themePath(currentThemePath())
     , m_roundingPaths(roundingPaths())
+    , m_statePath(studioStatePath())
+    , m_tagFamilies(readFamilies(m_statePath))
 {
     reload();
     // Both signals re-take the watches before reading. A theme switcher and an
@@ -194,11 +213,8 @@ void Theme::reload()
     m_foreground = colourOr(values, QStringLiteral("foreground"), m_foreground);
     m_accent = colourOr(values, QStringLiteral("accent"), m_accent);
     m_urgent = colourOr(values, QStringLiteral("red"), m_urgent);
-    for (std::size_t slot = 0; slot < paletteKeys.size(); ++slot) {
-        m_tagPalette[slot] = colourOr(values, QLatin1String(paletteKeys[slot].number),
-                                      colourOr(values, QLatin1String(paletteKeys[slot].name),
-                                               m_tagPalette[slot]));
-    }
+    for (std::size_t slot = 0; slot < familyKeys.size(); ++slot)
+        m_tagPalette[slot] = colourOr(values, QLatin1String(familyKeys[slot]), m_tagPalette[slot]);
     emit changed();
 }
 
@@ -257,12 +273,40 @@ QColor Theme::dim() const
 
 QColor Theme::tagColour(const QString &tag) const
 {
-    quint32 hash = 2166136261u;
-    for (const char byte : tag.toUtf8()) {
-        hash ^= static_cast<unsigned char>(byte);
-        hash *= 16777619u;
+    const auto found = m_tagFamilies.constFind(tag);
+    return found == m_tagFamilies.cend() ? dim() : m_tagPalette[*found];
+}
+
+void Theme::meetTags(const QStringList &tags)
+{
+    const auto unmet = [this](const QString &tag) { return !m_tagFamilies.contains(tag); };
+    if (std::none_of(tags.cbegin(), tags.cend(), unmet))
+        return;
+    QDir().mkpath(QFileInfo(m_statePath).path());
+    // Another window may meet the same tags at the same moment: the file is
+    // read again and written under one lock, so the first families given stand.
+    QLockFile lock(m_statePath + QStringLiteral(".tags.lock"));
+    lock.lock();
+    m_tagFamilies.insert(readFamilies(m_statePath));
+    std::array<int, familyKeys.size()> held{};
+    QStringList fresh;
+    for (const QString &tag : uniqueSorted(tags)) {
+        const auto found = m_tagFamilies.constFind(tag);
+        if (found == m_tagFamilies.cend())
+            fresh.append(tag);
+        else
+            ++held[*found];
     }
-    return m_tagPalette[hash % m_tagPalette.size()];
+    QSettings state(m_statePath, QSettings::IniFormat);
+    state.beginGroup(kFamiliesGroup);
+    for (const QString &tag : std::as_const(fresh)) {
+        const int slot = int(std::min_element(held.cbegin(), held.cend()) - held.cbegin());
+        ++held[slot];
+        m_tagFamilies.insert(tag, slot);
+        state.setValue(tag, QLatin1String(familyKeys[slot]));
+    }
+    state.sync();
+    emit changed();
 }
 
 QColor Theme::scrim() const

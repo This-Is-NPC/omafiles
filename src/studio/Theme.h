@@ -2,7 +2,7 @@
 
 #include <QColor>
 #include <QFileSystemWatcher>
-#include <array>
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -98,10 +98,14 @@ public:
     QColor dim() const;
     /// The opaque surface behind a sheet or dialog, in place of the window.
     QColor scrim() const;
-    /// The colour of a tag: FNV-1a of its UTF-8 name into the theme's terminal
-    /// colours 1..6 and 9..14. A call is no binding dependency: a QML binding
-    /// also reads a role, which changes with the theme.
+    /// The colour of the family `meetTags` gave a tag, or `dim` for a tag it
+    /// has not met. A call is no binding dependency: a QML binding also reads a
+    /// role, which changes with the theme and when a tag is given a family.
     Q_INVOKABLE QColor tagColour(const QString &tag) const;
+    /// Gives each of `tags` without a family one, by name: the family fewest of
+    /// `tags` have, the first in round order on a tie. A family once given is
+    /// kept in `studio.conf` and never changes (docs/design.md §3).
+    void meetTags(const QStringList &tags);
 
     QString fontFamily() const { return QStringLiteral("monospace"); }
 
@@ -161,11 +165,18 @@ private:
     QColor m_foreground{"#c0caf5"};
     QColor m_accent{"#7aa2f7"};
     QColor m_urgent{"#f7768e"};
-    /// Red, green, yellow, blue, magenta, cyan, then their bright forms.
-    std::array<QColor, 12> m_tagPalette{
-        QColor{"#f7768e"}, QColor{"#9ece6a"}, QColor{"#e0af68"}, QColor{"#7aa2f7"},
-        QColor{"#ad8ee6"}, QColor{"#449dab"}, QColor{"#ff7a93"}, QColor{"#b9f27c"},
-        QColor{"#ff9e64"}, QColor{"#7da6ff"}, QColor{"#bb9af7"}, QColor{"#0db9d7"}};
+    /// The tag families in round order: red, yellow, orange, green, cyan, blue,
+    /// magenta, then the bright forms of all but orange.
+    std::array<QColor, 13> m_tagPalette{
+        QColor{"#f7768e"}, QColor{"#e0af68"}, QColor{"#eb927b"}, QColor{"#9ece6a"},
+        QColor{"#449dab"}, QColor{"#7aa2f7"}, QColor{"#ad8ee6"}, QColor{"#ff7a93"},
+        QColor{"#ff9e64"}, QColor{"#b9f27c"}, QColor{"#0db9d7"}, QColor{"#7da6ff"},
+        QColor{"#bb9af7"}};
+    /// The state file that keeps each tag's family, as `studioStatePath` named
+    /// it when this theme was made.
+    QString m_statePath;
+    /// Each tag's slot in `m_tagPalette`.
+    QHash<QString, int> m_tagFamilies;
 };
 
 } // namespace omafiles

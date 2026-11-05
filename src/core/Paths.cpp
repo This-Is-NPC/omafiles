@@ -186,6 +186,11 @@ QString defaultIndexPath()
     return QDir(dataHome()).filePath(QStringLiteral("omafiles/index.jsonl"));
 }
 
+QString studioStatePath()
+{
+    return QDir(stateHome()).filePath(QStringLiteral("omafiles/studio.conf"));
+}
+
 bool nameFromBytes(const QByteArray &bytes, QString *name)
 {
     // `QFile::decodeName` drops a leading U+FEFF, and a name can begin with one.
