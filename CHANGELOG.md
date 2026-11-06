@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.3.0](https://github.com/This-Is-NPC/omafiles/compare/v0.2.2...v0.3.0) (2026-11-05)
+
+
+### Features
+
+* **studio:** add one scroll bar to every scrolling view ([de532af](https://github.com/This-Is-NPC/omafiles/commit/de532afd8c30aa4f057512ba74dda336862c117f))
+* **studio:** add places and tag bars to the sidebar ([3cdd776](https://github.com/This-Is-NPC/omafiles/commit/3cdd7762ef7e86de2b37c7f5c113438d57caf27d))
+* **studio:** dock the details under the panes ([2772067](https://github.com/This-Is-NPC/omafiles/commit/27720676aae57ca69d99e7a9e6d61712e4b6af12))
+* **studio:** give every tag a colour ([3105c6e](https://github.com/This-Is-NPC/omafiles/commit/3105c6e89a24227d8e9cd6ca3f21004d5d0beb33))
+* **studio:** open a sort menu from s and the button ([93b37b8](https://github.com/This-Is-NPC/omafiles/commit/93b37b8baba238c044a3ea17a682fd326deb05fc))
+* **studio:** open with from the keyboard with o ([0a65439](https://github.com/This-Is-NPC/omafiles/commit/0a65439943906ab386777279e78c845bb4789611))
+* **studio:** put tabs and a toolbar above the panes ([438943b](https://github.com/This-Is-NPC/omafiles/commit/438943b61bb348c9fc4cd7c4f651fa432e494151))
+* **studio:** show tag, size and date columns in list ([3d1d02e](https://github.com/This-Is-NPC/omafiles/commit/3d1d02e0f4271efd39c0692ca95a319b8eadbf80))
+* **studio:** show what a file drag carries ([6161d14](https://github.com/This-Is-NPC/omafiles/commit/6161d144a0bc6676e61a23851dae3653227e94ce))
+* **studio:** sort by tag count beside first tag ([b4551e0](https://github.com/This-Is-NPC/omafiles/commit/b4551e0f0b4473ad55f79d34401d7428d809a1df))
+
+
+### Bug Fixes
+
+* **studio:** draw every surface in an opaque colour ([23d583e](https://github.com/This-Is-NPC/omafiles/commit/23d583ef0081a047dc95f0328f0f6e7054a310a9))
+* **studio:** drop alpha from every theme colour ([0a4be15](https://github.com/This-Is-NPC/omafiles/commit/0a4be158ae698d15421aec6278df6e0bfe8f99fb))
+* **studio:** give headings, controls and rows one look ([8100354](https://github.com/This-Is-NPC/omafiles/commit/81003540c6d92cc612f2a4209aba0cd12e72b046))
+* **studio:** give tags distinct colour families ([a5fb4a8](https://github.com/This-Is-NPC/omafiles/commit/a5fb4a8bf6e580e60b62709e9cc3593456a4bd22))
+* **studio:** give the scroll bar contrast and buttons ([add42a4](https://github.com/This-Is-NPC/omafiles/commit/add42a4e7bc4a863c04a9ad331c4b06cc0f22085))
+* **studio:** keep shown folder counts current ([3858fd9](https://github.com/This-Is-NPC/omafiles/commit/3858fd96d77605dded1d28aabecde2109b791449))
+* **studio:** keep the keyboard when a dock chip goes ([c26eab7](https://github.com/This-Is-NPC/omafiles/commit/c26eab75d38322d6f03e130c62e649857f05c5b9))
+* **studio:** keep tooltips of controls turned off ([006f989](https://github.com/This-Is-NPC/omafiles/commit/006f989ddd62b9543b8233232059d1cd86d700dd))
+* **studio:** keep trash cursor moved during refresh ([10a2ef2](https://github.com/This-Is-NPC/omafiles/commit/10a2ef2af983148b171b5395e7c3d9cb953585b3))
+* **studio:** make the palette's devices focus them ([4001bfd](https://github.com/This-Is-NPC/omafiles/commit/4001bfd11a24060007f977dd3b66e9e435a40b0d))
+* **studio:** read tag colours from a notifying map ([06f9ac6](https://github.com/This-Is-NPC/omafiles/commit/06f9ac6571b07d644f31fc0e5115048dd3b0f6ac))
+* **studio:** share the split's width equally ([2856b48](https://github.com/This-Is-NPC/omafiles/commit/2856b4806fc6d36fd8b502d00783683a8cd47563))
+
+
+### Performance Improvements
+
+* **studio:** compare first tags without copying them ([ac6141e](https://github.com/This-Is-NPC/omafiles/commit/ac6141e68b3f0099a493fe40c1559c266aef44ab))
+
 ## [0.2.2](https://github.com/This-Is-NPC/omafiles/compare/v0.2.1...v0.2.2) (2026-11-04)
 
 
